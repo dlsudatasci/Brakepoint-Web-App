@@ -2,7 +2,7 @@
   "name": "brakepoint-project",
   "private": true,
   "scripts": {
-    "backend": "cd backend && ../.venv/bin/python manage.py runserver",
+    "backend": "cd backend && ..\\.venv\\Scripts\\python.exe manage.py runserver",
     "frontend": "cd frontend/brakepoint_app && npm run dev",
     "dev": "concurrently \"npm run backend\" \"npm run frontend\""
   },

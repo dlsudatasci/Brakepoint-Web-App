@@ -1,0 +1,11 @@
+django>=5.1
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+django-extensions
+python-dotenv
+requests
+pymysql
+opencv-python
+ultralytics
+numpy
