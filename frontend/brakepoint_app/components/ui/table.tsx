@@ -436,8 +436,9 @@ React.useEffect(() => {
     const canvasY = (e.clientY - rect.top) * scaleY;
 
     if (isPanning) {
-      const dx = canvasX - panStart.x;
-      const dy = canvasY - panStart.y;
+      const panSensitivity = 0.45;
+      const dx = (canvasX - panStart.x) * panSensitivity;
+      const dy = (canvasY - panStart.y) * panSensitivity;
       setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       setPanStart({ x: canvasX, y: canvasY });
       drawPoints(calibrationPoints, referencePoints);
@@ -954,7 +955,7 @@ React.useEffect(() => {
       <DialogTitle>
         {showCalibration ? (isEditMode ? 'Edit Video Calibration' : 'Camera Calibration') : 'Add New Video'}
       </DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1}}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, overflow: 'hidden' }}>
         {!showCalibration ? (
           <>
             <TextField
@@ -1012,33 +1013,17 @@ React.useEffect(() => {
               </Box>
             </Box>
 
-            {/* Navigation hint */}
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
-              <Typography variant="body2" sx={{ bgcolor: '#f5f5f5', px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.85rem' }}>
-                \uD83D\uDD0D <strong>Scroll</strong> to zoom
+            {/* Navigation hints — compact */}
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="caption" sx={{ bgcolor: '#f5f5f5', px: 1, py: 0.25, borderRadius: 1 }}>
+                🔍 <strong>Scroll</strong> to zoom
               </Typography>
-              <Typography variant="body2" sx={{ bgcolor: '#f5f5f5', px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.85rem' }}>
-                \u2195\uFE0F <strong>Right-click + drag</strong> or <strong>Shift + drag</strong> to pan
+              <Typography variant="caption" sx={{ bgcolor: '#f5f5f5', px: 1, py: 0.25, borderRadius: 1 }}>
+                ✋ <strong>Right-click</strong> or <strong>Shift+drag</strong> to pan
               </Typography>
             </Box>
 
-            <Box sx={{ mb: 1 }}>
-              <TextField
-                label="Reference Distance (meters)"
-                type="number"
-                value={referenceDistance}
-                onChange={(e) => setReferenceDistance(parseFloat(e.target.value) || 0)}
-                fullWidth
-                helperText="Real-world distance between your 2 reference points (e.g., lane width = 3m)"
-                inputProps={{ min: 0.1, step: 0.5 }}
-                sx={{
-                  '& .MuiInputBase-input': { fontSize: '1.1rem', fontWeight: 600 },
-                  '& .MuiInputLabel-root': { fontSize: '1rem' },
-                }}
-              />
-            </Box>
-
-            <Box sx={{ position: 'relative', width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
+            <Box sx={{ position: 'relative', width: '100%', backgroundColor: '#000', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               <video
                 ref={videoRef}
                 src={videoUrl || ''}
@@ -1061,39 +1046,42 @@ React.useEffect(() => {
                 onContextMenu={(e) => e.preventDefault()}
                 style={{
                   width: '100%',
-                  height: 'auto',
+                  height: '100%',
+                  maxHeight: 'calc(95vh - 280px)',
                   cursor: isPanning ? 'grabbing' : 'crosshair',
-                  border: '3px solid #1565c0',
+                  border: `3px solid ${showReferenceStep ? '#4caf50' : '#1565c0'}`,
                   borderRadius: '8px',
-                  minHeight: '500px'
+                  display: 'block',
                 }}
               />
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mt: 1, p: 1.5, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                {showReferenceStep 
-                  ? `\uD83D\uDFE2 Reference Points: ${referencePoints.length}/2 \u2022 Zoom: ${zoom.toFixed(1)}x`
-                  : `\uD83D\uDD35 Calibration Points: ${calibrationPoints.length}/4 \u2022 Zoom: ${zoom.toFixed(1)}x`
-                }
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: '#f5f5f5', borderRadius: 1, flexWrap: 'wrap' }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, minWidth: 0 }}>
+                {showReferenceStep
+                  ? `🟢 Reference: ${referencePoints.length}/2 · Zoom: ${zoom.toFixed(1)}x`
+                  : `🔵 Calibration: ${calibrationPoints.length}/4 · Zoom: ${zoom.toFixed(1)}x`}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button 
-                  variant="outlined" 
-                  onClick={resetZoom}
+              {showReferenceStep && (
+                <TextField
+                  label="Ref. distance (m)"
+                  type="number"
+                  value={referenceDistance}
+                  onChange={(e) => setReferenceDistance(parseFloat(e.target.value) || 0)}
+                  inputProps={{ min: 0.1, step: 0.5 }}
                   size="small"
-                >
-                  Reset View
-                </Button>
-                <Button 
-                  variant="outlined" 
-                  onClick={resetCalibration}
-                  disabled={calibrationPoints.length === 0 && referencePoints.length === 0}
-                  size="small"
-                >
-                  Reset Points
-                </Button>
-              </Box>
+                  sx={{ width: 160 }}
+                />
+              )}
+              <Button variant="outlined" onClick={resetZoom} size="small">Reset View</Button>
+              <Button
+                variant="outlined"
+                onClick={resetCalibration}
+                disabled={calibrationPoints.length === 0 && referencePoints.length === 0}
+                size="small"
+              >
+                Reset Points
+              </Button>
             </Box>
 
             {calibrationPoints.length === 4 && referencePoints.length === 2 && (
