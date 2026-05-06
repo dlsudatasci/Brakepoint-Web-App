@@ -5,6 +5,7 @@ import ReactDOM from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import SideTab from "@components/map/sideTab";
 
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
@@ -288,6 +289,8 @@ export default function MapView({
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+
+  const [open, setOpen] = useState(true);
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
@@ -2514,140 +2517,142 @@ export default function MapView({
   return (
     <div className="map-wrap">
       <div ref={mapContainer} className="map" />
-
       {mode === "explore" && (
-        <>
-          <div className="explore-toolbar-row">
-            <div className="explore-toolbar explore-toolbar--primary-panel">
-              <span className="explore-toolbar__step">
-                {explorePhase === "drawing-sub"
-                  ? activeSubAreaIndex != null
-                    ? "Step 3 · Edit selected sub-area"
-                    : "Step 3 · Draw a sub-area"
-                  : explorePhase === "drawing-primary"
-                    ? primaryFocusArea
-                      ? "Step 2 · Adjust AOI"
-                      : "Step 1 · Draw the AOI"
-                    : primaryFocusArea
-                      ? "Step 3 · Manage sub-areas"
-                      : "Step 1 · Search and draw the AOI"}
-              </span>
 
-              <span className="explore-toolbar__label">
-                {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-                {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-              </span>
-
-              <div className="explore-toolbar__group">
-                {primaryFocusArea && (
-                  <button
-                    onClick={() => fitToFocusArea(primaryFocusArea)}
-                    className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                    disabled={isDrawingFocusArea}
-                  >
-                    Reset View
-                  </button>
-                )}
-
-                {!isDrawingFocusArea ? (
                   <>
-                    <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                      Edit AOI
-                    </button>
+            <div className="explore-toolbar-row">
+              <div className="explore-toolbar explore-toolbar--primary-panel">
+                <span className="explore-toolbar__step">
+                  {explorePhase === "drawing-sub"
+                    ? activeSubAreaIndex != null
+                      ? "Step 3 · Edit selected sub-area"
+                      : "Step 3 · Draw a sub-area"
+                    : explorePhase === "drawing-primary"
+                      ? primaryFocusArea
+                        ? "Step 2 · Adjust AOI"
+                        : "Step 1 · Draw the AOI"
+                      : primaryFocusArea
+                        ? "Step 3 · Manage sub-areas"
+                        : "Step 1 · Search and draw the AOI"}
+                </span>
 
+                <span className="explore-toolbar__label">
+                  {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
+                  {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
+                </span>
+
+                <div className="explore-toolbar__group">
+                  {primaryFocusArea && (
                     <button
-                      onClick={deletePrimaryFocusArea}
-                      className="explore-toolbar__btn explore-toolbar__btn--danger"
-                      disabled={!hasConfirmedPrimary}
+                      onClick={() => fitToFocusArea(primaryFocusArea)}
+                      className="explore-toolbar__btn explore-toolbar__btn--neutral"
+                      disabled={isDrawingFocusArea}
                     >
-                      Delete AOI
+                      Reset View
                     </button>
+                  )}
 
-                    <button
-                      onClick={beginSubFocusDrawing}
-                      className="explore-toolbar__btn explore-toolbar__btn--primary"
-                      disabled={!hasConfirmedPrimary}
-                    >
-                      Add Sub-area
-                    </button>
+                  {!isDrawingFocusArea ? (
+                    <>
+                      <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
+                        Edit AOI
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        if (selectedSubAreaIndex != null) {
-                          handleEditSubArea(selectedSubAreaIndex);
-                        }
-                      }}
-                      className="explore-toolbar__btn explore-toolbar__btn--sub"
-                      disabled={!hasSelectedSubArea}
-                    >
-                      Edit Selected
-                    </button>
+                      <button
+                        onClick={deletePrimaryFocusArea}
+                        className="explore-toolbar__btn explore-toolbar__btn--danger"
+                        disabled={!hasConfirmedPrimary}
+                      >
+                        Delete AOI
+                      </button>
 
-                    <button
-                      onClick={deleteSelectedSubArea}
-                      className="explore-toolbar__btn explore-toolbar__btn--danger"
-                      disabled={!hasSelectedSubArea}
-                    >
-                      Delete Selected
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                      {explorePhase === "drawing-sub"
-                        ? activeSubAreaIndex != null
-                          ? "Confirm Sub-area Edit"
-                          : "Confirm Sub-area"
-                        : primaryFocusArea
-                          ? "Confirm AOI Edit"
-                          : "Confirm AOI"}
-                    </button>
+                      <button
+                        onClick={beginSubFocusDrawing}
+                        className="explore-toolbar__btn explore-toolbar__btn--primary"
+                        disabled={!hasConfirmedPrimary}
+                      >
+                        Add Sub-area
+                      </button>
 
-                    <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                      Cancel
-                    </button>
-                  </>
-                )}
+                      <button
+                        onClick={() => {
+                          if (selectedSubAreaIndex != null) {
+                            handleEditSubArea(selectedSubAreaIndex);
+                          }
+                        }}
+                        className="explore-toolbar__btn explore-toolbar__btn--sub"
+                        disabled={!hasSelectedSubArea}
+                      >
+                        Edit Selected
+                      </button>
+
+                      <button
+                        onClick={deleteSelectedSubArea}
+                        className="explore-toolbar__btn explore-toolbar__btn--danger"
+                        disabled={!hasSelectedSubArea}
+                      >
+                        Delete Selected
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
+                        {explorePhase === "drawing-sub"
+                          ? activeSubAreaIndex != null
+                            ? "Confirm Sub-area Edit"
+                            : "Confirm Sub-area"
+                          : primaryFocusArea
+                            ? "Confirm AOI Edit"
+                            : "Confirm AOI"}
+                      </button>
+
+                      <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {subFocusAreas.length > 0 && (
+                <div className="explore-toolbar explore-toolbar--secondary">
+                  <span className="explore-toolbar__label">Sub-areas</span>
+
+                  {subFocusAreas.map((area, index) => (
+                    <button
+                      key={`${area.label}-${index}`}
+                      onClick={() => setSelectedSubAreaIndex(index)}
+                      className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
+                      disabled={isDrawingFocusArea}
+                    >
+                      {area.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {subFocusAreas.length > 0 && (
-              <div className="explore-toolbar explore-toolbar--secondary">
-                <span className="explore-toolbar__label">Sub-areas</span>
+            
 
-                {subFocusAreas.map((area, index) => (
-                  <button
-                    key={`${area.label}-${index}`}
-                    onClick={() => setSelectedSubAreaIndex(index)}
-                    className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                    disabled={isDrawingFocusArea}
-                  >
-                    {area.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="explore-status">
-            {explorePhase === "drawing-sub"
-              ? activeSubAreaIndex != null
-                ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
-                : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
-              : explorePhase === "drawing-primary"
-                ? primaryFocusArea
-                  ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
-                  : "Draw the AOI rectangle, then click Confirm AOI."
-                : primaryFocusArea
-                  ? selectedSubAreaIndex != null
-                    ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
-                    : "AOI confirmed. Add sub-areas or select an existing sub-area."
-                  : "Search for a place if needed, then draw an AOI rectangle."}
-          </div>
-
-          {focusError && <div className="explore-error">{focusError}</div>}
-        </>
+            {focusError && <div className="explore-error">{focusError}</div>}
+          </>
       )}
+
+      <div className="explore-status">
+        {explorePhase === "drawing-sub"
+          ? activeSubAreaIndex != null
+            ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
+            : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
+          : explorePhase === "drawing-primary"
+            ? primaryFocusArea
+              ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
+              : "Draw the AOI rectangle, then click Confirm AOI."
+            : primaryFocusArea
+              ? selectedSubAreaIndex != null
+                ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
+                : "AOI confirmed. Add sub-areas or select an existing sub-area."
+              : "Search for a place if needed, then draw an AOI rectangle."}
+      </div>
 
       {isEditMode && mode === "map" && (
         <>

@@ -8,11 +8,12 @@ import './toggleDrawer.css';
 type ToggleDrawerProps = {
   side: 'top' | 'bottom' | 'left' | 'right';
   open: boolean;
+  invisible: boolean;
   onToggle: () => void;
   sideTabWidth?: number;
 };
 
-export default function ToggleDrawer({side, open, onToggle, sideTabWidth}: ToggleDrawerProps) {
+export default function ({side, open, invisible = false, onToggle, sideTabWidth}: ToggleDrawerProps) {
   const [translate, setTranslate] = useState(open ? sideTabWidth : 0);
 
   useEffect(() => {
@@ -31,15 +32,19 @@ export default function ToggleDrawer({side, open, onToggle, sideTabWidth}: Toggl
 
   const style =
     side === 'left'
-      ? { transform: `translateX(${translate}px) translateY(-50%)` }
+      ? { transform: `translateX(${translate/1.5}em) translateY(-50%)` }
       : side === 'right'
-      ? { transform: `translateX(-${translate}px) translateY(-50%)` }
+      ? { transform: `translateX(-${translate/1.5}em) translateY(-50%)` }
+      : side === 'top'
+      ? { transform: `translateX(-50%) translateY(${translate/1.5}em)` }
+      : side === 'bottom'
+      ? { transform: `translateX(-50%) translateY(-${translate/1.5}em)` }
       : {};
 
 
     return (
     <IconButton
-      className={`toggle-button toggle-${side}`}
+      className={`toggle-button toggle-${side} ${invisible ? "main-invisible" : ""}`}
       onClick={onToggle}
       style={style}
     >
