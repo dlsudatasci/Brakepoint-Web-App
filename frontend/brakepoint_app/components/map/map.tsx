@@ -1918,6 +1918,8 @@ export default function MapView({
 
       mapRef.current = null;
       editControlRef.current = null;
+      drawControlRef.current = null;
+      geocoderControlRef.current = null;
     };
   }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
 
