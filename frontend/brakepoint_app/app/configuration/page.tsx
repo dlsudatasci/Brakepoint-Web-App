@@ -616,7 +616,7 @@ function MapPageInner() {
         />
       </Box>
 
-      <SideTab side="left" open={open} onToggle={() => setOpen(!open)}>
+      <SideTab side="left" open={open} invisible={false} onToggle={() => setOpen(!open)}>
         {savedLocation && (
           <Box sx={{ mb: 2, mt: 6 }}>
             <Typography variant="h3">{savedLocation.name}</Typography>

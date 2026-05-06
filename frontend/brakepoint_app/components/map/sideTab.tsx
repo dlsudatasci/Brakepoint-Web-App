@@ -5,14 +5,17 @@ import ToggleDrawer from './toggleDrawer';
 import './sideTab.css';
 
 type SideTabProps = {
-  side: 'left' | 'right';
+  side: 'left' | 'right' | "top";
   open: boolean;
+  invisible?: boolean;
   onToggle: () => void;
+  style?: object;
   children?: React.ReactNode;
 };
 
-export default function SideTab({ side, open, onToggle, children }: SideTabProps) {
-  const [width, setWidth] = useState(480);
+export default function SideTab({ side, open, invisible = false, onToggle, style = {}, children }: SideTabProps) {
+  const [width, setWidth] = useState(33);
+  const [height, setHeight] = useState(12);
   const isDragging = useRef(false);
 
   useEffect(() => {
@@ -20,11 +23,17 @@ export default function SideTab({ side, open, onToggle, children }: SideTabProps
       if (!isDragging.current) return;
 
       if (side==='left') {
-        setWidth(Math.min(Math.max(e.clientX, 480), 720));
+        //setWidth(Math.min(Math.max(e.clientX, 480), 720));
+        setWidth(33);
       }
 
       if (side==='right') {
-        setWidth(Math.min(Math.max(window.innerWidth - e.clientX, 480), 720));
+        //setWidth(Math.min(Math.max(window.innerWidth - e.clientX, 480), 720));
+        setWidth(33);
+      }; 
+
+      if (side==='top') {
+        setHeight(10);
       }; 
     };
 
@@ -61,9 +70,14 @@ export default function SideTab({ side, open, onToggle, children }: SideTabProps
 
   return (
     <>
-      <div className={`side-tab side-tab-${side} ${open ? 'open' : 'closed'}`} style={{ width: `${width}px` }}
+      <div
+        className={`side-tab side-tab-${side} ${ open ? 'open' : 'closed' } ${ invisible ? "main-invisible" : "" }`}
+        style={{
+          width: ["left", "right"].includes(side) ? `${width}em` : "100%",
+          height: ["top", "bottom"].includes(side) ? `${height}em` : "100%",
+        }}
       >
-        <div className="side-tab-content">{children}</div>
+        <div className="side-tab-content" style = {style}>{children}</div>
 
         <div
           className={`side-tab-resizer side-tab-resizer-${side}`}
@@ -71,7 +85,7 @@ export default function SideTab({ side, open, onToggle, children }: SideTabProps
         />
       </div>
 
-      <ToggleDrawer side={side} open={open} onToggle={onToggle} sideTabWidth={width}/>
+      <ToggleDrawer side={side} open={open} invisible={invisible} onToggle={onToggle} sideTabWidth={["left", "right"].includes(side) ? width : height}/>
     </>
   );
 }

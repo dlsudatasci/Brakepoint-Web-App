@@ -2,7 +2,7 @@
   position: absolute !important;
   top: 50%;
   z-index: 200;
-  background-color: #ffffff !important;
+  background-color: #ffffff /*!important*/;
   color: #0f172a;
   border: none;
   cursor: pointer;
@@ -19,55 +19,68 @@
   background-color: #e0e4e9ff;
 }
 
+.toggle-button.main-invisible {
+  margin: 0.33em; 
+}
+
 .toggle-top {
-  border-radius: 0 0 5rem 5rem !important;   
+  border-radius: 0 0 5rem 5rem;  
+  top: 0%;
   left: 50%;
   transform: translateX(-50%) translateY(0);
   width: 7.5rem;
   height: 2rem;
 }
-
 .toggle-top.open {
   transform: translateX(-50%) translateY(var(--side-tab-width));
 }
+.toggle-top.main-invisible {
+  border-radius: 2.5rem 2.5rem 5rem 5rem;  
+}
 
 .toggle-bottom {
-  border-radius: 5rem 5rem 0 0 !important;  
+  border-radius: 5rem 5rem 0 0;  
   bottom: 0;
   left: 50%;
   transform: translateX(-50%) translateY(0);
   width: 7.5rem;
   height: 2rem;
 }
-
 .toggle-bottom.open {
   transform: translateX(-50%) translateY(calc(var(--side-tab-width) * -1));
 }
+.toggle-bottom.main-invisible {
+  border-radius: 5rem 5rem 2.5rem 2.5rem;  
+}
 
 .toggle-left {
-  border-radius: 0 5rem 5rem 0 !important;  
+  border-radius: 0 5rem 5rem 0;  
   left: 0;
   top: 50%;
   transform: translateY(-50%) translateX(0);
   width: 2rem;
   height: 7.5rem;
 }
-
 .toggle-left.open {
   transform: translateY(-50%) translateX(var(--side-tab-width));
 }
+.toggle-left.main-invisible {
+  border-radius: 2.5rem 5rem 5rem 2.5rem;  
+}
 
 .toggle-right {
-  border-radius: 5rem 0 0 5rem !important;  
+  border-radius: 5rem 0 0 5rem;  
   right: 0;
   top: 50%;
   transform: translateY(-50%) translateX(0);
   width: 2rem;
   height: 7.5rem;
 }
-
 .toggle-right.open {
   transform: translateY(-50%) translateX(calc(var(--side-tab-width) * -1));
+}
+.toggle-right.main-invisible {
+  border-radius: 5rem 2.5rem 2.5rem 5rem;  
 }
 
 .toggle-button svg {
