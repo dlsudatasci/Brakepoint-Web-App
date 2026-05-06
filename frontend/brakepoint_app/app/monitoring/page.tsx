@@ -55,8 +55,18 @@ function MonitoringContent() {
     setVisibleCameraIds(ids);
   }, []);
 
-  // If a cameraId was passed via query param, set goTo so the map flies to it
-  const [goToTarget, setGoToTarget] = useState<[number, number] | null>(null);
+
+  const [goToTarget, setGoToTarget] = useState<[number, number] | null>(() => {
+    if (!initialCameraId) return null;
+    try {
+      const raw = sessionStorage.getItem("bp_cameras_v1");
+      if (!raw) return null;
+      const cached = JSON.parse(raw);
+      const target = cached.find((c: any) => String(c.id) === String(initialCameraId));
+      if (target?.lng != null && target?.lat != null) return [target.lng, target.lat];
+    } catch {}
+    return null;
+  });
 
   const handleCamerasLoaded = useCallback(
     (cameras: any[]) => {
@@ -118,7 +128,10 @@ function MonitoringContent() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("monitoringDrawerH", drawerHeight.toString());
+    const t = setTimeout(() => {
+      localStorage.setItem("monitoringDrawerH", drawerHeight.toString());
+    }, 400);
+    return () => clearTimeout(t);
   }, [drawerHeight]);
 
   useEffect(() => {
