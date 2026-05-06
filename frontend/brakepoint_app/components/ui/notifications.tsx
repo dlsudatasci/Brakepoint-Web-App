@@ -14,7 +14,9 @@ export default function Notification() {
   const [notificationAnchor, setNotificationAnchor] = useState<null | HTMLElement>(null);
   const { notifications, markAsRead, clearAll, unreadCount, toast, hideToast } = useNotifications();
 
-  if (pathname === "/home") {
+  const hiddenRoutes = ["/home", "/logIn", "/signUp"];
+  
+  if (hiddenRoutes.includes(pathname)) {
     return null;
   }
 
