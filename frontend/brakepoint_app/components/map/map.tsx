@@ -2659,9 +2659,8 @@ export default function MapView({
     <div className="map-wrap">
       <div ref={mapContainer} className="map" />
       {mode === "explore" && (
-
-                  <>
-            <div className="explore-toolbar-row">
+          <SideTab side="top" open={open} invisible={true} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>
+            <>
               <div className="explore-toolbar explore-toolbar--primary-panel">
                 <span className="explore-toolbar__step">
                   {explorePhase === "drawing-sub"
@@ -2771,12 +2770,11 @@ export default function MapView({
                   ))}
                 </div>
               )}
-            </div>
 
-            
+              {focusError && <div className="explore-error">{focusError}</div>}
 
-            {focusError && <div className="explore-error">{focusError}</div>}
-          </>
+            </>
+          </SideTab>
       )}
 
       <div className="explore-status">

@@ -7,12 +7,13 @@ import './sideTab.css';
 type SideTabProps = {
   side: 'left' | 'right' | "top";
   open: boolean;
-  invisible: boolean;
+  invisible?: boolean;
   onToggle: () => void;
+  style?: object;
   children?: React.ReactNode;
 };
 
-export default function SideTab({ side, open, invisible = false, onToggle, children }: SideTabProps) {
+export default function SideTab({ side, open, invisible = false, onToggle, style = {}, children }: SideTabProps) {
   const [width, setWidth] = useState(33);
   const [height, setHeight] = useState(12);
   const isDragging = useRef(false);
@@ -76,7 +77,7 @@ export default function SideTab({ side, open, invisible = false, onToggle, child
           height: ["top", "bottom"].includes(side) ? `${height}em` : "100%",
         }}
       >
-        <div className="side-tab-content">{children}</div>
+        <div className="side-tab-content" style = {style}>{children}</div>
 
         <div
           className={`side-tab-resizer side-tab-resizer-${side}`}
