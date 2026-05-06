@@ -58,7 +58,18 @@ function MapPageInner() {
   const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
   const selectedFeedIdRef = useRef<number | null>(null);
 
-  const [goTo, setGoTo] = useState<[number, number] | null>(null);
+
+  const [goTo, setGoTo] = useState<[number, number] | null>(() => {
+    if (!selectedCameraIdFromUrl) return null;
+    try {
+      const raw = sessionStorage.getItem("bp_cameras_v1");
+      if (!raw) return null;
+      const cached = JSON.parse(raw);
+      const target = cached.find((c: any) => String(c.id) === String(selectedCameraIdFromUrl));
+      if (target?.lng != null && target?.lat != null) return [target.lng, target.lat];
+    } catch {}
+    return null;
+  });
   const [goToBounds, setGoToBounds] = useState<[[number, number], [number, number]] | null>(null);
 
   const [savedLocation, setSavedLocation] = useState<SavedLocation | null>(null);
@@ -112,7 +123,8 @@ function MapPageInner() {
       if (!savedLocationIdFromUrl) {
         setSavedLocation(null);
         setGoToBounds(null);
-        setGoTo(null);
+
+        if (!selectedCameraIdFromUrl) setGoTo(null);
         return;
       }
 
