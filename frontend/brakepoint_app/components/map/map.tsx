@@ -1944,7 +1944,6 @@ export default function MapView({
     }
 
     if (mode === "explore") {
-      showMapillarySigns = false;
       if (!drawControlRef.current) {
         const drawControl = new MaplibreTerradrawControl({
           modes: ["select", "rectangle"],
@@ -2085,6 +2084,8 @@ export default function MapView({
             if (!map.getSource(MAPILLARY_SOURCE_ID)) return;
             if (map.getLayer(MAPILLARY_LAYER_ID)) return;
 
+            const belowLayer = map.getLayer("focus-areas-mask") ? "focus-areas-mask" : undefined;
+
             map.addLayer({
               id: MAPILLARY_LAYER_ID,
               type: "symbol",
@@ -2098,7 +2099,7 @@ export default function MapView({
                 "icon-allow-overlap": true,
                 "icon-ignore-placement": true,
               },
-            });
+            }, belowLayer);
 
             map.on("click", MAPILLARY_LAYER_ID, (e: any) => {
               const feature = e.features?.[0];
@@ -2420,6 +2421,8 @@ export default function MapView({
           data,
         });
 
+        const aboveLayer = map.getLayer(MAPILLARY_LAYER_ID) ? MAPILLARY_LAYER_ID : undefined;
+
         map.addLayer({
           id: maskFillId,
           type: "fill",
@@ -2429,7 +2432,7 @@ export default function MapView({
             "fill-color": "#000",
             "fill-opacity": 0.28,
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: fillId,
@@ -2445,7 +2448,7 @@ export default function MapView({
               0.12,
             ],
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: lineId,
@@ -2461,7 +2464,7 @@ export default function MapView({
               2.5,
             ],
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: labelId,
