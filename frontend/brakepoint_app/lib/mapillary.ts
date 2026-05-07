@@ -111,80 +111,7 @@ export const SIGN_IMAGE_ID: Record<BrakePointSignClass, string> = {
   "Dangerous Road Sign":     "sign-dangerous",
 };
 
-function speedSvg(num: number): string {
-  const label = String(num);
-  const fs = num >= 100 ? 20 : 24;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
-  <circle cx="26" cy="26" r="25" fill="white" stroke="#cc0000" stroke-width="5"/>
-  <text x="26" y="32" text-anchor="middle" font-family="Arial Black,Arial,sans-serif"
-        font-size="${fs}" font-weight="900" fill="#111">${label}</text>
-</svg>`;
-}
-
-function stopSvg(): string {
-  const r = 23, cx = 26, cy = 26;
-  const pts: string[] = [];
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI / 8) + (i * Math.PI) / 4;
-    pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`);
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
-  <polygon points="${pts.join(" ")}" fill="#cc0000" stroke="white" stroke-width="2"/>
-  <text x="26" y="32" text-anchor="middle" font-family="Arial Black,Arial,sans-serif"
-        font-size="16" font-weight="900" fill="white" letter-spacing="1">STOP</text>
-</svg>`;
-}
-
-function pedestrianSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
-  <rect x="2" y="2" width="48" height="48" rx="4" fill="#1565C0" stroke="white" stroke-width="2"/>
-  <!-- head -->
-  <circle cx="26" cy="12" r="4" fill="white"/>
-  <!-- body / walking pose -->
-  <line x1="26" y1="16" x2="26" y2="30" stroke="white" stroke-width="3" stroke-linecap="round"/>
-  <line x1="26" y1="22" x2="20" y2="27" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-  <line x1="26" y1="22" x2="32" y2="27" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-  <line x1="26" y1="30" x2="20" y2="40" stroke="white" stroke-width="3" stroke-linecap="round"/>
-  <line x1="26" y1="30" x2="32" y2="40" stroke="white" stroke-width="3" stroke-linecap="round"/>
-</svg>`;
-}
-
-function noTurnSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
-  <circle cx="26" cy="26" r="24" fill="white" stroke="#cc0000" stroke-width="4"/>
-  <!-- turn arrow -->
-  <path d="M22 34 Q18 20 30 20 L28 16 L36 22 L28 28 L30 24 Q22 24 26 34 Z"
-        fill="#333" stroke="none"/>
-  <!-- diagonal ban line -->
-  <line x1="10" y1="10" x2="42" y2="42" stroke="#cc0000" stroke-width="5" stroke-linecap="round"/>
-</svg>`;
-}
-
-function directionSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="44" viewBox="0 0 60 44">
-  <rect x="2" y="2" width="56" height="40" rx="3" fill="#1565C0" stroke="white" stroke-width="2"/>
-  <polygon points="20,12 40,22 20,32" fill="white"/>
-</svg>`;
-}
-
-function dangerousSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="48" viewBox="0 0 52 48">
-  <polygon points="26,3 50,45 2,45" fill="#FFD600" stroke="#333" stroke-width="3" stroke-linejoin="round"/>
-  <text x="26" y="42" text-anchor="middle" font-family="Arial Black,Arial,sans-serif"
-        font-size="28" font-weight="900" fill="#333">!</text>
-</svg>`;
-}
-
-export function getSignSvg(cls: BrakePointSignClass): string {
-  if (cls === "Stop Sign")         return stopSvg();
-  if (cls === "Pedestrian Sign")   return pedestrianSvg();
-  if (cls === "No Turn Sign")      return noTurnSvg();
-  if (cls === "Direction Sign")    return directionSvg();
-  if (cls === "Dangerous Road Sign") return dangerousSvg();
-  const m = cls.match(/^(\d+)kph/);
-  if (m) return speedSvg(parseInt(m[1], 10));
-  return speedSvg(0);
-}
+export const SIGN_IMAGE_PATH = "./traffic-icons"
 
 export function loadSignImages(map: any, token?: string): Promise<void> {
   // ── Early exit: all images already in the map's image atlas ───────────
@@ -261,9 +188,7 @@ function loadSvgFallback(map: any): Promise<void> {
     if (map.hasImage(imageId)) return Promise.resolve();
 
     return new Promise<void>((resolve) => {
-      const svg  = getSignSvg(cls);
-      const blob = new Blob([svg], { type: "image/svg+xml" });
-      const url  = URL.createObjectURL(blob);
+      const url = `${SIGN_IMAGE_PATH}/${SIGN_IMAGE_ID[cls]}.svg`
       const img  = new Image();
 
       img.onload = () => {
