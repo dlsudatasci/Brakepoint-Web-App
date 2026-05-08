@@ -59,7 +59,11 @@ jobs:
             fi
 
             echo "=== Restarting backend service ==="
-            systemctl restart "$BACKEND_SVC"
+            # Stop service and kill any stale process still holding port 8000
+            systemctl stop "$BACKEND_SVC" || true
+            fuser -k 8000/tcp 2>/dev/null || true
+            sleep 3
+            systemctl start "$BACKEND_SVC"
 
             echo "=== Building frontend ==="
             cd "$PROJECT/frontend/brakepoint_app"
