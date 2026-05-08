@@ -32,8 +32,6 @@ test.describe("Configuration mode", () => {
     await expect(editBtn).toBeVisible({ timeout: 8_000 });
   });
 
-  // Camera CRUD via API (bypass UI for speed, verify state) 
-
   test.describe("Camera API state management", () => {
     let accessToken: string;
     let cameraId: number;
@@ -103,8 +101,6 @@ test.describe("Configuration mode", () => {
       }
     });
   });
-
-  // Polygon assignment 
 
   test.describe("Polygon & camera association", () => {
     let accessToken: string;

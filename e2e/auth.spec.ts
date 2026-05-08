@@ -53,7 +53,6 @@ test.describe("Login — invalid flows", () => {
 
   test("empty form shows validation error", async ({ page }) => {
     await page.getByRole("button", { name: /^login$/i }).click();
-    // Either a browser native validation bubble or a rendered error
     const hasError = await page.locator("[aria-invalid='true'], .error, [role='alert']").count() > 0;
     expect(hasError).toBeTruthy();
   });
@@ -73,7 +72,6 @@ test.describe("Sign-up", () => {
     await page.getByLabel(/email/i).fill(`${username}@test.com`);
     await page.getByLabel(/password/i).first().fill("StrongPass99!");
     await page.getByRole("button", { name: /^sign up$/i }).click();
-    // Signup redirects to /logIn after a 2 second delay
     await expect(page).toHaveURL(/login|logIn|dashboard/, { timeout: 10_000 });
   });
 
@@ -83,7 +81,6 @@ test.describe("Sign-up", () => {
     await page.getByLabel(/email/i).fill("dup@test.com");
     await page.getByLabel(/password/i).first().fill("StrongPass99!");
     await page.getByRole("button", { name: /^sign up$/i }).click();
-    // The API returns serializer errors — any visible error text is acceptable
     await expect(page.locator("[role='alert'], p").filter({ hasText: /error|already|taken|exist|invalid/i }).first()).toBeVisible({ timeout: 5_000 });
   });
 });
@@ -93,7 +90,6 @@ test.describe("Sign-up", () => {
 // ---------------------------------------------------------------------------
 
 test("unauthenticated visit to /dashboard redirects to login", async ({ page }) => {
-  // Navigate to a real page first so localStorage is accessible
   await page.goto("/logIn");
   await page.evaluate(() => {
     localStorage.clear();
