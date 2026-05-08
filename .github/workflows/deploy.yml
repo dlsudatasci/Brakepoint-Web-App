@@ -1,0 +1,104 @@
+﻿name: Deploy to Production
+
+# Fires only when code lands on main (i.e. after a PR is merged).
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH deploy to 103.231.240.148:32011
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 103.231.240.148
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 32011
+          script: |
+            set -euo pipefail
+
+            PROJECT="/root/BrakePoint-Web-App"
+            BACKEND_SVC="brakepoint-backend"
+            FRONTEND_SVC="brakepoint-frontend"
+            VENV="$PROJECT/.venv/bin"
+
+            cd "$PROJECT"
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Updating backend ==="
+            "$VENV/pip" install -r backend/requirements.txt --quiet
+
+            cd "$PROJECT/backend"
+            "$VENV/python" manage.py migrate --no-input
+            "$VENV/python" manage.py collectstatic --no-input --clear
+            cd "$PROJECT"
+
+            echo "=== Patching systemd service file ==="
+            SERVICE_FILE="/etc/systemd/system/${BACKEND_SVC}.service"
+            if [ -f "$SERVICE_FILE" ]; then
+              if grep -q 'WorkingDirectory' "$SERVICE_FILE"; then
+                sed -i "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT/backend|" "$SERVICE_FILE"
+              else
+                sed -i "/^\[Service\]/a WorkingDirectory=$PROJECT/backend" "$SERVICE_FILE"
+              fi
+              if ! grep -q 'DJANGO_SETTINGS_MODULE' "$SERVICE_FILE"; then
+                sed -i "/^\[Service\]/a Environment=DJANGO_SETTINGS_MODULE=BrakePoint_Project.settings" "$SERVICE_FILE"
+              fi
+              systemctl daemon-reload
+              echo "Service file patched."
+            else
+              echo "WARNING: $SERVICE_FILE not found"
+            fi
+
+            echo "=== Restarting backend service ==="
+            # Stop service, then loop-kill until port 8000 is fully released
+            systemctl stop "$BACKEND_SVC" || true
+            timeout 30 bash -c '
+              while fuser 8000/tcp 2>/dev/null; do
+                fuser -k 8000/tcp 2>/dev/null || true
+                sleep 1
+              done
+            ' || true
+            systemctl start "$BACKEND_SVC"
+
+            echo "=== Building frontend ==="
+            cd "$PROJECT/frontend/brakepoint_app"
+            npm ci
+            npm run build
+
+            echo "=== Restarting frontend service ==="
+            systemctl restart "$FRONTEND_SVC"
+
+            echo "=== Waiting for backend to be ready ==="
+            sleep 15
+            if ! systemctl is-active --quiet "$BACKEND_SVC"; then
+              echo "ERROR: $BACKEND_SVC is not active after restart"
+              journalctl -u "$BACKEND_SVC" -n 100 --no-pager
+              exit 1
+            fi
+            timeout 90 bash -c \
+              'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 3; done' \
+              || { echo "ERROR: backend timed out"; journalctl -u "$BACKEND_SVC" -n 50 --no-pager; exit 1; }
+
+            echo "=== Deploy complete ==="
+
+      - name: Smoke test - frontend reachable via nginx
+        run: |
+          sleep 10
+          curl --fail --max-time 30 --retry 5 --retry-delay 5 \
+            http://103.231.240.148:32010 \
+            -o /dev/null -w "HTTP %{http_code}\n"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deploy failed - check logs above."
+          echo "::error::To roll back: ssh -p 32011 root@103.231.240.148 'cd /root/BrakePoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"

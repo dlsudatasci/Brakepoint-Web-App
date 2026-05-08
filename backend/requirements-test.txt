@@ -6,7 +6,9 @@ django-extensions
 python-dotenv
 requests
 pymysql
-gunicorn
-opencv-python
-ultralytics
-numpy
+
+# Test-only dependencies 
+pytest>=8.0
+pytest-django>=4.8
+pytest-mock>=3.14
+factory-boy>=3.3
