@@ -27,9 +27,31 @@ from .serializers import (
     VideoSerializer,
 )
 
+from .polygon_validators import (
+    validate_geometry,
+    is_degenerate,
+    is_self_intersecting,
+    polygon_within_polygon,
+)
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from yolo_processor import run_detection_on_video
-from mask_rcnn_detectron2_processor import run_traffic_sign_detection_on_video, detect_signs_on_first_frame_of_video, detect_signs_on_image_bytes, DETECTRON2_AVAILABLE
+try:
+    from yolo_processor import run_detection_on_video
+    from mask_rcnn_detectron2_processor import (
+        run_traffic_sign_detection_on_video,
+        detect_signs_on_first_frame_of_video,
+        detect_signs_on_image_bytes,
+        DETECTRON2_AVAILABLE,
+    )
+except ImportError:  # pragma: no cover — ML packages not installed in CI
+    def run_detection_on_video(*a, **kw): return {"status": "error", "error": "YOLO not available"}
+    def run_traffic_sign_detection_on_video(*a, **kw): return {"status": "error"}
+    def detect_signs_on_first_frame_of_video(*a, **kw): return {}
+    def detect_signs_on_image_bytes(*a, **kw): return {}
+    DETECTRON2_AVAILABLE = False
+
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+MAX_VIDEO_SIZE_MB = 500
 api_view(['GET'])
 @permission_classes([AllowAny])
 def home(request):
@@ -140,6 +162,47 @@ def saved_locations_list_create(request):
                         {"success": False, "error": "Parent saved location not found"},
                         status=status.HTTP_404_NOT_FOUND,
                     )
+
+            # ── Polygon geometry validation ──────────────────────────────────
+            raw_geometry = body.get("geometry")
+            if raw_geometry is not None:
+                try:
+                    ring = validate_geometry(raw_geometry)
+                except ValueError as ve:
+                    return Response(
+                        {"success": False, "error": str(ve)},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                if is_degenerate(ring):
+                    return Response(
+                        {"success": False, "error": "Polygon has zero or near-zero area (degenerate)"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                if is_self_intersecting(ring):
+                    return Response(
+                        {"success": False, "error": "Polygon is self-intersecting"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                location_type = body.get("location_type", "sub_area")
+                if location_type == "sub_area" and parent_id is not None:
+                    try:
+                        parent = SavedLocation.objects.get(id=parent_id, user=request.user)
+                        if parent.geometry:
+                            try:
+                                parent_ring = validate_geometry(parent.geometry)
+                                if not polygon_within_polygon(ring, parent_ring):
+                                    return Response(
+                                        {"success": False, "error": "sub-area must be within main AOI"},
+                                        status=status.HTTP_400_BAD_REQUEST,
+                                    )
+                            except ValueError:
+                                pass  # parent geometry malformed — skip containment check
+                    except SavedLocation.DoesNotExist:
+                        pass  # already handled above
+            # ────────────────────────────────────────────────────────────────
 
             loc = SavedLocation.objects.create(
                 user=request.user,
@@ -587,10 +650,26 @@ def _upload_and_process_video(request):
     
     if not video_file:
         return Response({'error': 'No video file provided'}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     if not camera_id:
         return Response({'error': 'Camera ID is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    # ── File format & size validation ────────────────────────────────────────
+    _, ext = os.path.splitext(video_file.name or '')
+    if ext.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        allowed = ', '.join(sorted(ALLOWED_VIDEO_EXTENSIONS))
+        return Response(
+            {'error': f'Invalid file format "{ext or "(none)"}". Allowed: {allowed}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if video_file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024:
+        return Response(
+            {'error': f'File too large. Maximum allowed size is {MAX_VIDEO_SIZE_MB} MB.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    # ─────────────────────────────────────────────────────────────────────────
+
     try:
         camera = Camera.objects.get(pk=camera_id, user=user)
     except Camera.DoesNotExist:

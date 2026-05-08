@@ -1,0 +1,81 @@
+name: Deploy to Production
+
+# Fires only when code lands on main (i.e. after a PR is merged).
+# Branch protection should require the "CI — Backend & Frontend Tests"
+# workflow to pass before any PR can be merged to main.
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH deploy → 103.231.240.148:32011
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 103.231.240.148
+          username: root
+          #   password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 32011         
+          script: |
+            set -euo pipefail
+
+            PROJECT="${{ vars.DEPLOY_PATH }}"
+            cd "$PROJECT"
+
+            echo "=== Pulling latest code from dlsudatasci/Brakepoint-Web-App ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            # ── Backend ───────────────────────────────────────────────────
+            echo "=== Updating backend ==="
+            source .venv/bin/activate
+
+            pip install -r backend/requirements.txt --quiet
+
+            cd backend
+            python manage.py migrate --no-input
+            python manage.py collectstatic --no-input --clear
+            cd "$PROJECT"
+
+            deactivate
+
+            echo "=== Restarting backend service ==="
+            systemctl restart ${{ vars.BACKEND_SERVICE }}
+
+            # ── Frontend ──────────────────────────────────────────────────
+            echo "=== Building frontend ==="
+            cd "$PROJECT/frontend/brakepoint_app"
+            npm ci --prefer-offline
+            npm run build
+
+            echo "=== Restarting frontend service ==="
+            systemctl restart ${{ vars.FRONTEND_SERVICE }}
+
+            echo "=== Deploy complete ==="
+
+      # Smoke tests 
+      - name: Smoke test — site responds at port 32010
+        run: |
+          sleep 15
+          curl --fail --max-time 30 --retry 4 --retry-delay 5 \
+            http://103.231.240.148:32010 \
+            -o /dev/null -w "HTTP %{http_code}\n"
+
+      - name: Smoke test — backend API responds through nginx
+        run: |
+          curl --fail --max-time 30 --retry 4 --retry-delay 5 \
+            http://103.231.240.148:32010/api/check-auth/ \
+            -o /dev/null -w "HTTP %{http_code}\n"
+
+      # Notify on failure
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deploy failed — check logs above."
+          echo "::error::To roll back: ssh -p 32011 root@103.231.240.148 'cd /root/BrakePoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"

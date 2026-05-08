@@ -1,0 +1,77 @@
+name: CI — Backend & Frontend Tests
+
+on:
+  push:
+    branches:
+      - "feat/**"
+      - "fix/**"
+      - "refactor/**"
+      - "chore/**"
+      - "test/**"
+      - develop
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  # ── Django / pytest ──────────────────────────────────────────────────────────
+  backend:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: "ci-test-secret-key"
+      DEBUG: "True"
+      DJANGO_SETTINGS_MODULE: BrakePoint_Project.test_settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements-test.txt
+
+      - name: Run pytest
+        working-directory: backend
+        run: pytest --tb=short -q
+
+  # ── Next.js / Jest ──────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend tests (Jest + type-check)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/brakepoint_app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/brakepoint_app
+        run: npm ci
+
+      - name: TypeScript type-check
+        working-directory: frontend/brakepoint_app
+        run: npm run type-check
+
+      - name: Run Jest unit tests
+        working-directory: frontend/brakepoint_app
+        run: npm test -- --ci --passWithNoTests
+        env:
+          # Dummy token so Next.js builds don't fail on missing env
+          NEXT_PUBLIC_MAPILLARY_TOKEN: "ci-dummy-token"
+
+      - name: ESLint
+        working-directory: frontend/brakepoint_app
+        run: npm run lint

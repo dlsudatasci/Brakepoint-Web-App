@@ -6,6 +6,7 @@ django-extensions
 python-dotenv
 requests
 pymysql
+gunicorn
 opencv-python
 ultralytics
 numpy
