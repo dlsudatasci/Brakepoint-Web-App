@@ -5,8 +5,9 @@ django-cors-headers
 django-extensions
 python-dotenv
 requests
+pymysql
 
-# ── Test-only dependencies ──────────────────────────────────────────────────
+# Test-only dependencies 
 pytest>=8.0
 pytest-django>=4.8
 pytest-mock>=3.14
