@@ -59,10 +59,14 @@ jobs:
             fi
 
             echo "=== Restarting backend service ==="
-            # Stop service and kill any stale process still holding port 8000
+            # Stop service, then loop-kill until port 8000 is fully released
             systemctl stop "$BACKEND_SVC" || true
-            fuser -k 8000/tcp 2>/dev/null || true
-            sleep 3
+            timeout 30 bash -c '
+              while fuser 8000/tcp 2>/dev/null; do
+                fuser -k 8000/tcp 2>/dev/null || true
+                sleep 1
+              done
+            ' || true
             systemctl start "$BACKEND_SVC"
 
             echo "=== Building frontend ==="
