@@ -55,6 +55,12 @@ jobs:
             echo "=== Restarting frontend service ==="
             systemctl restart ${{ vars.FRONTEND_SERVICE }}
 
+            # Wait for services to be ready then run smoke tests
+            echo "=== Waiting for services ==="
+            sleep 5
+            timeout 30 bash -c 'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 2; done'
+            echo "Backend smoke test passed"
+
             echo "=== Deploy complete ==="
 
       # Smoke tests 
@@ -63,12 +69,6 @@ jobs:
           sleep 15
           curl --fail --max-time 30 --retry 4 --retry-delay 5 \
             http://103.231.240.148:32010 \
-            -o /dev/null -w "HTTP %{http_code}\n"
-
-      - name: Smoke test — backend API responds through nginx
-        run: |
-          curl --fail --max-time 30 --retry 4 --retry-delay 5 \
-            http://103.231.240.148:32010/api/check-auth/ \
             -o /dev/null -w "HTTP %{http_code}\n"
 
       # Notify on failure
