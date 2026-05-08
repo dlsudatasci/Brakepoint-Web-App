@@ -2777,7 +2777,7 @@ export default function MapView({
             </>
           </SideTab>
       )}
-
+    {mode === "explore" && (
       <div className="explore-status">
         {explorePhase === "drawing-sub"
           ? activeSubAreaIndex != null
@@ -2793,6 +2793,7 @@ export default function MapView({
                 : "AOI confirmed. Add sub-areas or select an existing sub-area."
               : "Search for a place if needed, then draw an AOI rectangle."}
       </div>
+    )}
 
       {isEditMode && mode === "map" && (
         <>

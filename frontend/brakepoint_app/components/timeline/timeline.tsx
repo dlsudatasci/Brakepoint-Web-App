@@ -178,11 +178,11 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
   }), [sortedData]);
 
   const vehicleStats = useMemo(() => [
-    { label: 'Car', value: totalBreakdown.car, color: '#DF6842' },
-    { label: 'Jeepney', value: totalBreakdown.jeepney, color: '#EFA54D' },
-    { label: 'Motorcycle', value: totalBreakdown.motorcycle, color: '#4669A9' },
-    { label: 'Bus', value: totalBreakdown.bus, color: '#9EBEBD' },
-    { label: 'Truck', value: totalBreakdown.truck, color: '#9b64a4' },
+    { label: 'Car', value: totalBreakdown.car, color: '#FFB422' },
+    { label: 'Jeepney', value: totalBreakdown.jeepney, color: '#0DBEFF' },
+    { label: 'Motorcycle', value: totalBreakdown.motorcycle, color: '#22BF75' },
+    { label: 'Bus', value: totalBreakdown.bus, color: '#4254FB' },
+    { label: 'Truck', value: totalBreakdown.truck, color: '#FA4F58' },
   ], [totalBreakdown]);
 
   const bandData = useMemo(() => {
@@ -298,7 +298,6 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
         <Box
           sx={{
             display: 'grid',
-            //gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
             gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md:'repeat(4, 1fr)' },
             gap: 1.5,
             mb: 2.5,
@@ -396,7 +395,6 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
             <Box 
               sx={{ 
                 border: '1.5px solid #a5a5a5', 
-                //boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
                 borderRadius: '12px', 
                 p: 2, 
                 display: 'flex', 
@@ -451,8 +449,10 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
                     id: i,
                     value: v.value,
                     label: v.label,
-                    color: v.color
-                  }))
+                    color: v.color,
+                  })),
+                  innerRadius: 55,
+                  outerRadius: 100,
                 }]}
               />
             </Box>
