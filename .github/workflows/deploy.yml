@@ -57,8 +57,12 @@ jobs:
 
             # Wait for services to be ready then run smoke tests
             echo "=== Waiting for services ==="
-            sleep 5
-            timeout 30 bash -c 'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 2; done'
+            # Give systemd time to fully start the backend (torch/CUDA init is slow)
+            sleep 10
+            systemctl is-active --quiet ${{ vars.BACKEND_SERVICE }} || \
+              (echo "ERROR: backend service is not active"; systemctl status ${{ vars.BACKEND_SERVICE }} --no-pager; exit 1)
+            timeout 90 bash -c 'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 3; done' || \
+              (echo "ERROR: backend did not respond within 90s"; systemctl status ${{ vars.BACKEND_SERVICE }} --no-pager; exit 1)
             echo "Backend smoke test passed"
 
             echo "=== Deploy complete ==="
