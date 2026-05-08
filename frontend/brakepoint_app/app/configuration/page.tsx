@@ -752,8 +752,8 @@ function MapPageInner() {
                     </IconButton>
                   </Box>
 
-                  <Typography variant="h5">{selectedFeedData.location}</Typography>
-                  <Typography variant="h5">
+                  <Typography variant="h5" sx={{marginTop: 1}}>{selectedFeedData.location}</Typography>
+                  <Typography variant="h6" sx={{marginTop: 1}}>
                     {selectedFeedData.lng}°E, {selectedFeedData.lat}°N
                   </Typography>
                   <Typography variant="body1">Latest Video Uploaded: {selectedFeedData.latestUpload}</Typography>

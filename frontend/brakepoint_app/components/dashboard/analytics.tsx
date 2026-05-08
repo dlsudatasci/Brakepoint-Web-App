@@ -57,6 +57,12 @@ function fmtRate(count: number, total: number): string {
   return ((count / total) * 1000).toFixed(1);
 }
 
+function getPercentage(count: number, total: number): string {
+  if (total === 0) return "0.0%"
+  const res = count / total * 100;
+  return `${res.toFixed(1)}%`;
+}
+
 export default function Analytics() {
   const router = useRouter();
 
@@ -276,21 +282,24 @@ export default function Analytics() {
                     headerText="Speeding"
                     icon={<SpeedOutlinedIcon />}
                     variant="text"
-                    valueText={fmtRate(totals.speeding, v)}
+                    valueText={`${totals.speeding} (${getPercentage(totals.speeding, v)})`}
+                    // valueText={fmtRate(totals.speeding, v)}
                   />
                   <AnalyticsCard
                     compact
                     headerText="Swerving"
                     icon={<SwapCallsIcon />}
                     variant="text"
-                    valueText={fmtRate(totals.swerving, v)}
+                    valueText={`${totals.swerving} (${getPercentage(totals.swerving, v)})`}
+                    // valueText={fmtRate(totals.swerving, v)}
                   />
                   <AnalyticsCard
                     compact
                     headerText="Abrupt stopping"
                     icon={<PanToolOutlinedIcon />}
                     variant="text"
-                    valueText={fmtRate(totals.abrupt_stopping, v)}
+                    valueText={`${totals.abrupt_stopping} (${getPercentage(totals.abrupt_stopping, v)})`}
+                    // valueText={fmtRate(totals.abrupt_stopping, v)}
                   />
                 </Stack>
               </Grid>

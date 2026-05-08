@@ -1311,9 +1311,21 @@ def dashboard_summary(request):
             loc_videos = videos.filter(camera__saved_location=loc)
 
             tags = set()
+            # camera_ids = set()
+            camera_thumbnail = None
+
+            # set tags and camera ids
             for cam in loc.cameras.all():
+                # camera_ids.add(cam.id)
                 for tag in (cam.tags or []):
                     tags.add(tag)
+
+            # get camera thumbnail
+            for video in loc_videos:
+                if camera_thumbnail == None and video.thumbnail != None:
+                    camera_thumbnail = video.thumbnail
+                    break
+
 
             sub_areas.append({
                 "id": loc.id,
@@ -1323,6 +1335,8 @@ def dashboard_summary(request):
                 "geometry": loc.geometry,
                 "bounds": loc.bounds,
                 "camera_count": loc.camera_count,
+                # "camera_id": sorted(camera_ids),
+                "thumbnail": camera_thumbnail,
                 "vehicles": sum(v.vehicles for v in loc_videos),
                 "speeding": sum(v.speeding_count for v in loc_videos),
                 "swerving": sum(v.swerving_count for v in loc_videos),

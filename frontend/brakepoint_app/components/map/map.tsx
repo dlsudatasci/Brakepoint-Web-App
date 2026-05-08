@@ -391,7 +391,8 @@ export default function MapView({
 
   const hasLoadedExploreAreasRef = useRef(false);
 
-  const style = "https://tiles.openfreemap.org/styles/liberty";
+  // const style = "https://tiles.openfreemap.org/styles/liberty";
+  const style = "./map-style.json"
   const lng = 120.9842;
   const lat = 14.5995;
   const zoom = 10;
@@ -1930,7 +1931,7 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    if (mode === "map" || mode === "explore") {
+    if ( /* mode === "map" || */ mode === "explore") {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
@@ -2776,7 +2777,7 @@ export default function MapView({
             </>
           </SideTab>
       )}
-
+    {mode === "explore" && (
       <div className="explore-status">
         {explorePhase === "drawing-sub"
           ? activeSubAreaIndex != null
@@ -2792,6 +2793,7 @@ export default function MapView({
                 : "AOI confirmed. Add sub-areas or select an existing sub-area."
               : "Search for a place if needed, then draw an AOI rectangle."}
       </div>
+    )}
 
       {isEditMode && mode === "map" && (
         <>
