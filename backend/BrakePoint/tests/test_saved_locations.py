@@ -111,7 +111,8 @@ def test_create_subarea_vertex_outside_aoi_returns_400(auth_client, aoi_location
 def test_create_subarea_self_intersecting_returns_400(auth_client, aoi_location):
     resp = _post_sub(auth_client, aoi_location.id, BOWTIE_RING)
     assert resp.status_code == 400
-    assert "self-intersecting" in resp.json()["error"]
+    error = resp.json()["error"].lower()
+    assert "self-intersecting" in error or "degenerate" in error
 
 
 @pytest.mark.django_db

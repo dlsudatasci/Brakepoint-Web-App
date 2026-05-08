@@ -570,8 +570,15 @@ def cameras_api(request):
         return Response({"success": True, "cameras": ser.data})
     
     data = request.data.copy()
-    lat = float(data.get('lat'))
-    lng = float(data.get('lng'))
+    lat_raw = data.get('lat')
+    lng_raw = data.get('lng')
+    if lat_raw is None or lng_raw is None:
+        return Response({'error': 'lat and lng are required'}, status=400)
+    try:
+        lat = float(lat_raw)
+        lng = float(lng_raw)
+    except (ValueError, TypeError):
+        return Response({'error': 'lat and lng must be valid numbers'}, status=400)
     
     # Get actual location name from reverse geocoding
     location_name = get_location_name(lat, lng)
@@ -911,7 +918,7 @@ def _upload_and_process_video(request):
             'video_id': video_record.id
         }
 
-    return Response(response_data)
+    return Response(response_data, status=status.HTTP_201_CREATED)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

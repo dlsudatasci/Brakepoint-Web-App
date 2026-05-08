@@ -93,7 +93,7 @@ POLYGON = [[120.985, 14.595], [120.990, 14.595], [120.990, 14.600], [120.985, 14
 
 @pytest.mark.django_db
 def test_set_camera_polygon(auth_client, camera):
-    resp = auth_client.post(polygon_url(camera.id), {"polygon": POLYGON}, format="json")
+    resp = auth_client.patch(polygon_url(camera.id), {"polygon": POLYGON}, format="json")
     assert resp.status_code == 200
     camera.refresh_from_db()
     assert camera.polygon == POLYGON
@@ -103,7 +103,7 @@ def test_set_camera_polygon(auth_client, camera):
 def test_clear_camera_polygon(auth_client, camera):
     camera.polygon = POLYGON
     camera.save()
-    resp = auth_client.post(polygon_url(camera.id), {"polygon": []}, format="json")
+    resp = auth_client.patch(polygon_url(camera.id), {"polygon": []}, format="json")
     assert resp.status_code == 200
     camera.refresh_from_db()
     assert camera.polygon == []

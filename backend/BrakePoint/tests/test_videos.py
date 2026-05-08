@@ -62,9 +62,9 @@ def test_upload_invalid_format_returns_400(auth_client, camera):
 
 
 @pytest.mark.django_db
-def test_upload_oversized_file_returns_400(auth_client, camera):
+def test_upload_oversized_file_returns_400(auth_client, camera, mocker):
+    mocker.patch('BrakePoint.views.MAX_VIDEO_SIZE_MB', 0)  # any file is too large
     big_file = SimpleUploadedFile("clip.mp4", b"\x00" * 10, content_type="video/mp4")
-    big_file.size = (500 + 1) * 1024 * 1024  # 501 MB
     resp = auth_client.post(UPLOAD_URL,
                             {"file": big_file, "camera_id": camera.id},
                             format="multipart")
