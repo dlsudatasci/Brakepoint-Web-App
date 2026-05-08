@@ -111,8 +111,9 @@ function MonitoringContent() {
   /** Which camera IDs to feed into the timeline */
   const timelineCameraIds = useMemo(() => {
     if (selectedFeedId != null) return [selectedFeedId];
-    return visibleCameraIds;
-  }, [selectedFeedId, visibleCameraIds]);
+    return[];
+    //return visibleCameraIds;
+  }, [selectedFeedId]);
 
   // ── Bottom drawer state ───────────────
   const [drawerOpen, setDrawerOpen] = useState(true);
@@ -302,10 +303,11 @@ function MonitoringContent() {
               />
             ) : (
               <Chip
-                label={`${visibleCameraIds.length} camera${visibleCameraIds.length !== 1 ? "s" : ""} in view`}
+                // label={`${visibleCameraIds.length} camera${visibleCameraIds.length !== 1 ? "s" : ""} in view`}
+                label="Select a camera to view its stats"
                 size="small"
                 variant="outlined"
-                sx={{ fontWeight: 500, fontSize: "0.75rem", marginLeft: "16px" }}
+                sx={{ fontWeight: 500, fontSize: "0.75rem" }}
               />
             )}
           </Box>
