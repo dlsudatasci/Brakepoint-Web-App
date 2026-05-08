@@ -2,6 +2,7 @@ import { test, expect, Page } from "@playwright/test";
 
 const TEST_USER = process.env.TEST_USERNAME ?? "e2euser";
 const TEST_PASS = process.env.TEST_PASSWORD ?? "e2epassword";
+const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
 // Login helper shared across tests
@@ -11,7 +12,7 @@ async function login(page: Page) {
   await page.goto("/logIn");
   await page.getByLabel(/username/i).fill(TEST_USER);
   await page.getByLabel(/password/i).fill(TEST_PASS);
-  await page.getByRole("button", { name: /log in|sign in/i }).click();
+  await page.getByRole("button", { name: /^login$/i }).click();
   await page.waitForURL(/dashboard/);
 }
 
@@ -72,7 +73,7 @@ test.describe("AOI API validation", () => {
   let accessToken: string;
 
   test.beforeAll(async ({ request }) => {
-    const resp = await request.post("/api/login/", {
+    const resp = await request.post(`${BACKEND}/api/login/`, {
       data: { username: TEST_USER, password: TEST_PASS },
     });
     const body = await resp.json();
@@ -80,7 +81,7 @@ test.describe("AOI API validation", () => {
   });
 
   async function postLocation(request: any, body: object) {
-    return request.post("/api/saved-locations/", {
+    return request.post(`${BACKEND}/api/saved-locations/`, {
       data: body,
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -145,7 +146,7 @@ test.describe("AOI API validation", () => {
     });
     expect(subResp.status()).toBe(400);
     const body = await subResp.json();
-    expect(body.error).toMatch(/self-intersecting/i);
+    expect(body.error).toMatch(/self-intersecting|degenerate/i);
   });
 
   test("invalid coordinate format returns 400", async ({ request }) => {

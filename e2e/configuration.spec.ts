@@ -2,12 +2,13 @@ import { test, expect, Page } from "@playwright/test";
 
 const TEST_USER = process.env.TEST_USERNAME ?? "e2euser";
 const TEST_PASS = process.env.TEST_PASSWORD ?? "e2epassword";
+const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
 
 async function login(page: Page) {
   await page.goto("/logIn");
   await page.getByLabel(/username/i).fill(TEST_USER);
   await page.getByLabel(/password/i).fill(TEST_PASS);
-  await page.getByRole("button", { name: /log in|sign in/i }).click();
+  await page.getByRole("button", { name: /^login$/i }).click();
   await page.waitForURL(/dashboard/);
 }
 
@@ -38,14 +39,14 @@ test.describe("Configuration mode", () => {
     let cameraId: number;
 
     test.beforeAll(async ({ request }) => {
-      const resp = await request.post("/api/login/", {
+      const resp = await request.post(`${BACKEND}/api/login/`, {
         data: { username: TEST_USER, password: TEST_PASS },
       });
       accessToken = (await resp.json()).access;
     });
 
     test("create camera returns 201 with camera data", async ({ request }) => {
-      const resp = await request.post("/api/cameras/", {
+      const resp = await request.post(`${BACKEND}/api/cameras/`, {
         data: { lat: 14.60, lng: 120.99, name: "E2E Camera" },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -56,7 +57,7 @@ test.describe("Configuration mode", () => {
     });
 
     test("camera appears in camera list after creation", async ({ request }) => {
-      const resp = await request.get("/api/cameras/", {
+      const resp = await request.get(`${BACKEND}/api/cameras/`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const ids = (await resp.json()).cameras.map((c: any) => c.id);
@@ -64,10 +65,10 @@ test.describe("Configuration mode", () => {
     });
 
     test("delete camera removes it from the list", async ({ request }) => {
-      await request.delete(`/api/cameras/${cameraId}/`, {
+      await request.delete(`${BACKEND}/api/cameras/${cameraId}/`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      const resp = await request.get("/api/cameras/", {
+      const resp = await request.get(`${BACKEND}/api/cameras/`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const ids = (await resp.json()).cameras.map((c: any) => c.id);
@@ -75,15 +76,14 @@ test.describe("Configuration mode", () => {
     });
 
     test("deleting camera also removes its associated videos (cascade)", async ({ request }) => {
-      const camResp = await request.post("/api/cameras/", {
+      const camResp = await request.post(`${BACKEND}/api/cameras/`, {
         data: { lat: 14.60, lng: 120.99 },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const cam = (await camResp.json()).camera;
 
-      const { Readable } = await import("stream");
       const file = Buffer.from("\x00".repeat(10));
-      const uploadResp = await request.post("/api/upload_and_process/", {
+      const uploadResp = await request.post(`${BACKEND}/api/upload_and_process/`, {
         multipart: {
           file: { name: "test.mp4", mimeType: "video/mp4", buffer: file },
           camera_id: String(cam.id),
@@ -93,10 +93,10 @@ test.describe("Configuration mode", () => {
       });
       if (uploadResp.status() === 201) {
         const vidId = (await uploadResp.json()).video_id;
-        await request.delete(`/api/cameras/${cam.id}/`, {
+        await request.delete(`${BACKEND}/api/cameras/${cam.id}/`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        const vidResp = await request.get(`/api/videos/${vidId}/progress/`, {
+        const vidResp = await request.get(`${BACKEND}/api/videos/${vidId}/progress/`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         expect(vidResp.status()).toBe(404);
@@ -111,12 +111,12 @@ test.describe("Configuration mode", () => {
     let cameraId: number;
 
     test.beforeAll(async ({ request }) => {
-      const resp = await request.post("/api/login/", {
+      const resp = await request.post(`${BACKEND}/api/login/`, {
         data: { username: TEST_USER, password: TEST_PASS },
       });
       accessToken = (await resp.json()).access;
 
-      const camResp = await request.post("/api/cameras/", {
+      const camResp = await request.post(`${BACKEND}/api/cameras/`, {
         data: { lat: 14.60, lng: 120.99 },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -125,7 +125,7 @@ test.describe("Configuration mode", () => {
 
     test("set polygon on camera", async ({ request }) => {
       const polygon = [[120.985,14.595],[120.990,14.595],[120.990,14.600],[120.985,14.600]];
-      const resp = await request.post(`/api/cameras/${cameraId}/polygon/`, {
+      const resp = await request.patch(`${BACKEND}/api/cameras/${cameraId}/polygon/`, {
         data: { polygon },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -133,7 +133,7 @@ test.describe("Configuration mode", () => {
     });
 
     test("clear polygon from camera", async ({ request }) => {
-      const resp = await request.post(`/api/cameras/${cameraId}/polygon/`, {
+      const resp = await request.patch(`${BACKEND}/api/cameras/${cameraId}/polygon/`, {
         data: { polygon: [] },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -142,7 +142,7 @@ test.describe("Configuration mode", () => {
 
     test.afterAll(async ({ request }) => {
       if (cameraId) {
-        await request.delete(`/api/cameras/${cameraId}/`, {
+        await request.delete(`${BACKEND}/api/cameras/${cameraId}/`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
       }

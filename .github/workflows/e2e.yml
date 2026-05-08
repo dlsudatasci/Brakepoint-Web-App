@@ -24,6 +24,7 @@ jobs:
       TEST_PASSWORD: e2epassword
       FRONTEND_URL: "http://localhost:3000"
       BACKEND_URL: "http://localhost:8000"
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
 
     steps:
       - uses: actions/checkout@v4
