@@ -18,9 +18,9 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false,   
+  fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  workers: 4,
+  workers: process.env.CI ? 2 : 4,
   reporter: [["html", { open: "never" }], ["list"]],
   timeout: 120_000,
 
@@ -30,7 +30,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     launchOptions: {
-      args: ["--use-gl=egl", "--enable-webgl"],
+      args: ["--disable-gpu", "--no-sandbox"],
     },
   },
 
