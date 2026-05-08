@@ -1931,7 +1931,7 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    if (mode === "map" || mode === "explore") {
+    if ( /* mode === "map" || */ mode === "explore") {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
