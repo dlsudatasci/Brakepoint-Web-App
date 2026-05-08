@@ -59,7 +59,7 @@ function fmtRate(count: number, total: number): string {
 
 function getPercentage(count: number, total: number): string {
   if (total === 0) return "0.0%"
-  let res = count / total * 100;
+  const res = count / total * 100;
   return `${res.toFixed(1)}%`;
 }
 
