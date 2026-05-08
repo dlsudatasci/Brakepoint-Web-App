@@ -43,15 +43,15 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `cd backend && python manage.py runserver 8000 --settings=BrakePoint_Project.test_settings`,
+      command: `cd backend && python manage.py runserver 8000 --settings=BrakePoint_Project.e2e_settings`,
       url: `${BACKEND_URL}/api/check-auth/`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: true,
       timeout: 30_000,
     },
     {
       command: "cd frontend/brakepoint_app && npm run dev",
       url: FRONTEND_URL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: true,
       timeout: 60_000,
     },
   ],
