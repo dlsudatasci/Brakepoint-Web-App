@@ -391,7 +391,8 @@ export default function MapView({
 
   const hasLoadedExploreAreasRef = useRef(false);
 
-  const style = "https://tiles.openfreemap.org/styles/liberty";
+  // const style = "https://tiles.openfreemap.org/styles/liberty";
+  const style = "./map-style-old.json"
   const lng = 120.9842;
   const lat = 14.5995;
   const zoom = 10;
