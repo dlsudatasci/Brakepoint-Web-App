@@ -17,7 +17,7 @@ jobs:
     env:
       SECRET_KEY: "ci-e2e-secret-key"
       DEBUG: "True"
-      DJANGO_SETTINGS_MODULE: BrakePoint_Project.test_settings
+      DJANGO_SETTINGS_MODULE: BrakePoint_Project.e2e_settings
       NEXT_PUBLIC_MAPILLARY_TOKEN: "ci-dummy-token"
       # Credentials for a seed user created in the setup step
       TEST_USERNAME: e2euser
