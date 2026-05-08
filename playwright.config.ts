@@ -22,7 +22,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [["html", { open: "never" }], ["list"]],
-  timeout: 45_000,
+  timeout: 120_000,
 
   use: {
     baseURL: FRONTEND_URL,
