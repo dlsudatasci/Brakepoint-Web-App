@@ -187,6 +187,13 @@ export function getSignSvg(cls: BrakePointSignClass): string {
 }
 
 export function loadSignImages(map: any, token?: string): Promise<void> {
+  // ── Early exit: all images already in the map's image atlas ───────────
+  const allLoaded = ALLOWED_MAPILLARY_PREFIXES.every((prefix) => {
+    const cls = MAPILLARY_TO_BRAKEPOINT[prefix];
+    return map.hasImage(SIGN_IMAGE_ID[cls]);
+  });
+  if (allLoaded) return Promise.resolve();
+
   // ── Try Mapillary's own sprite first ──────────────────────────────────
   if (token) {
     const spriteBase = "https://api.mapillary.com/v4/sprite/traffic_sign@2x";

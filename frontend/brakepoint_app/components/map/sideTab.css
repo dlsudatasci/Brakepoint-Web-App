@@ -29,10 +29,25 @@
   transform: translateX(0);
 }
 
+.side-tab-top {
+  top: 0;
+  transform: translateY(-100%);
+}
+.side-tab-top.open {
+  transform: translateY(0%);
+}
+
 .side-tab-content {
   flex: 1;
   overflow-y: auto;
   position: relative;
+}
+
+.side-tab.main-invisible {
+  background-color: #00000000;
+  box-shadow: none;
+  padding: 32px 32px 0 32px;
+  pointer-events: none;
 }
 
 .side-tab-resizer {

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
+import SideTab from "@components/map/sideTab";
 
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
@@ -289,6 +290,8 @@ export default function MapView({
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
+  const [open, setOpen] = useState(true);
+
   const [isEditMode, setIsEditMode] = useState(false);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
 
@@ -299,10 +302,54 @@ export default function MapView({
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
 
-  const [primaryFocusArea, setPrimaryFocusArea] = useState<FocusArea | null>(null);
-  const [subFocusAreas, setSubFocusAreas] = useState<FocusArea[]>([]);
+
+  const [exploreInitFromCache] = useState<{
+    savedAoiId: number;
+    savedSubAreaIds: Record<number, number>;
+    primaryFocusArea: FocusArea;
+    subFocusAreas: FocusArea[];
+  } | null>(() => {
+    if (mode !== "explore") return null;
+    try {
+      const raw = sessionStorage.getItem("bp_explore_v1");
+      if (!raw) return null;
+      const locs = JSON.parse(raw) as SavedLocationRecord[];
+      const savedAoi = locs.find((l) => l.location_type === "aoi");
+      if (!savedAoi) return null;
+      const nextPrimary = savedLocationToFocusArea(savedAoi, "primary");
+      if (!nextPrimary) return null;
+      const savedSubs = locs.filter(
+        (l) => l.location_type === "sub_area" && l.parent_id === savedAoi.id,
+      );
+      const nextSubAreas: FocusArea[] = [];
+      const nextSavedSubAreaIds: Record<number, number> = {};
+      savedSubs.forEach((loc, index) => {
+        const area = savedLocationToFocusArea(loc, "sub");
+        if (!area) return;
+        nextSubAreas.push(area);
+        nextSavedSubAreaIds[index] = loc.id;
+      });
+      return {
+        savedAoiId: savedAoi.id,
+        savedSubAreaIds: nextSavedSubAreaIds,
+        primaryFocusArea: nextPrimary,
+        subFocusAreas: nextSubAreas,
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  const [primaryFocusArea, setPrimaryFocusArea] = useState<FocusArea | null>(
+    exploreInitFromCache?.primaryFocusArea ?? null,
+  );
+  const [subFocusAreas, setSubFocusAreas] = useState<FocusArea[]>(
+    exploreInitFromCache?.subFocusAreas ?? [],
+  );
   const [activeSubAreaIndex, setActiveSubAreaIndex] = useState<number | null>(null);
-  const [explorePhase, setExplorePhase] = useState<ExplorePhase>("idle");
+  const [explorePhase, setExplorePhase] = useState<ExplorePhase>(
+    exploreInitFromCache ? "locked-primary" : "idle",
+  );
   const [focusError, setFocusError] = useState<string | null>(null);
   const [hoverSubAreaIndex, setHoverSubAreaIndex] = useState<number | null>(null);
   const [selectedSubAreaIndex, setSelectedSubAreaIndex] = useState<number | null>(null);
@@ -317,6 +364,7 @@ export default function MapView({
 
   const rectIdRef = useRef<string | null>(null);
   const lockAfterFitRef = useRef(false);
+  const isFirstGoToRef = useRef(true);
   const enforcingRef = useRef(false);
   const defaultMinZoomRef = useRef(0);
   const defaultMaxZoomRef = useRef(22);
@@ -331,8 +379,15 @@ export default function MapView({
   const activeSubAreaIndexRef = useLatestRef(activeSubAreaIndex);
   const explorePhaseRef = useLatestRef(explorePhase);
   const selectedSubAreaIndexRef = useLatestRef(selectedSubAreaIndex);
-  const [savedAoiId, setSavedAoiId] = useState<number | null>(null);
-  const [savedSubAreaIds, setSavedSubAreaIds] = useState<Record<number, number>>({});
+  const modeRef = useLatestRef(mode);
+  const goToRef = useLatestRef(goTo ?? null);
+  const goToBoundsRef = useLatestRef(goToBounds ?? null);
+  const [savedAoiId, setSavedAoiId] = useState<number | null>(
+    exploreInitFromCache?.savedAoiId ?? null,
+  );
+  const [savedSubAreaIds, setSavedSubAreaIds] = useState<Record<number, number>>(
+    exploreInitFromCache?.savedSubAreaIds ?? {},
+  );
 
   const hasLoadedExploreAreasRef = useRef(false);
 
@@ -348,9 +403,7 @@ export default function MapView({
   const hasConfirmedPrimary = !!primaryFocusArea;
   const hasSelectedSubArea = selectedSubAreaIndex != null;
 
-  // GEOCODER
-
-  const geocoderApi: MaplibreGeocoderApi = {
+  const geocoderApi: MaplibreGeocoderApi = useMemo(() => ({
     forwardGeocode: async (config: { query: string }): Promise<MaplibreGeocoderFeatureResults> => {
       const features: any[] = [];
 
@@ -384,7 +437,7 @@ export default function MapView({
         features,
       };
     },
-  };
+  }), []);
 
   const reverseGeocodeAreaName = useCallback(async (bbox: [number, number, number, number], fallback: string) => {
     const [lngCenter, latCenter] = bboxCenter(bbox);
@@ -424,14 +477,38 @@ export default function MapView({
 
   // MAP INITIALIZATION
 
+  const VIEWPORT_CACHE_KEY = "bp_viewport_v1";
+
+  const EXPLORE_VIEWPORT_KEY = "bp_explore_viewport_v1";
+
   const createMap = useCallback(() => {
+    let initCenter: [number, number] = [lng, lat];
+    let initZoom = zoom;
+
+    if (goToRef.current) {
+      initCenter = goToRef.current;
+      initZoom = 18;
+    } else {
+      try {
+        const vKey = modeRef.current === "explore" ? EXPLORE_VIEWPORT_KEY : VIEWPORT_CACHE_KEY;
+        const raw = sessionStorage.getItem(vKey);
+        if (raw) {
+          const v = JSON.parse(raw);
+          if (v.center && typeof v.zoom === "number") {
+            initCenter = v.center;
+            initZoom = v.zoom;
+          }
+        }
+      } catch {}
+    }
     return new maplibregl.Map({
       container: mapContainer.current!,
       style,
-      center: [lng, lat],
-      zoom,
+      center: initCenter,
+      zoom: initZoom,
       pitch: 0,
     });
+
   }, []);
 
   const restoreDefaultExploreCamera = useCallback((map: maplibregl.Map) => {
@@ -739,7 +816,7 @@ export default function MapView({
         try {
           di.removeFeatures?.([String(feature.id)]);
         } catch {
-          // ignore if TerraDraw is disabled/not ready
+
         }
       });
 
@@ -756,7 +833,7 @@ export default function MapView({
     if (lockAfterFitRef.current) return;
     lockAfterFitRef.current = true;
 
-    map.fitBounds(bboxToBoundsLike(area.bbox), { padding: 40, duration: 900 });
+    map.fitBounds(bboxToBoundsLike(area.bbox), { padding: 40, duration: 500 });
 
     map.once("idle", () => {
       requestAnimationFrame(() => {
@@ -766,6 +843,13 @@ export default function MapView({
         map.setMaxZoom(Math.max(fittedZoom + 6, 18));
         disableRotationInteractions(map);
         lockAfterFitRef.current = false;
+
+        try {
+          sessionStorage.setItem(
+            EXPLORE_VIEWPORT_KEY,
+            JSON.stringify({ center: map.getCenter().toArray(), zoom: map.getZoom() }),
+          );
+        } catch {}
       });
     });
   }, []);
@@ -804,7 +888,52 @@ export default function MapView({
     });
   }, [clearTerradrawSelection, restoreDefaultExploreCamera]);
 
+  const EXPLORE_CACHE_KEY = "bp_explore_v1";
+
+  const applyExploreLocations = useCallback(
+    (savedLocations: SavedLocationRecord[]) => {
+      const savedAoi = savedLocations.find((loc) => loc.location_type === "aoi");
+      if (!savedAoi) return false;
+
+      const nextPrimary = savedLocationToFocusArea(savedAoi, "primary");
+      if (!nextPrimary) return false;
+
+      const savedSubs = savedLocations.filter((loc) => loc.location_type === "sub_area" && loc.parent_id === savedAoi.id);
+      const nextSubAreas: FocusArea[] = [];
+      const nextSavedSubAreaIds: Record<number, number> = {};
+      savedSubs.forEach((loc, index) => {
+        const area = savedLocationToFocusArea(loc, "sub");
+        if (!area) return;
+        nextSubAreas.push(area);
+        nextSavedSubAreaIds[index] = loc.id;
+      });
+
+      const currentPrimary = primaryFocusAreaRef.current;
+      const primaryChanged =
+        !currentPrimary ||
+        currentPrimary.ring.length !== nextPrimary.ring.length ||
+        currentPrimary.ring.some((pt, i) => pt[0] !== nextPrimary.ring[i][0] || pt[1] !== nextPrimary.ring[i][1]);
+
+      setSavedAoiId(savedAoi.id);
+      setSavedSubAreaIds(nextSavedSubAreaIds);
+      setPrimaryFocusArea(nextPrimary);
+      setSubFocusAreas(nextSubAreas);
+      setActiveSubAreaIndex(null);
+      setSelectedSubAreaIndex(null);
+      setFocusError(null);
+      setExplorePhase("locked-primary");
+      if (primaryChanged) requestAnimationFrame(() => applyLockedFocusToMap(nextPrimary));
+      return true;
+    },
+    [applyLockedFocusToMap, primaryFocusAreaRef],
+  );
+
   const loadSavedExploreAreas = useCallback(async () => {
+    try {
+      const raw = sessionStorage.getItem(EXPLORE_CACHE_KEY);
+      if (raw) applyExploreLocations(JSON.parse(raw) as SavedLocationRecord[]);
+    } catch {}
+
     try {
       const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
         method: "GET",
@@ -820,6 +949,7 @@ export default function MapView({
       if (!data.success || !Array.isArray(data.saved_locations)) return;
 
       const savedLocations = data.saved_locations as SavedLocationRecord[];
+      try { sessionStorage.setItem(EXPLORE_CACHE_KEY, JSON.stringify(savedLocations)); } catch {}
 
       const savedAoi = savedLocations.find((loc) => loc.location_type === "aoi");
       if (!savedAoi) {
@@ -834,37 +964,11 @@ export default function MapView({
         return;
       }
 
-      const nextPrimary = savedLocationToFocusArea(savedAoi, "primary");
-      if (!nextPrimary) return;
-
-      const savedSubs = savedLocations.filter((loc) => loc.location_type === "sub_area" && loc.parent_id === savedAoi.id);
-
-      const nextSubAreas: FocusArea[] = [];
-      const nextSavedSubAreaIds: Record<number, number> = {};
-
-      savedSubs.forEach((loc, index) => {
-        const area = savedLocationToFocusArea(loc, "sub");
-        if (!area) return;
-        nextSubAreas.push(area);
-        nextSavedSubAreaIds[index] = loc.id;
-      });
-
-      setSavedAoiId(savedAoi.id);
-      setSavedSubAreaIds(nextSavedSubAreaIds);
-      setPrimaryFocusArea(nextPrimary);
-      setSubFocusAreas(nextSubAreas);
-      setActiveSubAreaIndex(null);
-      setSelectedSubAreaIndex(null);
-      setFocusError(null);
-      setExplorePhase("locked-primary");
-
-      requestAnimationFrame(() => {
-        applyLockedFocusToMap(nextPrimary);
-      });
+      applyExploreLocations(savedLocations);
     } catch (error) {
       console.error("Error loading saved explore areas:", error);
     }
-  }, [applyLockedFocusToMap, startPrimaryDrawingMode]);
+  }, [applyExploreLocations, startPrimaryDrawingMode]);
 
   const restoreFocusAreaToTerradraw = useCallback(
     (area: FocusArea) => {
@@ -1205,7 +1309,7 @@ export default function MapView({
         try {
           di?.setMode?.("select");
         } catch {
-          // ignore if TerraDraw is disabled/not ready
+
         }
       }
     } catch (error) {
@@ -1282,14 +1386,6 @@ export default function MapView({
     safeRemoveLayer("polygon-guide");
     safeRemoveSource("polygon-guide");
 
-    safeRemoveLayer("polygon-fill");
-    safeRemoveLayer("polygon-line");
-    safeRemoveSource("polygons");
-
-    safeRemoveLayer("polygon-points");
-    safeRemoveLayer("polygon-points-clickable");
-    safeRemoveSource("polygon-points");
-
     const polygonFeatures = completedPolygonsRef.current.map((p, idx) => ({
       type: "Feature" as const,
       properties: {
@@ -1303,54 +1399,7 @@ export default function MapView({
       },
     }));
 
-    map.addSource("polygons", {
-      type: "geojson",
-      data: {
-        type: "FeatureCollection",
-        features: polygonFeatures,
-      } as any,
-    });
-
-    map.addLayer({
-      id: "polygon-fill",
-      type: "fill",
-      source: "polygons",
-      paint: {
-        "fill-color": [
-          "interpolate",
-          ["linear"],
-          ["get", "occurrences"],
-          0, "#1d1f3f",
-          1, "#2a6b4a",
-          5, "#f5c518",
-          15, "#e85d04",
-          30, "#9b1c1c",
-        ] as any,
-        "fill-opacity": 0.30,
-      },
-    });
-
-    map.addLayer({
-      id: "polygon-line",
-      type: "line",
-      source: "polygons",
-      paint: {
-        "line-color": [
-          "interpolate",
-          ["linear"],
-          ["get", "occurrences"],
-          0, "#1d1f3f",
-          1, "#2a6b4a",
-          5, "#f5c518",
-          15, "#e85d04",
-          30, "#9b1c1c",
-        ] as any,
-        "line-width": 2,
-      },
-    });
-
     const pointFeatures: any[] = [];
-
     polygonPointsRef.current.forEach((pt, i) => {
       pointFeatures.push({
         type: "Feature",
@@ -1363,27 +1412,65 @@ export default function MapView({
         geometry: { type: "Point", coordinates: pt },
       });
     });
-
     completedPolygonsRef.current.forEach((p, polygonIndex) => {
       p.points.forEach((pt, i) => {
         pointFeatures.push({
           type: "Feature",
-          properties: {
-            index: i,
-            polygonIndex,
-            isCompleted: true,
-          },
+          properties: { index: i, polygonIndex, isCompleted: true },
           geometry: { type: "Point", coordinates: pt },
         });
       });
     });
 
+    const existingPolygonSrc = map.getSource("polygons") as maplibregl.GeoJSONSource | undefined;
+    const existingPointSrc = map.getSource("polygon-points") as maplibregl.GeoJSONSource | undefined;
+    if (existingPolygonSrc && existingPointSrc) {
+      existingPolygonSrc.setData({ type: "FeatureCollection", features: polygonFeatures } as any);
+      existingPointSrc.setData({ type: "FeatureCollection", features: pointFeatures } as any);
+      return;
+    }
+
+    safeRemoveLayer("polygon-fill");
+    safeRemoveLayer("polygon-line");
+    safeRemoveSource("polygons");
+    safeRemoveLayer("polygon-points");
+    safeRemoveLayer("polygon-points-clickable");
+    safeRemoveSource("polygon-points");
+
+    map.addSource("polygons", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: polygonFeatures } as any,
+    });
+
+    map.addLayer({
+      id: "polygon-fill",
+      type: "fill",
+      source: "polygons",
+      paint: {
+        "fill-color": [
+          "interpolate", ["linear"], ["get", "occurrences"],
+          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+        ] as any,
+        "fill-opacity": 0.30,
+      },
+    });
+
+    map.addLayer({
+      id: "polygon-line",
+      type: "line",
+      source: "polygons",
+      paint: {
+        "line-color": [
+          "interpolate", ["linear"], ["get", "occurrences"],
+          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+        ] as any,
+        "line-width": 2,
+      },
+    });
+
     map.addSource("polygon-points", {
       type: "geojson",
-      data: {
-        type: "FeatureCollection",
-        features: pointFeatures,
-      } as any,
+      data: { type: "FeatureCollection", features: pointFeatures } as any,
     });
 
     map.addLayer({
@@ -1403,10 +1490,7 @@ export default function MapView({
       id: "polygon-points-clickable",
       type: "circle",
       source: "polygon-points",
-      paint: {
-        "circle-radius": 12,
-        "circle-opacity": 0,
-      },
+      paint: { "circle-radius": 12, "circle-opacity": 0 },
     });
   }, [completedPolygonsRef, polygonPointsRef]);
 
@@ -1671,7 +1755,29 @@ export default function MapView({
     [completedPolygonsRef, onCameraClick, removeCamera, savePolygonToCamera, selectedPolygonIndexRef, toolModeRef, selectedCameraId],
   );
 
+  const CAMERAS_CACHE_KEY = "bp_cameras_v1";
+
   const loadCamerasFromDatabase = useCallback(async () => {
+    try {
+      const raw = sessionStorage.getItem(CAMERAS_CACHE_KEY);
+      if (raw) {
+        const cached: Camera[] = JSON.parse(raw);
+        camerasRef.current.forEach((c) => c.marker?.remove());
+        camerasRef.current = [];
+        setCameras([]);
+        cached.forEach((cam) => addCameraFromData(cam.lat, cam.lng, cam.id));
+        const cachedPolygons: CompletedPolygon[] = cached
+          .filter((cam) => cam.polygon && (cam.polygon as any).length > 0)
+          .map((cam) => ({
+            points: cam.polygon as [number, number][],
+            cameraId: cam.id,
+            occurrences: cam.occurrences ?? 0,
+          }));
+        if (cachedPolygons.length > 0) setCompletedPolygons(cachedPolygons);
+        onCamerasLoaded?.(cached);
+      }
+    } catch {}
+
     loadAbortRef.current?.abort();
     const controller = new AbortController();
     loadAbortRef.current = controller;
@@ -1689,6 +1795,8 @@ export default function MapView({
       const data = await response.json();
       if (controller.signal.aborted) return;
       if (!data?.success || !data?.cameras) return;
+
+      try { sessionStorage.setItem(CAMERAS_CACHE_KEY, JSON.stringify(data.cameras)); } catch {}
 
       camerasRef.current.forEach((c) => c.marker?.remove());
       camerasRef.current = [];
@@ -1742,17 +1850,18 @@ export default function MapView({
     });
   }, []);
 
+  const updateVisibleCamerasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const updateVisibleCameras = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const bounds = map.getBounds();
-    const visible = camerasRef.current.filter((c) => bounds.contains([c.lng, c.lat])).map((c) => c.id);
-
-    onVisibleCamerasChange?.(visible);
+    if (updateVisibleCamerasTimerRef.current) clearTimeout(updateVisibleCamerasTimerRef.current);
+    updateVisibleCamerasTimerRef.current = setTimeout(() => {
+      const map = mapRef.current;
+      if (!map) return;
+      const bounds = map.getBounds();
+      const visible = camerasRef.current.filter((c) => bounds.contains([c.lng, c.lat])).map((c) => c.id);
+      onVisibleCamerasChange?.(visible);
+    }, 250);
   }, [onVisibleCamerasChange]);
-
-  // MAP RENDERING
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -1760,6 +1869,7 @@ export default function MapView({
 
     const map = createMap();
     mapRef.current = map;
+    isFirstGoToRef.current = true; 
     onMapReady?.(map);
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
@@ -1767,9 +1877,30 @@ export default function MapView({
     defaultMinZoomRef.current = map.getMinZoom();
     defaultMaxZoomRef.current = map.getMaxZoom();
 
+    const onViewportSave = () => {
+ 
+      if (modeRef.current === "explore") return;
+      try {
+        sessionStorage.setItem(
+          VIEWPORT_CACHE_KEY,
+          JSON.stringify({ center: map.getCenter().toArray(), zoom: map.getZoom() }),
+        );
+      } catch {}
+    };
+    map.on("moveend", onViewportSave);
+
     map.once("load", () => {
       add3DBuildingsLayer(map);
       restoreDefaultExploreCamera(map);
+
+      if (modeRef.current === "explore" && primaryFocusAreaRef.current) {
+        const area = primaryFocusAreaRef.current;
+        const fittedZoom = map.getZoom();
+        map.setMaxBounds(bboxToBoundsLike(area.paddedBbox));
+        map.setMinZoom(fittedZoom);
+        map.setMaxZoom(Math.max(fittedZoom + 6, 18));
+        disableRotationInteractions(map);
+      }
     });
 
     return () => {
@@ -1790,6 +1921,8 @@ export default function MapView({
 
       mapRef.current = null;
       editControlRef.current = null;
+      drawControlRef.current = null;
+      geocoderControlRef.current = null;
     };
   }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
 
@@ -1797,142 +1930,128 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    const apply = () => {
+    if (mode === "map" || mode === "explore") {
+      if (!geocoderControlRef.current) {
+        const geocoder = new MaplibreGeocoder(geocoderApi, {
+          maplibregl,
+          flyTo: true,
+          marker: false,
+          showResultMarkers: false,
+          showResultsWhileTyping: true,
+          countries: "ph",
+        });
+        map.addControl(geocoder, "top-left");
+        geocoderControlRef.current = geocoder;
+      }
+    } else if (geocoderControlRef.current) {
+      map.removeControl(geocoderControlRef.current);
+      geocoderControlRef.current = null;
+    }
+
+    if (mode === "explore") {
+      if (!drawControlRef.current) {
+        const drawControl = new MaplibreTerradrawControl({
+          modes: ["select", "rectangle"],
+          open: true,
+          showDeleteConfirmation: false,
+        });
+
+        map.addControl(drawControl, "bottom-right");
+        drawControlRef.current = drawControl;
+
+        const di = drawControl.getTerraDrawInstance();
+
+        if (di) {
+          const syncTerradrawState = () => {
+            if (enforcingRef.current) return;
+            enforcingRef.current = true;
+
+            try {
+              const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+              const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+
+              if (polys.length === 0) {
+                rectIdRef.current = null;
+                return;
+              }
+
+              const keep = polys[polys.length - 1];
+              const keepId = String(keep.id);
+
+              for (const f of polys) {
+                const id = String(f.id);
+                if (id !== keepId) {
+                  try {
+                    di.removeFeatures([id]);
+                  } catch {}
+                }
+              }
+
+              rectIdRef.current = keepId;
+            } finally {
+              enforcingRef.current = false;
+            }
+          };
+
+          syncTerradrawState();
+          try { di.on("finish", syncTerradrawState); } catch {}
+          try { di.on("select", syncTerradrawState); } catch {}
+          try { di.on("change", syncTerradrawState); } catch {}
+        }
+      }
+      rectIdRef.current = null;
+    }
+
+    if (mode === "map") {
+      if (!editControlRef.current) {
+        editControlRef.current = new ToggleEditButton((isEdit) => {
+          setIsEditMode(isEdit);
+          setToolMode("none");
+        });
+        map.addControl(editControlRef.current, "bottom-right");
+      }
+    } else {
+      if (editControlRef.current) {
+        map.removeControl(editControlRef.current);
+        editControlRef.current = null;
+      }
+      setIsEditMode(false);
+      setToolMode("none");
+    }
+
+    if (mode !== "map") {
+      setShowPolygonModal(false);
+      setSelectedPolygonIndex(null);
+      setPolygonPoints([]);
+    }
+
+    const applyLayers = () => {
       if (mode !== "heatmap") removeHeatmapLayers(map);
       if (mode === "heatmap") addHeatmapLayers(map);
-
-      if (mode === "map" || mode === "explore") {
-        if (!geocoderControlRef.current) {
-          const geocoder = new MaplibreGeocoder(geocoderApi, {
-            maplibregl,
-            flyTo: true,
-            marker: false,
-            showResultMarkers: false,
-            showResultsWhileTyping: true,
-            countries: "ph",
-          });
-
-          map.addControl(geocoder, "top-left");
-          geocoderControlRef.current = geocoder;
-        }
-      } else if (geocoderControlRef.current) {
-        map.removeControl(geocoderControlRef.current);
-        geocoderControlRef.current = null;
-      }
-
-      if (mode === "explore") {
-        showMapillarySigns = false;
-        if (!drawControlRef.current) {
-          const drawControl = new MaplibreTerradrawControl({
-            modes: ["select", "rectangle"],
-            open: true,
-            showDeleteConfirmation: false,
-          });
-
-          map.addControl(drawControl, "bottom-right");
-          drawControlRef.current = drawControl;
-
-          const di = drawControl.getTerraDrawInstance();
-
-          if (di) {
-            const syncTerradrawState = () => {
-              if (enforcingRef.current) return;
-              enforcingRef.current = true;
-
-              try {
-                const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
-                const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
-
-                if (polys.length === 0) {
-                  rectIdRef.current = null;
-                  return;
-                }
-
-                const keep = polys[polys.length - 1];
-                const keepId = String(keep.id);
-
-                for (const f of polys) {
-                  const id = String(f.id);
-                  if (id !== keepId) {
-                    try {
-                      di.removeFeatures([id]);
-                    } catch {}
-                  }
-                }
-
-                rectIdRef.current = keepId;
-              } finally {
-                enforcingRef.current = false;
-              }
-            };
-
-            syncTerradrawState();
-
-            try {
-              di.on("finish", syncTerradrawState);
-            } catch {}
-            try {
-              di.on("select", syncTerradrawState);
-            } catch {}
-            try {
-              di.on("change", syncTerradrawState);
-            } catch {}
-          }
-        }
-        rectIdRef.current = null;
-      }
-
-      if (mode === "map") {
-        if (!editControlRef.current) {
-          editControlRef.current = new ToggleEditButton((isEdit) => {
-            setIsEditMode(isEdit);
-            setToolMode("none");
-          });
-
-          map.addControl(editControlRef.current, "bottom-right");
-        }
-      } else {
-        if (editControlRef.current) {
-          map.removeControl(editControlRef.current);
-          editControlRef.current = null;
-        }
-
-        setIsEditMode(false);
-        setToolMode("none");
-      }
-
-      if (mode !== "map") {
-        setShowPolygonModal(false);
-        setSelectedPolygonIndex(null);
-        setPolygonPoints([]);
-      }
     };
 
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
+    if (map.isStyleLoaded()) applyLayers();
+    else map.once("load", applyLayers);
+
+    return () => { map.off("load", applyLayers); };
   }, [
     addHeatmapLayers,
-    applyLockedFocusToMap,
-    clearTerradrawSelection,
     geocoderApi,
-    handleConfirmAoi,
-    handleEditAoi,
     mode,
-    primaryFocusAreaRef,
-    activeSubAreaIndexRef,
-    explorePhaseRef,
     removeHeatmapLayers,
-    restoreDefaultExploreCamera,
   ]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    const isFirst = isFirstGoToRef.current;
+
     if (goToBounds) {
+      isFirstGoToRef.current = false;
       map.fitBounds(goToBounds, {
         padding: 60,
-        duration: 1200,
+        duration: isFirst ? 0 : 500,
         essential: true,
       });
       return;
@@ -1940,12 +2059,12 @@ export default function MapView({
 
     if (!goTo) return;
 
-    map.flyTo({
-      center: goTo,
-      zoom: 18,
-      duration: 1200,
-      essential: true,
-    });
+    isFirstGoToRef.current = false;
+    if (isFirst) {
+      map.jumpTo({ center: goTo, zoom: 18 });
+    } else {
+      map.flyTo({ center: goTo, zoom: 18, duration: 500, essential: true });
+    }
   }, [goTo, goToBounds]);
 
   useEffect(() => {
@@ -1970,6 +2089,8 @@ export default function MapView({
             if (!map.getSource(MAPILLARY_SOURCE_ID)) return;
             if (map.getLayer(MAPILLARY_LAYER_ID)) return;
 
+            const belowLayer = map.getLayer("focus-areas-mask") ? "focus-areas-mask" : undefined;
+
             map.addLayer({
               id: MAPILLARY_LAYER_ID,
               type: "symbol",
@@ -1983,7 +2104,7 @@ export default function MapView({
                 "icon-allow-overlap": true,
                 "icon-ignore-placement": true,
               },
-            });
+            }, belowLayer);
 
             map.on("click", MAPILLARY_LAYER_ID, (e: any) => {
               const feature = e.features?.[0];
@@ -2283,7 +2404,6 @@ export default function MapView({
           kind: "sub",
           index,
           label: area.label,
-          hovered: hoverSubAreaIndex === index ? 1 : 0,
           active: activeSubAreaIndex === index ? 1 : 0,
           selected: selectedSubAreaIndex === index ? 1 : 0,
         },
@@ -2306,6 +2426,8 @@ export default function MapView({
           data,
         });
 
+        const aboveLayer = map.getLayer(MAPILLARY_LAYER_ID) ? MAPILLARY_LAYER_ID : undefined;
+
         map.addLayer({
           id: maskFillId,
           type: "fill",
@@ -2315,7 +2437,7 @@ export default function MapView({
             "fill-color": "#000",
             "fill-opacity": 0.28,
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: fillId,
@@ -2327,11 +2449,11 @@ export default function MapView({
             "fill-opacity": [
               "case",
               ["==", ["get", "kind"], "sub"],
-              ["case", ["==", ["get", "active"], 1], 0.34, ["==", ["get", "selected"], 1], 0.32, ["==", ["get", "hovered"], 1], 0.28, 0.2],
+              ["case", ["==", ["get", "active"], 1], 0.34, ["==", ["get", "selected"], 1], 0.32, 0.2],
               0.12,
             ],
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: lineId,
@@ -2347,7 +2469,7 @@ export default function MapView({
               2.5,
             ],
           },
-        });
+        }, aboveLayer);
 
         map.addLayer({
           id: labelId,
@@ -2376,7 +2498,29 @@ export default function MapView({
     return () => {
       map.off("load", apply);
     };
-  }, [mode, primaryFocusArea, subFocusAreas, hoverSubAreaIndex, activeSubAreaIndex, selectedSubAreaIndex]);
+  }, [mode, primaryFocusArea, subFocusAreas, activeSubAreaIndex, selectedSubAreaIndex]);
+
+  // Lightweight hover effect: update fill-opacity via setPaintProperty so we
+  // don't rebuild the entire GeoJSON FeatureCollection on every mousemove.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.getLayer("focus-areas-fill")) return;
+
+    const subOpacity: any[] = [
+      "case",
+      ["==", ["get", "active"], 1], 0.34,
+      ["==", ["get", "selected"], 1], 0.32,
+      ...(hoverSubAreaIndex != null ? [["==", ["get", "index"], hoverSubAreaIndex], 0.28] : []),
+      0.2,
+    ];
+
+    map.setPaintProperty("focus-areas-fill", "fill-opacity", [
+      "case",
+      ["==", ["get", "kind"], "sub"],
+      subOpacity,
+      0.12,
+    ] as any);
+  }, [hoverSubAreaIndex]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2514,140 +2658,140 @@ export default function MapView({
   return (
     <div className="map-wrap">
       <div ref={mapContainer} className="map" />
-
       {mode === "explore" && (
-        <>
-          <div className="explore-toolbar-row">
-            <div className="explore-toolbar explore-toolbar--primary-panel">
-              <span className="explore-toolbar__step">
-                {explorePhase === "drawing-sub"
-                  ? activeSubAreaIndex != null
-                    ? "Step 3 · Edit selected sub-area"
-                    : "Step 3 · Draw a sub-area"
-                  : explorePhase === "drawing-primary"
-                    ? primaryFocusArea
-                      ? "Step 2 · Adjust AOI"
-                      : "Step 1 · Draw the AOI"
-                    : primaryFocusArea
-                      ? "Step 3 · Manage sub-areas"
-                      : "Step 1 · Search and draw the AOI"}
-              </span>
+          <SideTab side="top" open={open} invisible={true} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>
+            <>
+              <div className="explore-toolbar explore-toolbar--primary-panel">
+                <span className="explore-toolbar__step">
+                  {explorePhase === "drawing-sub"
+                    ? activeSubAreaIndex != null
+                      ? "Step 3 · Edit selected sub-area"
+                      : "Step 3 · Draw a sub-area"
+                    : explorePhase === "drawing-primary"
+                      ? primaryFocusArea
+                        ? "Step 2 · Adjust AOI"
+                        : "Step 1 · Draw the AOI"
+                      : primaryFocusArea
+                        ? "Step 3 · Manage sub-areas"
+                        : "Step 1 · Search and draw the AOI"}
+                </span>
 
-              <span className="explore-toolbar__label">
-                {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-                {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-              </span>
+                <span className="explore-toolbar__label">
+                  {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
+                  {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
+                </span>
 
-              <div className="explore-toolbar__group">
-                {primaryFocusArea && (
-                  <button
-                    onClick={() => fitToFocusArea(primaryFocusArea)}
-                    className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                    disabled={isDrawingFocusArea}
-                  >
-                    Reset View
-                  </button>
-                )}
-
-                {!isDrawingFocusArea ? (
-                  <>
-                    <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                      Edit AOI
-                    </button>
-
+                <div className="explore-toolbar__group">
+                  {primaryFocusArea && (
                     <button
-                      onClick={deletePrimaryFocusArea}
-                      className="explore-toolbar__btn explore-toolbar__btn--danger"
-                      disabled={!hasConfirmedPrimary}
+                      onClick={() => fitToFocusArea(primaryFocusArea)}
+                      className="explore-toolbar__btn explore-toolbar__btn--neutral"
+                      disabled={isDrawingFocusArea}
                     >
-                      Delete AOI
+                      Reset View
                     </button>
+                  )}
 
-                    <button
-                      onClick={beginSubFocusDrawing}
-                      className="explore-toolbar__btn explore-toolbar__btn--primary"
-                      disabled={!hasConfirmedPrimary}
-                    >
-                      Add Sub-area
-                    </button>
+                  {!isDrawingFocusArea ? (
+                    <>
+                      <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
+                        Edit AOI
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        if (selectedSubAreaIndex != null) {
-                          handleEditSubArea(selectedSubAreaIndex);
-                        }
-                      }}
-                      className="explore-toolbar__btn explore-toolbar__btn--sub"
-                      disabled={!hasSelectedSubArea}
-                    >
-                      Edit Selected
-                    </button>
+                      <button
+                        onClick={deletePrimaryFocusArea}
+                        className="explore-toolbar__btn explore-toolbar__btn--danger"
+                        disabled={!hasConfirmedPrimary}
+                      >
+                        Delete AOI
+                      </button>
 
-                    <button
-                      onClick={deleteSelectedSubArea}
-                      className="explore-toolbar__btn explore-toolbar__btn--danger"
-                      disabled={!hasSelectedSubArea}
-                    >
-                      Delete Selected
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                      {explorePhase === "drawing-sub"
-                        ? activeSubAreaIndex != null
-                          ? "Confirm Sub-area Edit"
-                          : "Confirm Sub-area"
-                        : primaryFocusArea
-                          ? "Confirm AOI Edit"
-                          : "Confirm AOI"}
-                    </button>
+                      <button
+                        onClick={beginSubFocusDrawing}
+                        className="explore-toolbar__btn explore-toolbar__btn--primary"
+                        disabled={!hasConfirmedPrimary}
+                      >
+                        Add Sub-area
+                      </button>
 
-                    <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                      Cancel
-                    </button>
-                  </>
-                )}
+                      <button
+                        onClick={() => {
+                          if (selectedSubAreaIndex != null) {
+                            handleEditSubArea(selectedSubAreaIndex);
+                          }
+                        }}
+                        className="explore-toolbar__btn explore-toolbar__btn--sub"
+                        disabled={!hasSelectedSubArea}
+                      >
+                        Edit Selected
+                      </button>
+
+                      <button
+                        onClick={deleteSelectedSubArea}
+                        className="explore-toolbar__btn explore-toolbar__btn--danger"
+                        disabled={!hasSelectedSubArea}
+                      >
+                        Delete Selected
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
+                        {explorePhase === "drawing-sub"
+                          ? activeSubAreaIndex != null
+                            ? "Confirm Sub-area Edit"
+                            : "Confirm Sub-area"
+                          : primaryFocusArea
+                            ? "Confirm AOI Edit"
+                            : "Confirm AOI"}
+                      </button>
+
+                      <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {subFocusAreas.length > 0 && (
-              <div className="explore-toolbar explore-toolbar--secondary">
-                <span className="explore-toolbar__label">Sub-areas</span>
+              {subFocusAreas.length > 0 && (
+                <div className="explore-toolbar explore-toolbar--secondary">
+                  <span className="explore-toolbar__label">Sub-areas</span>
 
-                {subFocusAreas.map((area, index) => (
-                  <button
-                    key={`${area.label}-${index}`}
-                    onClick={() => setSelectedSubAreaIndex(index)}
-                    className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                    disabled={isDrawingFocusArea}
-                  >
-                    {area.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                  {subFocusAreas.map((area, index) => (
+                    <button
+                      key={`${area.label}-${index}`}
+                      onClick={() => setSelectedSubAreaIndex(index)}
+                      className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
+                      disabled={isDrawingFocusArea}
+                    >
+                      {area.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-          <div className="explore-status">
-            {explorePhase === "drawing-sub"
-              ? activeSubAreaIndex != null
-                ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
-                : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
-              : explorePhase === "drawing-primary"
-                ? primaryFocusArea
-                  ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
-                  : "Draw the AOI rectangle, then click Confirm AOI."
-                : primaryFocusArea
-                  ? selectedSubAreaIndex != null
-                    ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
-                    : "AOI confirmed. Add sub-areas or select an existing sub-area."
-                  : "Search for a place if needed, then draw an AOI rectangle."}
-          </div>
+              {focusError && <div className="explore-error">{focusError}</div>}
 
-          {focusError && <div className="explore-error">{focusError}</div>}
-        </>
+            </>
+          </SideTab>
       )}
+
+      <div className="explore-status">
+        {explorePhase === "drawing-sub"
+          ? activeSubAreaIndex != null
+            ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
+            : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
+          : explorePhase === "drawing-primary"
+            ? primaryFocusArea
+              ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
+              : "Draw the AOI rectangle, then click Confirm AOI."
+            : primaryFocusArea
+              ? selectedSubAreaIndex != null
+                ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
+                : "AOI confirmed. Add sub-areas or select an existing sub-area."
+              : "Search for a place if needed, then draw an AOI rectangle."}
+      </div>
 
       {isEditMode && mode === "map" && (
         <>
