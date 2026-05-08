@@ -1,4 +1,4 @@
-name: Deploy to Production
+﻿name: Deploy to Production
 
 # Fires only when code lands on main (i.e. after a PR is merged).
 on:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy:
-    name: SSH deploy → 103.231.240.148:32011
+    name: SSH deploy to 103.231.240.148:32011
     runs-on: ubuntu-latest
 
     steps:
@@ -17,67 +17,80 @@ jobs:
         with:
           host: 103.231.240.148
           username: root
-          #   password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: 32011         
+          port: 32011
           script: |
             set -euo pipefail
 
-            PROJECT="${{ vars.DEPLOY_PATH }}"
+            PROJECT="/root/BrakePoint-Web-App"
+            BACKEND_SVC="brakepoint-backend"
+            FRONTEND_SVC="brakepoint-frontend"
+            VENV="$PROJECT/.venv/bin"
+
             cd "$PROJECT"
 
-            echo "=== Pulling latest code from dlsudatasci/Brakepoint-Web-App ==="
+            echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
 
-            # ── Backend ───────────────────────────────────────────────────
             echo "=== Updating backend ==="
-            source .venv/bin/activate
+            "$VENV/pip" install -r backend/requirements.txt --quiet
 
-            pip install -r backend/requirements.txt --quiet
-
-            cd backend
-            python manage.py migrate --no-input
-            python manage.py collectstatic --no-input --clear
+            cd "$PROJECT/backend"
+            "$VENV/python" manage.py migrate --no-input
+            "$VENV/python" manage.py collectstatic --no-input --clear
             cd "$PROJECT"
 
-            deactivate
+            echo "=== Patching systemd service file ==="
+            SERVICE_FILE="/etc/systemd/system/${BACKEND_SVC}.service"
+            if [ -f "$SERVICE_FILE" ]; then
+              if grep -q 'WorkingDirectory' "$SERVICE_FILE"; then
+                sed -i "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT/backend|" "$SERVICE_FILE"
+              else
+                sed -i "/^\[Service\]/a WorkingDirectory=$PROJECT/backend" "$SERVICE_FILE"
+              fi
+              if ! grep -q 'DJANGO_SETTINGS_MODULE' "$SERVICE_FILE"; then
+                sed -i "/^\[Service\]/a Environment=DJANGO_SETTINGS_MODULE=BrakePoint_Project.settings" "$SERVICE_FILE"
+              fi
+              systemctl daemon-reload
+              echo "Service file patched."
+            else
+              echo "WARNING: $SERVICE_FILE not found"
+            fi
 
             echo "=== Restarting backend service ==="
-            systemctl restart ${{ vars.BACKEND_SERVICE }}
+            systemctl restart "$BACKEND_SVC"
 
-            # ── Frontend ──────────────────────────────────────────────────
             echo "=== Building frontend ==="
             cd "$PROJECT/frontend/brakepoint_app"
-            npm ci --prefer-offline
+            npm ci
             npm run build
 
             echo "=== Restarting frontend service ==="
-            systemctl restart ${{ vars.FRONTEND_SERVICE }}
+            systemctl restart "$FRONTEND_SVC"
 
-            # Wait for services to be ready then run smoke tests
-            echo "=== Waiting for services ==="
-            # Give systemd time to fully start the backend (torch/CUDA init is slow)
-            sleep 10
-            systemctl is-active --quiet ${{ vars.BACKEND_SERVICE }} || \
-              (echo "ERROR: backend service is not active"; systemctl status ${{ vars.BACKEND_SERVICE }} --no-pager; exit 1)
-            timeout 90 bash -c 'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 3; done' || \
-              (echo "ERROR: backend did not respond within 90s"; systemctl status ${{ vars.BACKEND_SERVICE }} --no-pager; exit 1)
-            echo "Backend smoke test passed"
+            echo "=== Waiting for backend to be ready ==="
+            sleep 15
+            if ! systemctl is-active --quiet "$BACKEND_SVC"; then
+              echo "ERROR: $BACKEND_SVC is not active after restart"
+              journalctl -u "$BACKEND_SVC" -n 100 --no-pager
+              exit 1
+            fi
+            timeout 90 bash -c \
+              'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 3; done' \
+              || { echo "ERROR: backend timed out"; journalctl -u "$BACKEND_SVC" -n 50 --no-pager; exit 1; }
 
             echo "=== Deploy complete ==="
 
-      # Smoke tests 
-      - name: Smoke test — site responds at port 32010
+      - name: Smoke test - frontend reachable via nginx
         run: |
-          sleep 15
-          curl --fail --max-time 30 --retry 4 --retry-delay 5 \
+          sleep 10
+          curl --fail --max-time 30 --retry 5 --retry-delay 5 \
             http://103.231.240.148:32010 \
             -o /dev/null -w "HTTP %{http_code}\n"
 
-      # Notify on failure
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::Deploy failed — check logs above."
+          echo "::error::Deploy failed - check logs above."
           echo "::error::To roll back: ssh -p 32011 root@103.231.240.148 'cd /root/BrakePoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"
