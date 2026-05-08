@@ -1,8 +1,6 @@
 name: Deploy to Production
 
 # Fires only when code lands on main (i.e. after a PR is merged).
-# Branch protection should require the "CI — Backend & Frontend Tests"
-# workflow to pass before any PR can be merged to main.
 on:
   push:
     branches:

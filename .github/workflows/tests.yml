@@ -15,7 +15,7 @@ on:
       - main
 
 jobs:
-  # ── Django / pytest ──────────────────────────────────────────────────────────
+  # Django / pytest
   backend:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
@@ -42,7 +42,7 @@ jobs:
         working-directory: backend
         run: pytest --tb=short -q
 
-  # ── Next.js / Jest ──────────────────────────────────────────────────────────
+  # Next.js / Jest 
   frontend:
     name: Frontend tests (Jest + type-check)
     runs-on: ubuntu-latest
@@ -69,7 +69,6 @@ jobs:
         working-directory: frontend/brakepoint_app
         run: npm test -- --ci --passWithNoTests
         env:
-          # Dummy token so Next.js builds don't fail on missing env
           NEXT_PUBLIC_MAPILLARY_TOKEN: "ci-dummy-token"
 
       - name: ESLint
