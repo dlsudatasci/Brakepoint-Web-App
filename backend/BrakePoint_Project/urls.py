@@ -20,5 +20,6 @@ from django.urls import path, include
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('', include('BrakePoint.urls')),
+    path('', include('BrakePoint.urls')),           
+    path('brakepoint/', include('BrakePoint.urls')), 
 ]

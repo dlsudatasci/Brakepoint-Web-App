@@ -24,12 +24,10 @@ test.describe("Explore page", () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await page.goto("/explore");
-    // Wait for the map canvas to appear
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("page title / heading is visible", async ({ page }) => {
-    // Back button should be present
     await expect(page.locator("button").first()).toBeVisible();
   });
 
@@ -37,8 +35,6 @@ test.describe("Explore page", () => {
     const terraBtns = page.locator(".maplibregl-ctrl-bottom-right button");
     await expect(terraBtns.first()).toBeVisible({ timeout: 10_000 });
   });
-
-  // AOI Create / Edit / Delete 
 
   test("explore toolbar is visible after map loads", async ({ page }) => {
     await expect(page.locator(".explore-toolbar")).toBeVisible({ timeout: 10_000 });
