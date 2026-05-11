@@ -174,6 +174,29 @@ export default function Analytics() {
     [filteredSubAreas],
   );
 
+  const allSubAreasBounds = useMemo((): [[number, number], [number, number]] | null => {
+    if (filteredSubAreas.length === 0) return null;
+
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+    for (const s of filteredSubAreas) {
+      if (s.bounds) {
+        const [[bMinLng, bMinLat], [bMaxLng, bMaxLat]] = s.bounds;
+        minLng = Math.min(minLng, bMinLng);
+        minLat = Math.min(minLat, bMinLat);
+        maxLng = Math.max(maxLng, bMaxLng);
+        maxLat = Math.max(maxLat, bMaxLat);
+      } else {
+        minLng = Math.min(minLng, s.lng);
+        minLat = Math.min(minLat, s.lat);
+        maxLng = Math.max(maxLng, s.lng);
+        maxLat = Math.max(maxLat, s.lat);
+      }
+    }
+
+    return [[minLng, minLat], [maxLng, maxLat]];
+  }, [filteredSubAreas]);
+
   const handleMarkerClick = useCallback(
     (id: number | string) => {
       const matched = filteredSubAreas.find((s) => String(s.id) === String(id));
@@ -311,7 +334,8 @@ export default function Analytics() {
                     refreshTrigger={0}
                     dashboardMarkers={dashboardMarkers}
                     onDashboardMarkerClick={handleMarkerClick}
-                    goTo={selectedSubArea ? [selectedSubArea.lng, selectedSubArea.lat] : null}
+                    goToBounds={allSubAreasBounds && filteredSubAreas.length > 1 ? allSubAreasBounds : null}
+                    goTo={filteredSubAreas.length === 1 ? [filteredSubAreas[0].lng, filteredSubAreas[0].lat] : null}
                   />
                 </Box>
               </Grid>
