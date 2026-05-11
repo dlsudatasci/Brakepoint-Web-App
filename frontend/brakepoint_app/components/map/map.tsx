@@ -239,6 +239,7 @@ function disableRotationInteractions(map: maplibregl.Map) {
   map.dragPan.enable();
 }
 
+// deprecated -cy
 class ToggleEditButton implements maplibregl.IControl {
   private onToggle: (isEdit: boolean) => void;
   private container: HTMLElement | null = null;
@@ -272,6 +273,150 @@ class ToggleEditButton implements maplibregl.IControl {
   }
 }
 
+class createToggleButtons implements maplibregl.IControl {
+  private onToggle: (toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" ) => void;
+  private container: HTMLElement | null = null;
+  private toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" = "none";
+  private allBtns: {
+    "addCamera": HTMLElement | null;
+    "removeCamera": HTMLElement | null;
+    "addPoint": HTMLElement | null;
+    "removePoint": HTMLElement | null;
+  } = {"addCamera": null, "removeCamera": null, "addPoint": null, "removePoint": null};
+
+  constructor(onToggle: (toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" ) => void) {
+    this.onToggle = onToggle;
+  }
+
+  // updates the button styles
+  updateButtonStyles = (
+    oldToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint",
+    newToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint",
+  ) => {
+    if (oldToolMode != "none") {
+      this.allBtns[oldToolMode].style.backgroundColor = "";
+    }
+    if (newToolMode != "none") {
+      this.allBtns[newToolMode].style.backgroundColor = "#e0e4e9ff";
+    }
+  }
+
+  // triggers when one of the buttons in this edit button selection is toggled on/off
+  onButtonClick = (
+    btnToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint"
+  ) => {
+    // disable the tool
+    if (this.toolMode == btnToolMode) {
+      this.updateButtonStyles(this.toolMode, "none");
+      this.toolMode = "none";
+    }
+    // enables this tool
+    else if (this.toolMode == "none") {
+      this.updateButtonStyles("none", btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    // switches to a new tool
+    else {
+      this.updateButtonStyles(this.toolMode, btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    this.onToggle(this.toolMode);
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    this.allBtns.addCamera.title = "Add camera";
+    this.allBtns.removeCamera.title = "Remove camera";
+    this.allBtns.addPoint.title = "Add point";
+    this.allBtns.removePoint.title = "Remove point";
+
+    // render icon for the toolbar
+    ReactDOM.createRoot(this.allBtns.addCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removeCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.addPoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removePoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    this.allBtns.addCamera.onclick = () => { this.onButtonClick("addCamera") };
+    this.allBtns.removeCamera.onclick = () => { this.onButtonClick("removeCamera") };
+    this.allBtns.addPoint.onclick = () => { this.onButtonClick("addPoint") };
+    this.allBtns.removePoint.onclick = () => { this.onButtonClick("removePoint") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  }
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+}
+
+class createPolygonEditButtons implements maplibregl.IControl {
+  private onToggle: (type: "undo" | "discard") => void;
+  private container: HTMLElement | null = null;
+  private allBtns: {
+    "undo": HTMLElement | null;
+    "discard": HTMLElement | null;
+  } = { "undo": null, "discard": null }
+
+
+  constructor( onToggle: (type: "undo" | "discard") => void ) {
+    this.onToggle = onToggle;
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    this.allBtns.undo.title = "Undo last point";
+    this.allBtns.discard.title = "Discard current polygon";
+
+    // render icon for the toolbar
+    ReactDOM.createRoot(this.allBtns.undo).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.discard).render(<ModeEditIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    this.allBtns.undo.onclick = () => { this.onToggle("undo") };
+    this.allBtns.discard.onclick = () => { this.onToggle("discard") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  };
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+
+}
+
 export default function MapView({
   mode,
   dashboardMarkers,
@@ -292,7 +437,7 @@ export default function MapView({
 
   const [open, setOpen] = useState(true);
 
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
 
   const [showPolygonModal, setShowPolygonModal] = useState(false);
@@ -358,7 +503,8 @@ export default function MapView({
   const dashboardRegistryRef = useRef<Map<string, DashMarkerEntry>>(new Map());
   const openDashboardPopupRef = useRef<maplibregl.Popup | null>(null);
 
-  const editControlRef = useRef<ToggleEditButton | null>(null);
+  const editControlRef = useRef<createToggleButtons | null>(null);
+  const polygonEditControlRef = useRef<createPolygonEditButtons | null>(null);
   const geocoderControlRef = useRef<MaplibreGeocoder | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
 
@@ -2004,6 +2150,7 @@ export default function MapView({
     }
 
     if (mode === "map") {
+      /*
       if (!editControlRef.current) {
         editControlRef.current = new ToggleEditButton((isEdit) => {
           setIsEditMode(isEdit);
@@ -2011,12 +2158,72 @@ export default function MapView({
         });
         map.addControl(editControlRef.current, "bottom-right");
       }
+      
     } else {
       if (editControlRef.current) {
         map.removeControl(editControlRef.current);
         editControlRef.current = null;
       }
-      setIsEditMode(false);
+    */
+
+      if (!editControlRef.current) {
+        editControlRef.current = new createToggleButtons((toolMode) => {
+          setToolMode(toolMode);
+          
+          // if setting to add polygon, bring up the add polygon specific menu options
+          if (toolMode == "addPoint") {
+            polygonEditControlRef.current = new createPolygonEditButtons((onPress) => {
+              // handle actions for polygon undo/discard
+              console.log(polygonPointsRef)
+              if (polygonPointsRef.current.length > 0) {
+                if (onPress === "undo") {
+                  setPolygonPoints((prev) => prev.slice(0, -1))
+                } else if (onPress === "discard") {
+                  setPolygonPoints([]);
+                  clearGuideline();
+                }
+              }
+            });
+            map.addControl(polygonEditControlRef.current, "bottom-right");
+          }
+
+          // if moving away from it, remove them
+          else if (polygonEditControlRef.current) {
+            map.removeControl(polygonEditControlRef.current);
+            polygonEditControlRef.current = null;
+          }
+
+        });
+        console.log(editControlRef.current)
+        map.addControl(editControlRef.current, "bottom-right");
+      } else {
+        if (editControlRef.current) {
+          map.removeControl(editControlRef.current);
+          editControlRef.current = null;
+        }
+      }
+
+/*
+                <button
+                  onClick={() => }
+                  className="edit-toolbar__btn edit-toolbar__btn--undo"
+                  title="Undo last point"
+                >
+                  ↩ Undo
+                </button>
+                <button
+                  onClick={() => {
+
+                  }}
+                  className="edit-toolbar__btn edit-toolbar__btn--clear"
+                  title="Discard current polygon"
+                >
+                  ✕ Clear
+                </button>
+*/
+      
+
+      setIsEditMode(true);
       setToolMode("none");
     }
 
@@ -2778,48 +2985,6 @@ export default function MapView({
 
       {isEditMode && mode === "map" && (
         <>
-          <div className="edit-toolbar">
-            {(
-              [
-                { key: "addCamera", label: "＋ Camera" },
-                { key: "removeCamera", label: "− Camera" },
-                { key: "addPoint", label: "＋ Polygon" },
-                { key: "removePoint", label: "− Point" },
-              ] as const
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setToolMode((cur) => (cur === key ? "none" : key))}
-                className={`edit-toolbar__btn edit-toolbar__btn--${key} ${toolMode === key ? "is-active" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-
-            {toolMode === "addPoint" && polygonPoints.length > 0 && (
-              <>
-                <div className="edit-toolbar__divider" />
-                <button
-                  onClick={() => setPolygonPoints((prev) => prev.slice(0, -1))}
-                  className="edit-toolbar__btn edit-toolbar__btn--undo"
-                  title="Undo last point"
-                >
-                  ↩ Undo
-                </button>
-                <button
-                  onClick={() => {
-                    setPolygonPoints([]);
-                    clearGuideline();
-                  }}
-                  className="edit-toolbar__btn edit-toolbar__btn--clear"
-                  title="Discard current polygon"
-                >
-                  ✕ Clear
-                </button>
-              </>
-            )}
-          </div>
-
           {toolMode === "addPoint" && (
             <div className="map-hint">
               {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
