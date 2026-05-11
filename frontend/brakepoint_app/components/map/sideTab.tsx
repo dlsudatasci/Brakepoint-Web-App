@@ -5,7 +5,7 @@ import ToggleDrawer from './toggleDrawer';
 import './sideTab.css';
 
 type SideTabProps = {
-  side: 'left' | 'right' | "top";
+  side: 'left' | 'right' | "top" | "bottom";
   open: boolean;
   invisible?: boolean;
   onToggle: () => void;
@@ -33,6 +33,10 @@ export default function SideTab({ side, open, invisible = false, onToggle, style
       }; 
 
       if (side==='top') {
+        setHeight(10);
+      }; 
+
+      if (side==='bottom') {
         setHeight(10);
       }; 
     };

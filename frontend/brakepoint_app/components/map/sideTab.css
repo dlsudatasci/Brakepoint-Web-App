@@ -1,7 +1,5 @@
 .side-tab {
   position: absolute;
-  top: 0;
-  bottom: 0;
   width: 18rem;
   background-color: #ffffff;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.2);
@@ -15,6 +13,8 @@
 
 .side-tab-left {
   left: 0;
+  top: 0;
+  bottom: 0;
   transform: translateX(-100%);
 }
 .side-tab-left.open {
@@ -23,6 +23,8 @@
 
 .side-tab-right {
   right: 0;
+  top: 0;
+  bottom: 0;
   transform: translateX(100%);
 }
 .side-tab-right.open {
@@ -30,10 +32,22 @@
 }
 
 .side-tab-top {
+  left: 0;
+  right: 0;
   top: 0;
   transform: translateY(-100%);
 }
 .side-tab-top.open {
+  transform: translateY(0%);
+}
+
+.side-tab-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: translateY(100%);
+}
+.side-tab-bottom.open {
   transform: translateY(0%);
 }
 
