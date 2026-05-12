@@ -153,6 +153,18 @@ function DefaultPie({ data, compact, pieId = "pie-chart" }: { data: ChartData[];
   const [sliceColors, setSliceColors] = useState<string[]>([]);
 
   useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const id = requestAnimationFrame(() => {
+      const paths = el.querySelectorAll<SVGPathElement>("path[fill]");
+      const colors = Array.from(paths)
+        .map((p) => p.getAttribute("fill") ?? "")
+        .filter(Boolean);
+      if (colors.length) setSliceColors(colors);
+    });
+
+    return () => cancelAnimationFrame(id);
   }, [cleaned]);
 
   if (!cleaned.length) {
