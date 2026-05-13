@@ -25,9 +25,28 @@ import {
   resolveBrakePointClass,
 } from "@/lib/mapillary";
 
+/*
+    mapMode - how is this map used?
+    — explore:    area/subarea creation for explore tab
+    — map:        subarea configuration map with camera and polygon editing
+    — heatmap:    subarea monitoring map with heatmap
+    — dashboard:  simple map with subarea pins at the dashboard
+*/
 type MapMode = "explore" | "map" | "heatmap" | "dashboard";
+
+/*
+    toolMode - what is the currently active tool (for mapMode = "map")
+      — none:         no tool is currently active; default map behavior
+      — addCamera:    adds a camera on click
+      — removeCamera: removes selected camera on click
+      — addPoint:     adds a polygon point on click
+      — removePoint:  removes a polygon on click
+      — assignCamera: assigns a camera to a polygon area
+*/
 type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" | "assignCamera";
 
+// location and details of a single camera
+// obtained from api/cameras; class Camera in models.py
 type Camera = {
   id: number | string;
   lat: number;
@@ -36,6 +55,7 @@ type Camera = {
   occurrences?: number;
 };
 
+// a marker to display with mapMode = "dashboard"
 type DashboardMarker = {
   id: number | string;
   lat: number;
@@ -45,6 +65,8 @@ type DashboardMarker = {
   popupBody?: string;
 };
 
+// a saved location; can be cached
+// obtained from api/saved-locations; class SavedLocation in models.py
 type SavedLocationRecord = {
   id: number;
   name: string;
@@ -56,12 +78,15 @@ type SavedLocationRecord = {
   parent_id: number | null;
 };
 
+// a completed polygon created by the user
 type CompletedPolygon = {
   points: [number, number][];
   cameraId: number | string | null;
   occurrences?: number;
 };
 
+// a single TerraDraw feature
+// obtained from TerraDraw.getSnapshot()
 type TerraDrawFeature = {
   id: string;
   type: "Feature";
@@ -76,6 +101,7 @@ type TerraDrawFeature = {
   };
 };
 
+// a focus area for TerraDraw to use for map panning, etc
 type FocusArea = {
   kind: "primary" | "sub";
   label: string;
@@ -85,28 +111,37 @@ type FocusArea = {
   minZoom: number;
 };
 
+/*
+    explorePhase - what is the current state of the map (for mapMode = "explore")
+    — idle:             map is idle
+    — drawing-primary:  user is creating a new area
+    — locked-primary:   map has been recently panned and locked to the primary AOI
+    — drawing-sub:      user is creating a new subarea
+*/
 type ExplorePhase = "idle" | "drawing-primary" | "locked-primary" | "drawing-sub";
 
+// definition of types for the props for Map
 type MapProps = {
-  mode: MapMode;
+  mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
 
-  dashboardMarkers?: DashboardMarker[];
-  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;
+  dashboardMarkers?: DashboardMarker[];                                                     // markers to show (mode = "dashboard")
+  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
 
-  onCameraClick?: (cameraId: Camera["id"]) => void;
-  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void;
-  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;
-  onCamerasLoaded?: (cameras: Camera[]) => void;
-  selectedCameraId?: Camera["id"] | null;
+  onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
+  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void; // triggers when user creates a camera (mode = "map" | "heatmap")
+  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
+  onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
+  selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
 
-  refreshTrigger: number;
-  goTo?: [number, number] | null;
-  goToBounds?: [[number, number], [number, number]] | null;
+  refreshTrigger: number;                                                                   // periodically incremented to refresh this Map object
+  goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
+  goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
 
-  showMapillarySigns?: boolean;
-  onMapReady?: (map: maplibregl.Map) => void;
+  showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
+  onMapReady?: (map: maplibregl.Map) => void;                                               // triggers when map has been loaded
 };
 
+// a MapLibre marker for each subarea (mode = "dashboard")
 type DashMarkerEntry = {
   marker: maplibregl.Marker;
   popup?: maplibregl.Popup;
@@ -115,6 +150,7 @@ type DashMarkerEntry = {
   labelEl: HTMLElement;
 };
 
+// a MapLibre marker for each camera (mode = "map" | "heatmap")
 type CameraMarkerEntry = {
   id: number | string;
   marker: maplibregl.Marker;
@@ -135,6 +171,7 @@ function normalizeBounds(bounds: SavedLocationRecord["bounds"], ring: [number, n
   return rectToBoundingBox(ring);
 }
 
+// converts a SavedLocationRecord object (obtained through api, etc) to a format suitable for FocusArea
 function savedLocationToFocusArea(loc: SavedLocationRecord, kind: "primary" | "sub"): FocusArea | null {
   if (!loc.geometry || loc.geometry.length < 4) return null;
 

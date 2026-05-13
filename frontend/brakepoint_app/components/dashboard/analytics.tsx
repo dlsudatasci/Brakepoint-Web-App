@@ -25,7 +25,7 @@ import "./analytics.css";
 import { authFetch } from "@/lib/authFetch";
 
 // dashboard summary data for each sub-area to fill out the dashboard
-// obtained from api/dashboard-summary
+// obtained from api/dashboard-summary; class SavedLocation in models.py
 export type SubAreaSummary = {
   id: number;
   name: string;
