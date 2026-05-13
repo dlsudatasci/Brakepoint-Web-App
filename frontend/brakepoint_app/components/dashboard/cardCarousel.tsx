@@ -8,14 +8,16 @@ import type { SubAreaSummary } from "./analytics";
 
 import "./cardCarousel.css";
 
+// definition of types for the props for CardCarousel
 type CarouselProps = {
-  subareas: SubAreaSummary[];
-  onSelect?: (subarea: SubAreaSummary) => void;
-  emptyTitle?: string;
-  emptyDescription?: string;
-  emptyRoute?: string;
+  subareas: SubAreaSummary[];                   // array of all subareas to be used, each subarea becomes a new card
+  onSelect?: (subarea: SubAreaSummary) => void; // function to trigger when a card is selected
+  emptyTitle?: string;                          // title to display when the card carousel is empty
+  emptyDescription?: string;                    // description to display when the card carousel is empty
+  emptyRoute?: string;                          // route to go to when the card cariousel is empty
 };
 
+// CardCarousel - lists out all subareas in this card carousel (if there are subareas)
 export default function CardCarousel({
   subareas,
   onSelect,
@@ -26,10 +28,12 @@ export default function CardCarousel({
   const router = useRouter();
   const isEmpty = subareas.length === 0;
 
+  // go to emptyRoute when user clicks while this card carousel is empty
   const handleEmptyClick = useCallback(() => {
     router.push(emptyRoute);
   }, [router, emptyRoute]);
 
+  // go to emptyRoute when user presses certain keys while this card carousel is empty
   const handleEmptyKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -43,7 +47,9 @@ export default function CardCarousel({
   return (
     <Box className={`carousel-container ${isEmpty ? "carousel-container--empty" : ""}`}>
       {isEmpty ? (
+
         <Box className="carousel-empty-wrapper">
+          {/* empty card carousel placeholder - display guidance text on where the user can proceed next */}
           <Box
             className="carousel-empty"
             role="button"
@@ -60,9 +66,11 @@ export default function CardCarousel({
             </Typography>
           </Box>
         </Box>
+
       ) : (
         subareas.map((subarea) => (
           <Box className="carousel-card-container" key={subarea.id}>
+            {/* for each subarea we have (subareas.map), create a new LocationCard */}
             <LocationCard camera={subarea} onClick={() => onSelect?.(subarea)} />
           </Box>
         ))

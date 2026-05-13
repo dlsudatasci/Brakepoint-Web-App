@@ -25,9 +25,28 @@ import {
   resolveBrakePointClass,
 } from "@/lib/mapillary";
 
+/*
+    mapMode - how is this map used?
+    — explore:    area/subarea creation for explore tab
+    — map:        subarea configuration map with camera and polygon editing
+    — heatmap:    subarea monitoring map with heatmap
+    — dashboard:  simple map with subarea pins at the dashboard
+*/
 type MapMode = "explore" | "map" | "heatmap" | "dashboard";
+
+/*
+    toolMode - what is the currently active tool (for mapMode = "map")
+      — none:         no tool is currently active; default map behavior
+      — addCamera:    adds a camera on click
+      — removeCamera: removes selected camera on click
+      — addPoint:     adds a polygon point on click
+      — removePoint:  removes a polygon on click
+      — assignCamera: assigns a camera to a polygon area
+*/
 type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" | "assignCamera";
 
+// location and details of a single camera
+// obtained from api/cameras; class Camera in models.py
 type Camera = {
   id: number | string;
   lat: number;
@@ -36,6 +55,7 @@ type Camera = {
   occurrences?: number;
 };
 
+// a marker to display with mapMode = "dashboard"
 type DashboardMarker = {
   id: number | string;
   lat: number;
@@ -45,6 +65,8 @@ type DashboardMarker = {
   popupBody?: string;
 };
 
+// a saved location; can be cached
+// obtained from api/saved-locations; class SavedLocation in models.py
 type SavedLocationRecord = {
   id: number;
   name: string;
@@ -56,12 +78,15 @@ type SavedLocationRecord = {
   parent_id: number | null;
 };
 
+// a completed polygon created by the user
 type CompletedPolygon = {
   points: [number, number][];
   cameraId: number | string | null;
   occurrences?: number;
 };
 
+// a single TerraDraw feature
+// obtained from TerraDraw.getSnapshot()
 type TerraDrawFeature = {
   id: string;
   type: "Feature";
@@ -76,6 +101,7 @@ type TerraDrawFeature = {
   };
 };
 
+// a focus area for TerraDraw to use for map panning, etc
 type FocusArea = {
   kind: "primary" | "sub";
   label: string;
@@ -85,28 +111,37 @@ type FocusArea = {
   minZoom: number;
 };
 
+/*
+    explorePhase - what is the current state of the map (for mapMode = "explore")
+    — idle:             map is idle
+    — drawing-primary:  user is creating a new area
+    — locked-primary:   map has been recently panned and locked to the primary AOI
+    — drawing-sub:      user is creating a new subarea
+*/
 type ExplorePhase = "idle" | "drawing-primary" | "locked-primary" | "drawing-sub";
 
+// definition of types for the props for Map
 type MapProps = {
-  mode: MapMode;
+  mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
 
-  dashboardMarkers?: DashboardMarker[];
-  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;
+  dashboardMarkers?: DashboardMarker[];                                                     // markers to show (mode = "dashboard")
+  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
 
-  onCameraClick?: (cameraId: Camera["id"]) => void;
-  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void;
-  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;
-  onCamerasLoaded?: (cameras: Camera[]) => void;
-  selectedCameraId?: Camera["id"] | null;
+  onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
+  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void; // triggers when user creates a camera (mode = "map" | "heatmap")
+  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
+  onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
+  selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
 
-  refreshTrigger: number;
-  goTo?: [number, number] | null;
-  goToBounds?: [[number, number], [number, number]] | null;
+  refreshTrigger: number;                                                                   // periodically incremented to refresh this Map object
+  goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
+  goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
 
-  showMapillarySigns?: boolean;
-  onMapReady?: (map: maplibregl.Map) => void;
+  showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
+  onMapReady?: (map: maplibregl.Map) => void;                                               // triggers when map has been loaded
 };
 
+// a MapLibre marker for each subarea (mode = "dashboard")
 type DashMarkerEntry = {
   marker: maplibregl.Marker;
   popup?: maplibregl.Popup;
@@ -115,6 +150,7 @@ type DashMarkerEntry = {
   labelEl: HTMLElement;
 };
 
+// a MapLibre marker for each camera (mode = "map" | "heatmap")
 type CameraMarkerEntry = {
   id: number | string;
   marker: maplibregl.Marker;
@@ -135,6 +171,7 @@ function normalizeBounds(bounds: SavedLocationRecord["bounds"], ring: [number, n
   return rectToBoundingBox(ring);
 }
 
+// converts a SavedLocationRecord object (obtained through api, etc) to a format suitable for FocusArea
 function savedLocationToFocusArea(loc: SavedLocationRecord, kind: "primary" | "sub"): FocusArea | null {
   if (!loc.geometry || loc.geometry.length < 4) return null;
 
@@ -239,6 +276,7 @@ function disableRotationInteractions(map: maplibregl.Map) {
   map.dragPan.enable();
 }
 
+// deprecated -cy
 class ToggleEditButton implements maplibregl.IControl {
   private onToggle: (isEdit: boolean) => void;
   private container: HTMLElement | null = null;
@@ -272,6 +310,150 @@ class ToggleEditButton implements maplibregl.IControl {
   }
 }
 
+class createToggleButtons implements maplibregl.IControl {
+  private onToggle: (toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" ) => void;
+  private container: HTMLElement | null = null;
+  private toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" = "none";
+  private allBtns: {
+    "addCamera": HTMLElement | null;
+    "removeCamera": HTMLElement | null;
+    "addPoint": HTMLElement | null;
+    "removePoint": HTMLElement | null;
+  } = {"addCamera": null, "removeCamera": null, "addPoint": null, "removePoint": null};
+
+  constructor(onToggle: (toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" ) => void) {
+    this.onToggle = onToggle;
+  }
+
+  // updates the button styles
+  updateButtonStyles = (
+    oldToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint",
+    newToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint",
+  ) => {
+    if (oldToolMode != "none") {
+      this.allBtns[oldToolMode].style.backgroundColor = "";
+    }
+    if (newToolMode != "none") {
+      this.allBtns[newToolMode].style.backgroundColor = "#e0e4e9ff";
+    }
+  }
+
+  // triggers when one of the buttons in this edit button selection is toggled on/off
+  onButtonClick = (
+    btnToolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint"
+  ) => {
+    // disable the tool
+    if (this.toolMode == btnToolMode) {
+      this.updateButtonStyles(this.toolMode, "none");
+      this.toolMode = "none";
+    }
+    // enables this tool
+    else if (this.toolMode == "none") {
+      this.updateButtonStyles("none", btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    // switches to a new tool
+    else {
+      this.updateButtonStyles(this.toolMode, btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    this.onToggle(this.toolMode);
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    this.allBtns.addCamera.title = "Add camera";
+    this.allBtns.removeCamera.title = "Remove camera";
+    this.allBtns.addPoint.title = "Add point";
+    this.allBtns.removePoint.title = "Remove point";
+
+    // render icon for the toolbar
+    ReactDOM.createRoot(this.allBtns.addCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removeCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.addPoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removePoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    this.allBtns.addCamera.onclick = () => { this.onButtonClick("addCamera") };
+    this.allBtns.removeCamera.onclick = () => { this.onButtonClick("removeCamera") };
+    this.allBtns.addPoint.onclick = () => { this.onButtonClick("addPoint") };
+    this.allBtns.removePoint.onclick = () => { this.onButtonClick("removePoint") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  }
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+}
+
+class createPolygonEditButtons implements maplibregl.IControl {
+  private onToggle: (type: "undo" | "discard") => void;
+  private container: HTMLElement | null = null;
+  private allBtns: {
+    "undo": HTMLElement | null;
+    "discard": HTMLElement | null;
+  } = { "undo": null, "discard": null }
+
+
+  constructor( onToggle: (type: "undo" | "discard") => void ) {
+    this.onToggle = onToggle;
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    this.allBtns.undo.title = "Undo last point";
+    this.allBtns.discard.title = "Discard current polygon";
+
+    // render icon for the toolbar
+    ReactDOM.createRoot(this.allBtns.undo).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.discard).render(<ModeEditIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    this.allBtns.undo.onclick = () => { this.onToggle("undo") };
+    this.allBtns.discard.onclick = () => { this.onToggle("discard") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  };
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+
+}
+
 export default function MapView({
   mode,
   dashboardMarkers,
@@ -292,7 +474,7 @@ export default function MapView({
 
   const [open, setOpen] = useState(true);
 
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
 
   const [showPolygonModal, setShowPolygonModal] = useState(false);
@@ -358,7 +540,8 @@ export default function MapView({
   const dashboardRegistryRef = useRef<Map<string, DashMarkerEntry>>(new Map());
   const openDashboardPopupRef = useRef<maplibregl.Popup | null>(null);
 
-  const editControlRef = useRef<ToggleEditButton | null>(null);
+  const editControlRef = useRef<createToggleButtons | null>(null);
+  const polygonEditControlRef = useRef<createPolygonEditButtons | null>(null);
   const geocoderControlRef = useRef<MaplibreGeocoder | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
 
@@ -2004,6 +2187,7 @@ export default function MapView({
     }
 
     if (mode === "map") {
+      /*
       if (!editControlRef.current) {
         editControlRef.current = new ToggleEditButton((isEdit) => {
           setIsEditMode(isEdit);
@@ -2011,12 +2195,72 @@ export default function MapView({
         });
         map.addControl(editControlRef.current, "bottom-right");
       }
+      
     } else {
       if (editControlRef.current) {
         map.removeControl(editControlRef.current);
         editControlRef.current = null;
       }
-      setIsEditMode(false);
+    */
+
+      if (!editControlRef.current) {
+        editControlRef.current = new createToggleButtons((toolMode) => {
+          setToolMode(toolMode);
+          
+          // if setting to add polygon, bring up the add polygon specific menu options
+          if (toolMode == "addPoint") {
+            polygonEditControlRef.current = new createPolygonEditButtons((onPress) => {
+              // handle actions for polygon undo/discard
+              console.log(polygonPointsRef)
+              if (polygonPointsRef.current.length > 0) {
+                if (onPress === "undo") {
+                  setPolygonPoints((prev) => prev.slice(0, -1))
+                } else if (onPress === "discard") {
+                  setPolygonPoints([]);
+                  clearGuideline();
+                }
+              }
+            });
+            map.addControl(polygonEditControlRef.current, "bottom-right");
+          }
+
+          // if moving away from it, remove them
+          else if (polygonEditControlRef.current) {
+            map.removeControl(polygonEditControlRef.current);
+            polygonEditControlRef.current = null;
+          }
+
+        });
+        console.log(editControlRef.current)
+        map.addControl(editControlRef.current, "bottom-right");
+      } else {
+        if (editControlRef.current) {
+          map.removeControl(editControlRef.current);
+          editControlRef.current = null;
+        }
+      }
+
+/*
+                <button
+                  onClick={() => }
+                  className="edit-toolbar__btn edit-toolbar__btn--undo"
+                  title="Undo last point"
+                >
+                  ↩ Undo
+                </button>
+                <button
+                  onClick={() => {
+
+                  }}
+                  className="edit-toolbar__btn edit-toolbar__btn--clear"
+                  title="Discard current polygon"
+                >
+                  ✕ Clear
+                </button>
+*/
+      
+
+      setIsEditMode(true);
       setToolMode("none");
     }
 
@@ -2660,185 +2904,124 @@ export default function MapView({
     <div className="map-wrap">
       <div ref={mapContainer} className="map" />
       {mode === "explore" && (
-          <SideTab side="top" open={open} invisible={true} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>
-            <>
-              <div className="explore-toolbar explore-toolbar--primary-panel">
-                <span className="explore-toolbar__step">
-                  {explorePhase === "drawing-sub"
-                    ? activeSubAreaIndex != null
-                      ? "Step 3 · Edit selected sub-area"
-                      : "Step 3 · Draw a sub-area"
-                    : explorePhase === "drawing-primary"
-                      ? primaryFocusArea
-                        ? "Step 2 · Adjust AOI"
-                        : "Step 1 · Draw the AOI"
-                      : primaryFocusArea
-                        ? "Step 3 · Manage sub-areas"
-                        : "Step 1 · Search and draw the AOI"}
-                </span>
+          <SideTab side="bottom" open={open} invisible={false} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>
+            <div className="explore-toolbar-header">
+              <span className="explore-toolbar__step">
+                {explorePhase === "drawing-sub"
+                  ? activeSubAreaIndex != null
+                    ? "Step 3 · Edit selected sub-area"
+                    : "Step 3 · Draw a sub-area"
+                  : explorePhase === "drawing-primary"
+                    ? primaryFocusArea
+                      ? "Step 2 · Adjust AOI"
+                      : "Step 1 · Draw the AOI"
+                    : primaryFocusArea
+                      ? "Step 3 · Manage sub-areas"
+                      : "Step 1 · Search and draw the AOI"
+                }
+              </span>
 
-                <span className="explore-toolbar__label">
-                  {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-                  {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-                </span>
+              <span className="explore-toolbar__label">
+                {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
+                {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
+              </span>
 
-                <div className="explore-toolbar__group">
-                  {primaryFocusArea && (
-                    <button
-                      onClick={() => fitToFocusArea(primaryFocusArea)}
-                      className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                      disabled={isDrawingFocusArea}
-                    >
-                      Reset View
-                    </button>
-                  )}
+              <span />
+            </div>
 
-                  {!isDrawingFocusArea ? (
-                    <>
-                      <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                        Edit AOI
-                      </button>
-
-                      <button
-                        onClick={deletePrimaryFocusArea}
-                        className="explore-toolbar__btn explore-toolbar__btn--danger"
-                        disabled={!hasConfirmedPrimary}
-                      >
-                        Delete AOI
-                      </button>
-
-                      <button
-                        onClick={beginSubFocusDrawing}
-                        className="explore-toolbar__btn explore-toolbar__btn--primary"
-                        disabled={!hasConfirmedPrimary}
-                      >
-                        Add Sub-area
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          if (selectedSubAreaIndex != null) {
-                            handleEditSubArea(selectedSubAreaIndex);
-                          }
-                        }}
-                        className="explore-toolbar__btn explore-toolbar__btn--sub"
-                        disabled={!hasSelectedSubArea}
-                      >
-                        Edit Selected
-                      </button>
-
-                      <button
-                        onClick={deleteSelectedSubArea}
-                        className="explore-toolbar__btn explore-toolbar__btn--danger"
-                        disabled={!hasSelectedSubArea}
-                      >
-                        Delete Selected
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                        {explorePhase === "drawing-sub"
-                          ? activeSubAreaIndex != null
-                            ? "Confirm Sub-area Edit"
-                            : "Confirm Sub-area"
-                          : primaryFocusArea
-                            ? "Confirm AOI Edit"
-                            : "Confirm AOI"}
-                      </button>
-
-                      <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {subFocusAreas.length > 0 && (
-                <div className="explore-toolbar explore-toolbar--secondary">
-                  <span className="explore-toolbar__label">Sub-areas</span>
-
-                  {subFocusAreas.map((area, index) => (
-                    <button
-                      key={`${area.label}-${index}`}
-                      onClick={() => setSelectedSubAreaIndex(index)}
-                      className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                      disabled={isDrawingFocusArea}
-                    >
-                      {area.label}
-                    </button>
-                  ))}
-                </div>
+            <div className="explore-toolbar__group">
+              {primaryFocusArea && (
+                <button
+                  onClick={() => fitToFocusArea(primaryFocusArea)}
+                  className="explore-toolbar__btn explore-toolbar__btn--neutral"
+                  disabled={isDrawingFocusArea}
+                >
+                  Reset View
+                </button>
               )}
 
-              {focusError && <div className="explore-error">{focusError}</div>}
+              {!isDrawingFocusArea ? (
+                <>
+                  <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
+                    Edit AOI
+                  </button>
 
-            </>
+                  <button
+                    onClick={deletePrimaryFocusArea}
+                    className="explore-toolbar__btn explore-toolbar__btn--danger"
+                    disabled={!hasConfirmedPrimary}
+                  >
+                    Delete AOI
+                  </button>
+
+                  <button
+                    onClick={beginSubFocusDrawing}
+                    className="explore-toolbar__btn explore-toolbar__btn--primary"
+                    disabled={!hasConfirmedPrimary}
+                  >
+                    Add Sub-area
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (selectedSubAreaIndex != null) {
+                        handleEditSubArea(selectedSubAreaIndex);
+                      }
+                    }}
+                    className="explore-toolbar__btn explore-toolbar__btn--sub"
+                    disabled={!hasSelectedSubArea}
+                  >
+                    Edit Selected
+                  </button>
+
+                  <button
+                    onClick={deleteSelectedSubArea}
+                    className="explore-toolbar__btn explore-toolbar__btn--danger"
+                    disabled={!hasSelectedSubArea}
+                  >
+                    Delete Selected
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
+                    {explorePhase === "drawing-sub"
+                      ? activeSubAreaIndex != null
+                        ? "Confirm Sub-area Edit"
+                        : "Confirm Sub-area"
+                      : primaryFocusArea
+                        ? "Confirm AOI Edit"
+                        : "Confirm AOI"}
+                  </button>
+
+                  <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
+                    Cancel
+                  </button>
+                </>
+              )}
+            </div>
+
+            {subFocusAreas.length > 0 && (
+              <div className="explore-toolbar">
+                <span className="explore-toolbar__label">Sub-areas</span>
+
+                {subFocusAreas.map((area, index) => (
+                  <button
+                    key={`${area.label}-${index}`}
+                    onClick={() => setSelectedSubAreaIndex(index)}
+                    className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
+                    disabled={isDrawingFocusArea}
+                  >
+                    {area.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </SideTab>
       )}
-    {mode === "explore" && (
-      <div className="explore-status">
-        {explorePhase === "drawing-sub"
-          ? activeSubAreaIndex != null
-            ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
-            : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
-          : explorePhase === "drawing-primary"
-            ? primaryFocusArea
-              ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
-              : "Draw the AOI rectangle, then click Confirm AOI."
-            : primaryFocusArea
-              ? selectedSubAreaIndex != null
-                ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
-                : "AOI confirmed. Add sub-areas or select an existing sub-area."
-              : "Search for a place if needed, then draw an AOI rectangle."}
-      </div>
-    )}
 
       {isEditMode && mode === "map" && (
         <>
-          <div className="edit-toolbar">
-            {(
-              [
-                { key: "addCamera", label: "＋ Camera" },
-                { key: "removeCamera", label: "− Camera" },
-                { key: "addPoint", label: "＋ Polygon" },
-                { key: "removePoint", label: "− Point" },
-              ] as const
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setToolMode((cur) => (cur === key ? "none" : key))}
-                className={`edit-toolbar__btn edit-toolbar__btn--${key} ${toolMode === key ? "is-active" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-
-            {toolMode === "addPoint" && polygonPoints.length > 0 && (
-              <>
-                <div className="edit-toolbar__divider" />
-                <button
-                  onClick={() => setPolygonPoints((prev) => prev.slice(0, -1))}
-                  className="edit-toolbar__btn edit-toolbar__btn--undo"
-                  title="Undo last point"
-                >
-                  ↩ Undo
-                </button>
-                <button
-                  onClick={() => {
-                    setPolygonPoints([]);
-                    clearGuideline();
-                  }}
-                  className="edit-toolbar__btn edit-toolbar__btn--clear"
-                  title="Discard current polygon"
-                >
-                  ✕ Clear
-                </button>
-              </>
-            )}
-          </div>
-
           {toolMode === "addPoint" && (
             <div className="map-hint">
               {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}

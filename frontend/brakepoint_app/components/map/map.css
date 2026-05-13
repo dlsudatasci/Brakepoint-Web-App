@@ -123,6 +123,18 @@ input[type="search"]::-webkit-search-cancel-button {
 /* Shared floating UI                                                         */
 /* -------------------------------------------------------------------------- */
 
+.explore-toolbar-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+.explore-toolbar-header > span {
+  width: 33%;
+}
+.explore-toolbar-header > span:nth-child(1) { text-align: left; }
+.explore-toolbar-header > span:nth-child(2) { text-align: center; }
+.explore-toolbar-header > span:nth-child(3) { text-align: right; }
+
 .explore-toolbar-row,
 .edit-toolbar,
 .explore-status,
@@ -154,8 +166,8 @@ input[type="search"]::-webkit-search-cancel-button {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  /*background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);*/
   backdrop-filter: blur(8px);
   pointer-events: auto;
 }
@@ -179,7 +191,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .edit-toolbar {
-  top: 12px;
+  bottom: 12px;
   z-index: 1200;
   justify-content: center;
 }

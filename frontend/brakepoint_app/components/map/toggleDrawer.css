@@ -1,6 +1,5 @@
 .toggle-button {
   position: absolute !important;
-  top: 50%;
   z-index: 200;
   background-color: #ffffff /*!important*/;
   color: #0f172a;
@@ -40,14 +39,14 @@
 
 .toggle-bottom {
   border-radius: 5rem 5rem 0 0;  
-  bottom: 0;
+  bottom: 0em;
   left: 50%;
   transform: translateX(-50%) translateY(0);
   width: 7.5rem;
   height: 2rem;
 }
 .toggle-bottom.open {
-  transform: translateX(-50%) translateY(calc(var(--side-tab-width) * -1));
+  transform: translateX(-50%) translateY(15em);
 }
 .toggle-bottom.main-invisible {
   border-radius: 5rem 5rem 2.5rem 2.5rem;  

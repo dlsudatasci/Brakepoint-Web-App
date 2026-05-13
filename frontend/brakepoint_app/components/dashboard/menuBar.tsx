@@ -10,14 +10,16 @@ import LogoutIcon from "@mui/icons-material/Logout";
 
 import styles from "./menuBar.module.css";
 
+// definition of types for the props for MenuBar
 interface MenuBarProps {
-  activeView?: "analytics" | "edit";
-  onViewChange?: (view: "analytics" | "edit") => void;
+  activeView?: "analytics" | "edit";                    // the currently active page to be highlighted
+  onViewChange?: (view: "analytics" | "edit") => void;  // triggers when the user clicks on a button
 }
 
 export default function MenuBar({ activeView = "analytics", onViewChange }: MenuBarProps) {
   const router = useRouter();
 
+  // handles the sign out process - removes user session data from the browser
   const handleSignOut = () => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");

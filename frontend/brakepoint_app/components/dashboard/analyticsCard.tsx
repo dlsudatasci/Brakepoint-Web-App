@@ -4,22 +4,26 @@ import { PieChart } from "@mui/x-charts/PieChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import "./analyticsCard.css";
 
+// what format to display this data point as
 type DataView = "pie" | "line" | "text";
 
+// definition of types for the props for AnalyticsCard
 type ACProps = {
-  headerText: string;
-  icon?: React.ReactNode;
-  variant?: DataView;
-  valueText?: React.ReactNode;
-  data?: ChartData[];
-  compact?: boolean;
+  headerText: string;           // header text / statistic being displayed here
+  icon?: React.ReactNode;       // icon to display
+  variant?: DataView;           // what format to display this data point as
+  valueText?: React.ReactNode;  // for text displays, the value to display
+  data?: ChartData[];           // for pie displays, data to add to the chart
+  compact?: boolean;            // display this card in a compact way?
 };
 
+// label-value pair to fill out a pie chart
 export type ChartData = {
   label: string;
   value: number;
 };
 
+// creates a textual legend for each entry in this pie chart
 function PieLegend({
   data,
   total,
@@ -87,6 +91,7 @@ function PieLegend({
   );
 }
 
+// if there is no available data, use this to generate a placeholder empty pie
 function EmptyPie({ compact, label = "", pieId = "empty-pie-chart" }: { compact: boolean; label?: string; pieId?: string }) {
   const chartSize = compact
     ? { width: 180, height: 160, innerRadius: 35, outerRadius: 70 }
@@ -130,7 +135,9 @@ function EmptyPie({ compact, label = "", pieId = "empty-pie-chart" }: { compact:
   );
 }
 
+// displays a pie chart for this analytics card
 function DefaultPie({ data, compact, pieId = "pie-chart" }: { data: ChartData[]; compact: boolean; pieId?: string }) {
+  // clean input data: remove all zero/negative/inf/NaN values
   const cleaned = useMemo(
     () => data.map((d) => ({ ...d, value: Number.isFinite(d.value) ? Math.max(0, d.value) : 0 })).filter((d) => d.value > 0),
     [data],
@@ -208,9 +215,11 @@ function Fallback({ label }: { label: string }) {
   );
 }
 
+// analytics card to display various analytics to the user
 export default function AnalyticsCard({ headerText, icon, variant = "text", valueText, data, compact = false }: ACProps) {
   return (
     <Box className="ac-container">
+      {/* header and icon */}
       <Box className="ac-header">
         <Typography variant={compact ? "body2" : "h6"} fontWeight={600}>
           {headerText}
@@ -221,6 +230,7 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
       </Box>
 
       <Box className="ac-content">
+        {/* for text display: display the valueText / statistic count */}
         {variant === "text" && (
           <Box className="ac-text">
             <Typography variant={compact ? "h5" : "h4"} fontWeight={700}>
@@ -229,6 +239,7 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
           </Box>
         )}
 
+        {/* for pie display: display the relevant pie chart */}
         {variant === "pie" && (
           <Box className="ac-pie" sx={{ display: "flex", flexDirection: "column" }}>
             <DefaultPie data={data ?? []} compact={compact} pieId={`${headerText}-pie`} />
