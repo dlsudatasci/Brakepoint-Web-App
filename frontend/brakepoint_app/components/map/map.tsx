@@ -2458,7 +2458,7 @@ export default function MapView({
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
 
-      if (activeTool === "none" && !isEditMode && mode === "map") {
+      if (activeTool === "none" && isEditMode && mode === "map") {
         const features = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-fill"],
         });
