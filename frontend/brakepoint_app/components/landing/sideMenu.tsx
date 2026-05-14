@@ -43,15 +43,15 @@ export default function SideMenu({ activeView = "analytics", onViewChange, areaC
                     <Button
                         onClick={handleSignOut}
                         sx={{
-                            fontSize: '30px',
-                            marginLeft: 'auto',
-                            marginTop: '1.2em',
+                            marginLeft: '9em',
+                            minWidth:0,
+                            padding: '5px 20px 5px 20px',
                             color: 'rgb(236, 237, 245)',
                             cursor: 'pointer',
                             "&:hover": { bgcolor: "rgb(236, 237, 245)", color: "#161b4c" },
                         }}
                     >
-                        <LogoutIcon />
+                        <LogoutIcon sx={{fontSize: '1.8rem'}}/>
                     </Button>
 
                 </Box>
