@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Button, TextField, Typography, Paper } from '@mui/material';
 
@@ -10,7 +10,21 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const router = useRouter();
+
+  useEffect(() => {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        router.replace('/dashboard');
+      } else {
+        setIsCheckingAuth(false);
+      }
+    }, [router]);
+
+    if (isCheckingAuth) {
+      return null;
+    } 
   
 
    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
