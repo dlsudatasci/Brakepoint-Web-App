@@ -71,7 +71,7 @@ export default function CardCarousel({
         subareas.map((subarea) => (
           <Box className="carousel-card-container" key={subarea.id}>
             {/* for each subarea we have (subareas.map), create a new LocationCard */}
-            <LocationCard camera={subarea} onClick={() => onSelect?.(subarea)} />
+            <LocationCard type="subarea" camera={subarea} onClick={() => onSelect?.(subarea)} />
           </Box>
         ))
       )}

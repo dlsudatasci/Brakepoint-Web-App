@@ -2,142 +2,133 @@
 
 import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip } from "@mui/material";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
-import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
-import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
-import SwapCallsIcon from "@mui/icons-material/SwapCalls";
-import PanToolOutlinedIcon from "@mui/icons-material/PanToolOutlined";
 import type { SubAreaSummary } from "./analytics";
 import "./locationCard.css";
 
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';                                  // vehicles icon
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";                  // ADB icon
+import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";                                  // speeding icon
+import SwapCallsIcon from "@mui/icons-material/SwapCalls";                                          // swerving icon
+import PanToolOutlinedIcon from "@mui/icons-material/PanToolOutlined";                              // abrupt stopping icon
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';                        // rightwards icon
+import { ReportProblem } from "@mui/icons-material";
+
+// details for this area/subarea
+// obtained from api/dashboard-summary; class SavedLocation in models.py
+type LocationSummary = {
+  location_type: "aoi" | "subarea";
+
+  name: string;
+  lat: number;
+  lng: number;
+
+  camera_count: number;
+  subarea_count: number;
+
+  vehicles: number;
+  speeding: number;
+  swerving: number;
+  abrupt_stopping: number;
+  adb: number;
+
+  tags: string[];
+}
+
 // definition of types for the props for LocationCard
 type LCProps = {
-  camera: SubAreaSummary; // the subarea to create a card for
-  onClick?: () => void;   // triggers when the user clicks on this card
+  type: "area" | "subarea";                     // whether this card is an area or a subarea (road segment) card
+  locationDetails?: LocationSummary;            // details of the location to incorporate into this card
+  onClickCard?: () => void;                     // what happens when the user clicks on the main card itself?
+  onClickSideButton?: () => void;               // what happens when the user clicks on the highlighted side button?
+
+  camera?: SubAreaSummary;                      // deprecated - subarea details. future uses of LC must use locationDetails, please!
+  onClick?: () => void;                         // deprecated - triggers when the user clicks on this card
 };
 
 // LocationCard - displays an information card for a subarea (if applicable)
-export default function LocationCard({ camera, onClick }: LCProps) {
+export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, camera, onClick }: LCProps) {
+
+  // move all details from deprecated camera to locationDetails
+  if (camera && !locationDetails) {
+    console.log(camera)
+    type = "subarea"
+    locationDetails = {
+      location_type: "subarea",
+      name: camera.name,
+      lat: camera.lat, lng: camera.lng,
+      camera_count: camera.camera_count, subarea_count: 0,
+      vehicles: camera.vehicles,
+      speeding: camera.speeding, swerving: camera.swerving, abrupt_stopping: camera.abrupt_stopping, adb: camera.adb,
+      tags: camera.tags,
+    }
+  };
+
+  // move details from deprecated onClick to onClickSideButton
+  if (!onClickSideButton && onClick) {
+    onClickSideButton = onClick;
+  }
+
+  // temp variables
+  // const type = "area";
+  const adbDisplay = type == "area" ? "row" : "list";
+
   return (
-    <Box className="lc-container" onClick={onClick} sx={{ cursor: onClick ? "pointer" : "default" }}>
+    <Box className="lc-container">
+      {/* main - contains the main details regarding this card (area/subarea) */}
+      <Box className="lc-main" onClick={onClickCard} >
 
-      {/* Thumbnail
-          by default, thumbnails are based on the first frame of the latest video from a camera in this location */}
-      {camera.thumbnail ? (
-        <Box
-          component="img"
-          src={camera.thumbnail.startsWith("data:") ? camera.thumbnail : `data:image/jpeg;base64,${camera.thumbnail}`}
-          alt={camera.name}
-          sx={{
-            width: "100%",
-            height: 140,
-            objectFit: "cover",
-            borderRadius: "12px",
-            mb: 1,
-          }}
-        />
-      ) : (
-        <Box
-          sx={{
-            width: "100%",
-            height: 140,
-            borderRadius: "12px",
-            mb: 1,
-            bgcolor: "#eef0ef",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Typography variant="body2" color="text.secondary">No thumbnail</Typography>
-        </Box>
-      )}
+        {/* header and subheader */}
+        <div className="lc-header-container">
+          <div className="lc-header">{locationDetails.name}</div>
+          { type == "area" && (
+            <div className="lc-subheader">{locationDetails.subarea_count} road segment{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
+          )}
+        </div>
 
-      <Box className="lc-header">
-        <Typography variant="h6" fontWeight={700}>{camera.name}</Typography>
-      </Box>
+        {/* the list of adbs and other statistics as a quick-glance row */}
+        { adbDisplay == "row" && (
+          <div className="lc-stat-row">
+            <div className="lc-stat"> <DirectionsCarIcon /> {locationDetails.vehicles} </div>
+            <div className="lc-stat lc-adb"> <ReportProblemOutlinedIcon /> {locationDetails.adb} </div>
+            <div className="lc-stat lc-adb"> <SpeedOutlinedIcon/> {locationDetails.speeding} </div>
+            <div className="lc-stat lc-adb"> <SwapCallsIcon/> {locationDetails.swerving} </div>
+            <div className="lc-stat lc-adb"> <PanToolOutlinedIcon/> {locationDetails.abrupt_stopping} </div>
+          </div>
+        )}
 
-      <Box className="lc-content">
+        {/* the list of adbs and other statistics as a list */}
+        { adbDisplay == "list" && (
+          <div className="lc-stat-list">
+            <div>
+              <div className="lc-stat"> <DirectionsCarIcon /> <span><b>{locationDetails.vehicles}</b> total vehicles</span> </div>
+              <div className="lc-stat lc-adb"> <ReportProblemOutlinedIcon /> <span><b>{locationDetails.adb}</b> total ADB</span> </div>
+            </div>
+            <div>
+            <div className="lc-stat lc-adb"> <SpeedOutlinedIcon/> <span><b>{locationDetails.speeding}</b> speeding</span> </div>
+            <div className="lc-stat lc-adb"> <SwapCallsIcon/> <span><b>{locationDetails.swerving}</b> swerving</span> </div>
+            <div className="lc-stat lc-adb"> <PanToolOutlinedIcon/> <span><b>{locationDetails.abrupt_stopping}</b> abrupt stops</span> </div>
+            </div>
+          </div>
+        )}
 
-        {/* subtitle - display the location name + coordinates here */}
-        <Box className="lc-subtitle">
-          <Typography variant="body2" color="text.secondary">
-            {camera.location || `${camera.lat.toFixed(4)}°, ${camera.lng.toFixed(4)}°`}
-          </Typography>
-        </Box>
+        {/* the list of tags that applies to this area/subarea */}
+        { camera.tags && camera.tags.length > 0 && (
+          <Box className="lc-tag-row">
 
-        <Box className="lc-statistics">
-          <List dense>
-
-            {/* total vehicle count */}
-            <ListItem disablePadding>
-              <ListItemIcon sx={{ minWidth: 36, color: "#1d1f3f" }}>
-                <DirectionsCarFilledOutlinedIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`${camera.vehicles.toLocaleString()} vehicles`}
-              />
-            </ListItem>
-
-            {/* total ADB count */}
-            <ListItem disablePadding>
-              <ListItemIcon sx={{ minWidth: 36, color: "#f57c00" }}>
-                <ReportProblemOutlinedIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`${camera.adb.toLocaleString()} ADB total`}
-              />
-            </ListItem>
-            
-            {/* speeding count */}
-            <ListItem disablePadding>
-              <ListItemIcon sx={{ minWidth: 36, color: "#5c6bc0" }}>
-                <SpeedOutlinedIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`${camera.speeding.toLocaleString()} speeding`}
-              />
-            </ListItem>
-            
-            {/* swerving count */}
-            <ListItem disablePadding>
-              <ListItemIcon sx={{ minWidth: 36, color: "#ef5350" }}>
-                <SwapCallsIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`${camera.swerving.toLocaleString()} swerving`}
-              />
-            </ListItem>
-            
-            {/* abrupt stopping count */}
-            <ListItem disablePadding>
-              <ListItemIcon sx={{ minWidth: 36, color: "#ffa726" }}>
-                <PanToolOutlinedIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`${camera.abrupt_stopping.toLocaleString()} abrupt stops`}
-              />
-            </ListItem>
-          </List>
-        </Box>
-
-        {/* list out the tags here, if applicable */}
-        {camera.tags && camera.tags.length > 0 && (
-          <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.5 }}>
             {camera.tags.map((tag) => (
-              <Chip
-                key={tag}
-                label={tag}
-                size="small"
-                sx={{
-                  fontSize: "0.68rem",
-                  height: 20,
-                  bgcolor: "#1d1f3f",
-                  color: "#fff",
-                }}
-              />
+              <div key={tag} className="lc-tag">
+                {tag}
+              </div>
             ))}
+
           </Box>
         )}
+
+      </Box>
+      
+      {/* button - click here to go to the detailed menu */}
+      <Box className="lc-button" onClick={onClickSideButton} >
+        <KeyboardArrowRightIcon />
       </Box>
     </Box>
   );
