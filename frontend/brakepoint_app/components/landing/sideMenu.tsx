@@ -64,9 +64,11 @@ export default function SideMenu({ activeView = "analytics", onViewChange, areaC
                     <Chip
                         label={areaCount}
                         size="small"
+                        variant="outlined"
                         sx={{
-                            bgcolor: "#161b4c",
-                            color: "rgb(236, 237, 245)",
+                            color: "#161b4c",
+                            borderColor: "#161b4c",
+                            borderWidth: '2px',
                             fontWeight: 700,
                             fontSize: "0.75rem",
                             height: 22,
