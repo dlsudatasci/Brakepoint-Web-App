@@ -1,0 +1,9 @@
+.map-wrap {
+    height: 100vh !important;
+    z-index: 8 !important;
+}
+
+.landing-container {
+    display: flex;
+    flex-direction: row;
+}

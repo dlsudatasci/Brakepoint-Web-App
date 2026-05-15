@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import maplibregl from "maplibre-gl";
+import maplibregl, { GeoJSONFeature } from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
 import SideTab from "@components/map/sideTab";
@@ -32,7 +32,7 @@ import {
     — heatmap:    subarea monitoring map with heatmap
     — dashboard:  simple map with subarea pins at the dashboard
 */
-type MapMode = "explore" | "map" | "heatmap" | "dashboard";
+type MapMode = "explore" | "map" | "heatmap" | "dashboard" | "landing" ;
 
 /*
     toolMode - what is the currently active tool (for mapMode = "map")
@@ -276,40 +276,7 @@ function disableRotationInteractions(map: maplibregl.Map) {
   map.dragPan.enable();
 }
 
-// deprecated -cy
-class ToggleEditButton implements maplibregl.IControl {
-  private onToggle: (isEdit: boolean) => void;
-  private container: HTMLElement | null = null;
-  private isEditMode = false;
-
-  constructor(onToggle: (isEdit: boolean) => void) {
-    this.onToggle = onToggle;
-  }
-
-  onAdd() {
-    this.container = document.createElement("div");
-    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
-
-    const btn = document.createElement("button");
-    btn.title = "Toggle Edit Mode";
-    ReactDOM.createRoot(btn).render(<ModeEditIcon sx={{ width: 16 }} />);
-
-    btn.onclick = () => {
-      this.isEditMode = !this.isEditMode;
-      btn.style.backgroundColor = this.isEditMode ? "#e0e4e9ff" : "";
-      this.onToggle(this.isEditMode);
-    };
-
-    this.container.appendChild(btn);
-    return this.container;
-  }
-
-  onRemove() {
-    this.container?.parentNode?.removeChild(this.container);
-    this.container = null;
-  }
-}
-
+// creates tool buttons for mapMode = "map"
 class createToggleButtons implements maplibregl.IControl {
   private onToggle: (toolMode: "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" ) => void;
   private container: HTMLElement | null = null;
@@ -403,6 +370,7 @@ class createToggleButtons implements maplibregl.IControl {
   }
 }
 
+// creates buttons for options regarding the polygon being edited rn (mapMode == "map")
 class createPolygonEditButtons implements maplibregl.IControl {
   private onToggle: (type: "undo" | "discard") => void;
   private container: HTMLElement | null = null;
@@ -454,6 +422,8 @@ class createPolygonEditButtons implements maplibregl.IControl {
 
 }
 
+
+
 export default function MapView({
   mode,
   dashboardMarkers,
@@ -469,6 +439,7 @@ export default function MapView({
   showMapillarySigns = true,
   onMapReady,
 }: MapProps) {
+  // initialize all the variables!
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -802,6 +773,7 @@ export default function MapView({
     }
   }, []);
 
+  // removes default heatmap layers from the heatmap mode
   const removeHeatmapLayers = useCallback((map: maplibregl.Map) => {
     if (map.getLayer("earthquakes-point")) map.removeLayer("earthquakes-point");
     if (map.getLayer("earthquakes-heat")) map.removeLayer("earthquakes-heat");
@@ -822,6 +794,7 @@ export default function MapView({
     } catch {}
   };
 
+  // creates a new dashboard marker, returning HTML elements that can be used to build and display it in the map
   const makeDashboardMarkerElement = (label: string | undefined) => {
     const el = document.createElement("div");
     el.className = "dash-marker";
@@ -898,6 +871,7 @@ export default function MapView({
     ];
   }
 
+  // creates a new saved area (AOI or subarea) and sends it over to the backend database given relevant information
   const createSavedArea = useCallback(
     async ({
       name,
@@ -939,6 +913,7 @@ export default function MapView({
     [],
   );
 
+  // updates details of a saved area (AOI or subarea) to the backend given the id and all required information regarding this area
   const updateSavedArea = useCallback(
     async ({ id, name, coords, parentId }: { id: number; name: string; coords: [number, number][]; parentId?: number | null }) => {
       const centroid = getPolygonCentroid(coords);
@@ -964,6 +939,7 @@ export default function MapView({
     [],
   );
 
+  // deletes a saved area (AOI or subarea) given the id
   const deleteSavedArea = useCallback(async (id: number) => {
     const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
       method: "DELETE",
@@ -1010,6 +986,7 @@ export default function MapView({
     }
   }, []);
 
+  // locks in the map to a given FocusArea
   const applyLockedFocusToMap = useCallback((area: FocusArea) => {
     const map = mapRef.current;
     if (!map) return;
@@ -1074,6 +1051,7 @@ export default function MapView({
 
   const EXPLORE_CACHE_KEY = "bp_explore_v1";
 
+  // saves in the area and subareas obtained from api call in loadSavedExploreAreas() as well as all related detail to the React ref
   const applyExploreLocations = useCallback(
     (savedLocations: SavedLocationRecord[]) => {
       const savedAoi = savedLocations.find((loc) => loc.location_type === "aoi");
@@ -1106,12 +1084,15 @@ export default function MapView({
       setSelectedSubAreaIndex(null);
       setFocusError(null);
       setExplorePhase("locked-primary");
-      if (primaryChanged) requestAnimationFrame(() => applyLockedFocusToMap(nextPrimary));
+
+      
+      if (mode == "dashboard" && primaryChanged) requestAnimationFrame(() => applyLockedFocusToMap(nextPrimary));
       return true;
     },
     [applyLockedFocusToMap, primaryFocusAreaRef],
   );
 
+  // loads in the area and subareas
   const loadSavedExploreAreas = useCallback(async () => {
     try {
       const raw = sessionStorage.getItem(EXPLORE_CACHE_KEY);
@@ -1281,6 +1262,7 @@ export default function MapView({
     [applyLockedFocusToMap, clearTerradrawSelection, primaryFocusAreaRef, restoreFocusAreaToTerradraw, subFocusAreasRef],
   );
 
+  // AOI creation - checks if the created region is valid and handles its creation
   const handleConfirmAoi = useCallback(async () => {
     const map = mapRef.current;
     if (!map) return;
@@ -1294,6 +1276,7 @@ export default function MapView({
     const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
     const polygons = snapshot.filter((f) => f?.geometry?.type === "Polygon");
 
+    // there is no selection
     if (polygons.length === 0) {
       setFocusError("Draw a rectangle first.");
       return;
@@ -1321,16 +1304,22 @@ export default function MapView({
       return;
     }
 
+    // if execution makes it to this point, the selection is valid
+    // prepare for creation of the area
+
     const paddedBbox = expandBbox(bbox, isSubArea ? 0.04 : 0.08);
 
+    // in case server fails to provide a proper area name
     const fallbackLabel = isSubArea
       ? editingIndex != null
         ? (subFocusAreasRef.current[editingIndex]?.label ?? `Sub-area ${editingIndex + 1}`)
         : `Sub-area ${subFocusAreasRef.current.length + 1}`
       : (primaryFocusAreaRef.current?.label ?? "Focused Area");
 
+    // and the actual area name we would prefer
     const label = await reverseGeocodeAreaName(bbox, fallbackLabel);
 
+    // create a new focus area
     const nextArea: FocusArea = {
       kind: isSubArea ? "sub" : "primary",
       label,
@@ -1350,7 +1339,9 @@ export default function MapView({
     setFocusError(null);
 
     try {
+      // for subareas
       if (isSubArea && parentArea) {
+        // if we are editing an existing subarea, update it instead of creating a new subarea over the existing one instead
         if (editingIndex != null) {
           const existingSavedSubAreaId = savedSubAreaIds[editingIndex];
 
@@ -1362,6 +1353,7 @@ export default function MapView({
               parentId: savedAoiId,
             });
           } else {
+            // if we get here, an error has probably occured - just create a new subarea anyway
             const savedSubArea = await createSavedArea({
               name: label,
               coords: ring,
@@ -1377,7 +1369,9 @@ export default function MapView({
 
           setSubFocusAreas((prev) => prev.map((area, index) => (index === editingIndex ? nextArea : area)));
           setSelectedSubAreaIndex(editingIndex);
+
         } else {
+          // ...creating a new subarea, not editing an existing one
           const savedSubArea = await createSavedArea({
             name: label,
             coords: ring,
@@ -1401,6 +1395,8 @@ export default function MapView({
         di.setMode?.("select");
         return;
       }
+
+      // for main AOIs
 
       if (savedAoiId) {
         await updateSavedArea({
@@ -1777,8 +1773,9 @@ export default function MapView({
     [clearGuideline, polygonPointsRef, toolModeRef],
   );
 
+  // mode = "explore" | "landing" - if appropriate mode, load in the area and subareas to memory
   useEffect(() => {
-    if (mode !== "explore") {
+    if (mode !== "explore" && mode != "landing") {
       hasLoadedExploreAreasRef.current = false;
       return;
     }
@@ -1839,6 +1836,7 @@ export default function MapView({
 
   // CONFIGURATION MODE
 
+  // deletes a specified camera - sends a request to the backend to perform this request
   const removeCamera = useCallback(async (cameraId: number | string) => {
     try {
       const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/`, {
@@ -1856,6 +1854,7 @@ export default function MapView({
     } catch {}
   }, []);
 
+  // links a polygon to a camera - sends a request to the backend to perform this request
   const savePolygonToCamera = useCallback(async (cameraId: number | string, points: [number, number][]) => {
     const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
       method: "PATCH",
@@ -1866,6 +1865,7 @@ export default function MapView({
     return res.ok;
   }, []);
 
+  // creates a camera marker on the map given information regarding its location and id
   const addCameraFromData = useCallback(
     (cameraLat: number, cameraLng: number, id: number | string) => {
       const map = mapRef.current;
@@ -1904,14 +1904,17 @@ export default function MapView({
         element: el,
       };
 
+      // on click - check the current tool mode; perform related actions
       el.addEventListener("click", async (e) => {
         e.stopPropagation();
 
+        // remove camera - requests the removal of this camera
         if (toolModeRef.current === "removeCamera") {
           removeCamera(id);
           return;
         }
 
+        // assign camera - if a polygon is selected, assign the selected polygon to this object
         if (toolModeRef.current === "assignCamera") {
           const polyIdx = selectedPolygonIndexRef.current;
           if (polyIdx == null) return;
@@ -1941,7 +1944,9 @@ export default function MapView({
 
   const CAMERAS_CACHE_KEY = "bp_cameras_v1";
 
+  // loads a list of all cameras from the backend database and (...)
   const loadCamerasFromDatabase = useCallback(async () => {
+    // try to retrieve from cache
     try {
       const raw = sessionStorage.getItem(CAMERAS_CACHE_KEY);
       if (raw) {
@@ -1966,6 +1971,7 @@ export default function MapView({
     const controller = new AbortController();
     loadAbortRef.current = controller;
 
+    // get from api
     try {
       const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
         method: "GET",
@@ -2003,6 +2009,7 @@ export default function MapView({
     }
   }, [addCameraFromData, onCamerasLoaded]);
 
+  // adds a new camera - sends a request to the backend to perform this request
   const addCamera = useCallback(
     async (cameraLat: number, cameraLng: number) => {
       try {
@@ -2036,6 +2043,7 @@ export default function MapView({
 
   const updateVisibleCamerasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // updates the list of all cameras visible in the current map
   const updateVisibleCameras = useCallback(() => {
     if (updateVisibleCamerasTimerRef.current) clearTimeout(updateVisibleCamerasTimerRef.current);
     updateVisibleCamerasTimerRef.current = setTimeout(() => {
@@ -2114,7 +2122,8 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    if ( /* mode === "map" || */ mode === "explore") {
+    // creates a search button in this map
+    if ( /* mode === "landing" || */ mode === "explore") {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
@@ -2132,6 +2141,7 @@ export default function MapView({
       geocoderControlRef.current = null;
     }
 
+    // for explore mode - enables select and rectangle options
     if (mode === "explore") {
       if (!drawControlRef.current) {
         const drawControl = new MaplibreTerradrawControl({
@@ -2186,22 +2196,8 @@ export default function MapView({
       rectIdRef.current = null;
     }
 
+    // for map mode - enables options for adding subareas and polygons
     if (mode === "map") {
-      /*
-      if (!editControlRef.current) {
-        editControlRef.current = new ToggleEditButton((isEdit) => {
-          setIsEditMode(isEdit);
-          setToolMode("none");
-        });
-        map.addControl(editControlRef.current, "bottom-right");
-      }
-      
-    } else {
-      if (editControlRef.current) {
-        map.removeControl(editControlRef.current);
-        editControlRef.current = null;
-      }
-    */
 
       if (!editControlRef.current) {
         editControlRef.current = new createToggleButtons((toolMode) => {
@@ -2238,27 +2234,7 @@ export default function MapView({
           map.removeControl(editControlRef.current);
           editControlRef.current = null;
         }
-      }
-
-/*
-                <button
-                  onClick={() => }
-                  className="edit-toolbar__btn edit-toolbar__btn--undo"
-                  title="Undo last point"
-                >
-                  ↩ Undo
-                </button>
-                <button
-                  onClick={() => {
-
-                  }}
-                  className="edit-toolbar__btn edit-toolbar__btn--clear"
-                  title="Discard current polygon"
-                >
-                  ✕ Clear
-                </button>
-*/
-      
+      }      
 
       setIsEditMode(true);
       setToolMode("none");
@@ -2270,6 +2246,7 @@ export default function MapView({
       setPolygonPoints([]);
     }
 
+    // apply heatmap layers if heatmap, remove if not
     const applyLayers = () => {
       if (mode !== "heatmap") removeHeatmapLayers(map);
       if (mode === "heatmap") addHeatmapLayers(map);
@@ -2389,6 +2366,7 @@ export default function MapView({
     else map.once("load", apply);
   }, [showMapillarySigns]);
 
+  // load cameras if map or heatmap
   useEffect(() => {
     if (mode !== "map" && mode !== "heatmap") return;
     loadCamerasFromDatabase();
@@ -2398,6 +2376,7 @@ export default function MapView({
     };
   }, [loadCamerasFromDatabase, mode]);
 
+  // load cameras every time the refresh trigger is incremented (mode == "map")
   useEffect(() => {
     if (mode !== "map") return;
     if (refreshTrigger > 0 && mapRef.current) loadCamerasFromDatabase();
@@ -2451,13 +2430,16 @@ export default function MapView({
     }
   }, [completedPolygons, selectedCameraId]);
 
+  // define functions to fire upon event (mouse click, mouse move) here
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    // define actions for what would happen when the user clicks with a tool active
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
 
+      // if no active tool, allow the user to select objects (in map mode)
       if (activeTool === "none" && isEditMode && mode === "map") {
         const features = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-fill"],
@@ -2473,13 +2455,16 @@ export default function MapView({
         return;
       }
 
+      // outside of map mode (above condition), do nothing
       if (!isEditMode && activeTool !== "none") return;
 
+      // create camera at this position
       if (activeTool === "addCamera") {
         await addCamera(e.lngLat.lat, e.lngLat.lng);
         return;
       }
 
+      // create polygon point at this position
       if (activeTool === "addPoint") {
         if (polygonPointsRef.current.length >= 3) {
           const hit = map.queryRenderedFeatures(e.point, {
@@ -2511,6 +2496,7 @@ export default function MapView({
         return;
       }
 
+      // removes the point of a polygon currently being created
       if (activeTool === "removePoint") {
         const hit = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-points", "polygon-points-clickable"],
@@ -2528,11 +2514,14 @@ export default function MapView({
       }
     };
 
+    // handles actions to fire when mouse is moving
+    // currently just to update guideline while creating a new polygon
     const handleMouseMove = (e: maplibregl.MapMouseEvent) => {
       if (!isEditMode) return;
       if (toolModeRef.current === "addPoint") renderGuideline(e);
     };
 
+    // register the above two functions to event handlers
     map.on("click", handleMapClick);
     map.on("mousemove", handleMouseMove);
 
@@ -2605,6 +2594,7 @@ export default function MapView({
     });
   }, [beginPrimaryFocusDrawing, explorePhase, mode, primaryFocusArea]);
 
+  // adds layers for the AOI and subareas
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -2673,6 +2663,7 @@ export default function MapView({
 
         const aboveLayer = map.getLayer(MAPILLARY_LAYER_ID) ? MAPILLARY_LAYER_ID : undefined;
 
+        // area layer
         map.addLayer({
           id: maskFillId,
           type: "fill",
@@ -2684,6 +2675,7 @@ export default function MapView({
           },
         }, aboveLayer);
 
+        // subarea layer
         map.addLayer({
           id: fillId,
           type: "fill",
@@ -2700,6 +2692,7 @@ export default function MapView({
           },
         }, aboveLayer);
 
+        // ---
         map.addLayer({
           id: lineId,
           type: "line",
@@ -2716,6 +2709,7 @@ export default function MapView({
           },
         }, aboveLayer);
 
+        // ---
         map.addLayer({
           id: labelId,
           type: "symbol",
@@ -2807,12 +2801,14 @@ export default function MapView({
     };
   }, [mode, subFocusAreas]);
 
+  // handle dashboard markers and popups
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const reg = dashboardRegistryRef.current;
 
+    // non-dashboard mode: disable stuff related to dashboard popups etc
     if (mode !== "dashboard") {
       openDashboardPopupRef.current?.remove();
       openDashboardPopupRef.current = null;
@@ -2826,13 +2822,16 @@ export default function MapView({
     const markers = dashboardMarkers ?? [];
     const incomingKeys = new Set(markers.map((m) => String(m.id)));
 
+    // create our markers here
     for (const m of markers) {
       const key = String(m.id);
       const existing = reg.get(key);
 
       if (!existing) {
+        // if this is a new marker...
         const { el, labelEl } = makeDashboardMarkerElement(m.label);
 
+        // create the marker here
         const marker = new maplibregl.Marker({
           element: el,
           anchor: "bottom",
@@ -2843,12 +2842,14 @@ export default function MapView({
         const entry: DashMarkerEntry = { marker, el, labelEl };
         reg.set(key, entry);
 
+        // if you click on this marker, trigger the dashboard marker click function
         el.addEventListener("click", (e) => {
           e.stopPropagation();
           onDashboardMarkerClick?.(m.id);
           openDashboardPopup(map, entry, m);
         });
       } else {
+        // if we are updating this marker
         existing.marker.setLngLat([m.lng, m.lat]);
         const nextLabel = m.label ?? "";
         if (existing.labelEl.textContent !== nextLabel) {
@@ -2857,6 +2858,7 @@ export default function MapView({
       }
     }
 
+    // cleanup unused keys
     for (const [key, entry] of reg.entries()) {
       if (!incomingKeys.has(key)) {
         cleanupDashEntry(entry);
@@ -2864,6 +2866,169 @@ export default function MapView({
       }
     }
   }, [dashboardMarkers, mode, onDashboardMarkerClick]);
+
+
+
+
+  
+  // Functions and methods for creating and adding functionality for the new Landing Page Map system
+  // creates a new landing marker, returning HTML elements that can be used to build and display it in the map
+  const makeLandingMarkerElement = (label: string | undefined) => {
+    const el = document.createElement("div");
+    el.className = "landing-marker";
+
+    const pin = document.createElement("div");
+    pin.className = "landing-marker__pin";
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "landing-marker__label";
+    labelEl.textContent = label ?? "";
+
+    pin.appendChild(labelEl);
+    el.appendChild(pin);
+
+    return { el, labelEl };
+  }
+
+  // creates a landing marker and adds it to the map
+  const createLandingMarker = useCallback((area: FocusArea, map: maplibregl.Map) => {
+    // null can still be a result, return null if so
+    if (area == null) { return null }    
+    
+    // calculate the center of the bbox
+    const centerCoordinates = [
+      (area.bbox[0] + area.bbox[2]) / 2, // lat
+      (area.bbox[1] + area.bbox[3]) / 2  // lng
+    ]
+
+    // create marker element
+    const {el, labelEl} = makeLandingMarkerElement(area.label);
+
+    if (area.kind == "primary") {
+      // area
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: "bottom"
+      }).setLngLat([centerCoordinates[0], centerCoordinates[1]]).addTo(map);
+      return marker;
+
+    } else {
+      // subarea
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: "bottom"
+      }).setLngLat([centerCoordinates[0], centerCoordinates[1]]).addTo(map);
+      return marker;
+    }
+
+  }, [])
+
+  // Creates a GeoJSON feature for the bounding box of a focus area (main AOI or subarea)
+  const createLandingAreaFeature = useCallback((area: FocusArea) => {
+    if (area == null) { return null }
+    return {
+      type: "Feature",
+      properties: {
+        kind: area.kind,
+        label: area.label,
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [ensureClosedRing(area.ring)]
+      }
+    } as GeoJSON.Feature
+  }, [ensureClosedRing])
+
+  // define constants and functions for defining layers for areas and subareas
+  const MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID = "brakepoint-focus-areas"
+  const MAPLIBRE_BRAKEPOINT_LANDING_AREA_LAYER_ID = "brakepoint-area"
+  const MAPLIBRE_BRAKEPOINT_LANDING_SUBAREA_LAYER_ID = "brakepoint-subarea"
+
+  const MAPLIBRE_BRAKEPOINT_LANDING_AREA_LAYER = {
+    id: MAPLIBRE_BRAKEPOINT_LANDING_AREA_LAYER_ID,
+    type: "fill",
+    source: MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID,
+    filter: ["all", ["==", ["get", "kind"], "primary"]],
+    paint: {
+      "fill-color": "#0ff",
+      "fill-opacity": 0.25,
+    }
+  } as maplibregl.AddLayerObject
+
+  const MAPLIBRE_BRAKEPOINT_LANDING_SUBAREA_LAYER = {
+    id: MAPLIBRE_BRAKEPOINT_LANDING_SUBAREA_LAYER_ID,
+    type: "fill",
+    source: MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID,
+    filter: ["all", ["==", ["get", "kind"], "sub"]],
+    paint: {
+      "fill-color": "#00f",
+      "fill-opacity": 0.25,
+    }
+  } as maplibregl.AddLayerObject
+
+  // mapMode = "landing" — set up markers and bounding boxes for our areas and subareas
+  useEffect(() => {
+    if (mode == "landing") {
+      // get map
+      const map = mapRef.current;
+      if (!map) return;
+
+      // for debug (currently)
+      const includeAreas = true;
+      const includeSubareas = true;
+
+      // ready the list of GeoJSON features (areas and subareas)
+      const features: GeoJSON.Feature[] = []
+
+      // create markers and push GeoJSON features for the names of these areas
+      if (includeAreas) {
+        // TODO for() once multi-AoI is now available
+        createLandingMarker(primaryFocusArea, map);
+        const currFeature = createLandingAreaFeature(primaryFocusArea)
+        if (currFeature) { features.push(currFeature) }
+      }
+
+      // create markers for subareas here
+      if (includeSubareas) {
+        for (const curr of subFocusAreas) {
+          createLandingMarker(curr, map);
+          const currFeature = createLandingAreaFeature(curr);
+          if (currFeature) { features.push(currFeature) }
+        }
+      }
+
+      // apply our new area/subarea layers to the map
+      const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features }
+      const apply = () => {
+        if (!map.getSource(MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID)) {
+          map.addSource(MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID, { type: "geojson", data })
+
+          // above layer of the map, for layer additions
+          const aboveLayer = map.getLayer(MAPILLARY_LAYER_ID) ? MAPILLARY_LAYER_ID : undefined
+
+          // add area and subarea layers
+          if (includeAreas) { map.addLayer(MAPLIBRE_BRAKEPOINT_LANDING_AREA_LAYER, aboveLayer) }
+          if (includeSubareas) { map.addLayer(MAPLIBRE_BRAKEPOINT_LANDING_SUBAREA_LAYER, aboveLayer) };
+
+          if (map.isStyleLoaded()) apply();
+          else map.once("load", apply);
+        } else {
+          (map.getSource(MAPLIBRE_BRAKEPOINT_LANDING_SOURCE_ID) as maplibregl.GeoJSONSource).setData(data);
+        }
+      }
+
+      if (map.isStyleLoaded()) apply();
+      else map.once("load", apply);
+
+      return () => {
+        map.off("load", apply);
+      };
+
+    }
+  },[primaryFocusArea, subFocusAreas, mode])
+
+
+
 
   const beginAssignCamera = useCallback(() => {
     if (selectedPolygonIndexRef.current == null) return;
@@ -3067,4 +3232,4 @@ export default function MapView({
   );
 }
 
-export { ToggleEditButton };
+export {  };

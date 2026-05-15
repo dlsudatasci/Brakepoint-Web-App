@@ -50,14 +50,14 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Dashboard markers                                                          */
+/* Dashboard and landing page markers                                         */
 /* -------------------------------------------------------------------------- */
 
-.dash-marker {
+.dash-marker, .landing-marker {
   cursor: pointer;
 }
 
-.dash-marker__pin {
+.dash-marker__pin, .landing-marker__pin {
   position: relative;
   display: flex;
   place-items: center;
@@ -66,25 +66,37 @@ input[type="search"]::-webkit-search-cancel-button {
   padding: 0 12px;
   border: 2px solid #fff;
   border-radius: 999px;
-  background: #161b4c;
+  background: #ffffff;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
 }
+.dash-marker__pin {
+  background: #161b4c;
+}
+.landing-marker__pin {
+  background: #f0f;
+}
 
-.dash-marker__pin::after {
+.dash-marker__pin::after, .landing-marker__pin::after {
   content: "";
   position: absolute;
   bottom: -10px;
   left: 50%;
   width: 0;
   height: 0;
-  border-top: 10px solid #161b4c;
+  border-top: 10px solid white;
   border-right: 7px solid transparent;
   border-left: 7px solid transparent;
   transform: translateX(-50%);
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2));
 }
+.dash-marker__pin::after {
+  border-top-color: #161b4c;
+}
+.landing-marker__pin::after {
+  border-top-color: #f0f;
+}
 
-.dash-marker__label {
+.dash-marker__label, .landing-marker__label {
   max-width: none;
   overflow: visible;
   color: #fff;
@@ -96,25 +108,25 @@ input[type="search"]::-webkit-search-cancel-button {
   padding: 0 6px;
 }
 
-.dash-popup {
+.dash-popup, .landing-popup {
   width: 320px;
 }
 
-.dash-popup__content {
+.dash-popup__content, .landing-popup__content {
   padding: 12px;
 }
 
-.dash-popup__title {
+.dash-popup__title, .landing-popup__title {
   margin-bottom: 8px;
   font-weight: 700;
 }
 
-.dash-popup__body {
+.dash-popup__body, .landing-popup__title {
   font-size: 13px;
   opacity: 0.85;
 }
 
-.dash-popup__coords {
+.dash-popup__coords, .landing-popup__coords {
   font-size: 12px;
   opacity: 0.75;
 }
