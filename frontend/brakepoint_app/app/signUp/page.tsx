@@ -16,7 +16,7 @@ export default function SignUpPage() {
   useEffect(() => {
       const token = localStorage.getItem('access_token');
       if (token) {
-        router.replace('/dashboard');
+        router.replace('/landing');
       } else {
         setIsCheckingAuth(false);
       }

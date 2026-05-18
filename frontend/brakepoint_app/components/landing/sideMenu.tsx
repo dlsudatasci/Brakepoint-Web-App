@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import LogoutIcon from "@mui/icons-material/Logout";
 import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -54,24 +55,14 @@ export type AOISummary = {
 interface SideMenuProps {
     onAddArea?: () => void;                                // triggers when the user clicks the "add area" button
     onSelectSubarea?: (subareaId: number) => void;   // triggers when the user selects a subarea
+    refreshTrigger?: number;                             // increment to re-fetch the AOI list
+    isDrawingAOI?: boolean;                              // true while the user is drawing an AOI on the map
+    onAoiHover?: (id: number | null) => void;            // called with AOI id on hover, null on leave
+    onAoiClick?: (id: number) => void;                   // called when an AOI card is clicked — opens edit/delete dialog
 }
 
-// mock data for main AOI
-const MOCK_AOI: AOISummary = {
-    id: 1,
-    name: "Central",
-    location: "Cebu City",
-    subarea_count: 0,
-    camera_count: 0,
-    vehicles: 0,
-    adb: 0,
-    speeding: 0,
-    swerving: 0,
-    abrupt_stopping: 0,
-};
-
 // displays list of AOIs
-function AOIListItem({ aoi, onClick }: { aoi: AOISummary; onClick: () => void }) {
+function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: () => void; onEditClick?: () => void }) {
     const details: LocationSummary = {
         location_type: "aoi",
         name: aoi.name,
@@ -91,7 +82,7 @@ function AOIListItem({ aoi, onClick }: { aoi: AOISummary; onClick: () => void })
             <LocationCard
                 type="area"
                 locationDetails={details}
-                onClickCard={() => {}}
+                onClickCard={onEditClick ?? (() => {})}
                 onClickSideButton={onClick}
             />
         </Box>
@@ -284,65 +275,73 @@ function AOIDetail({
     );
 }
 
-export default function SideMenu({ onAddArea, onSelectSubarea }: SideMenuProps) {
+export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick }: SideMenuProps) {
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // list of main AOIs
-    const [aois] = useState<AOISummary[]>([MOCK_AOI]);
-
+    const [aois, setAois] = useState<AOISummary[]>([]);
     const [selectedAOI, setSelectedAOI] = useState<AOISummary | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
-
     const [listLoading, setListLoading] = useState(true);
-    const [hydratedAOI, setHydratedAOI] = useState<AOISummary>(MOCK_AOI);
 
     useEffect(() => {
         let cancelled = false;
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/dashboard-summary/`)
-            .then((res) => { if (!res.ok) throw new Error(); return res.json(); })
-            .then((json) => {
-                if (cancelled || !json.success) return;
+        setListLoading(true);
 
-                const subareas: SubAreaSummary[] = (json.sub_areas ?? []).map((s: any) => ({
-                    id: s.id,
-                    name: s.name,
-                    lat: s.lat,
-                    lng: s.lng,
-                    camera_count: s.camera_count,
-                    subarea_count: 0,
-                    vehicles: s.vehicles,
-                    adb: s.adb,
-                    speeding: s.speeding,
-                    swerving: s.swerving,
-                    abrupt_stopping: s.abrupt_stopping,
-                    tags: s.tags ?? [],
-                }));
+        Promise.all([
+            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
+            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
+        ])
+            .then(([aoiData, subData]) => {
+                if (cancelled) return;
 
-                const vehicle_breakdown = Object.entries(json.vehicle_breakdown ?? {}).map(
-                    ([label, value]) => ({ label, value: value as number })
-                );
+                const rawSubs: any[] = Array.isArray(subData?.saved_locations) ? subData.saved_locations : [];
+                const subsByParent = rawSubs.reduce<Record<number, any[]>>((acc, s) => {
+                    const pid = s.parent_id;
+                    if (pid != null) (acc[pid] ??= []).push(s);
+                    return acc;
+                }, {});
 
-                const merged: AOISummary = {
-                    ...MOCK_AOI,
-                    vehicles: json.totals?.vehicles ?? 0,
-                    adb: json.totals?.adb ?? 0,
-                    speeding: json.totals?.speeding ?? 0,
-                    swerving: json.totals?.swerving ?? 0,
-                    abrupt_stopping: json.totals?.abrupt_stopping ?? 0,
-                    subarea_count: subareas.length,
-                    camera_count: subareas.reduce((n, s) => n + s.camera_count, 0),
-                    vehicle_breakdown,
-                    subareas,
-                };
+                const rawAois: any[] = Array.isArray(aoiData?.saved_locations) ? aoiData.saved_locations : [];
+                const built: AOISummary[] = rawAois.map((a) => {
+                    const subs: SubAreaSummary[] = (subsByParent[a.id] ?? []).map((s: any) => ({
+                        id: s.id,
+                        name: s.name,
+                        lat: s.lat ?? 0,
+                        lng: s.lng ?? 0,
+                        camera_count: s.camera_count ?? 0,
+                        subarea_count: 0,
+                        vehicles: s.vehicles ?? 0,
+                        adb: s.occurrences ?? 0,
+                        speeding: s.speeding ?? 0,
+                        swerving: s.swerving ?? 0,
+                        abrupt_stopping: s.abrupt_stopping ?? 0,
+                        tags: s.tags ?? [],
+                    }));
 
-                setHydratedAOI(merged);
-                setSelectedAOI((prev) => prev ? merged : null);
+                    return {
+                        id: a.id,
+                        name: a.name,
+                        location: undefined,
+                        subarea_count: subs.length,
+                        camera_count: subs.reduce((n, s) => n + s.camera_count, 0),
+                        vehicles: subs.reduce((n, s) => n + s.vehicles, 0),
+                        adb: subs.reduce((n, s) => n + s.adb, 0),
+                        speeding: subs.reduce((n, s) => n + s.speeding, 0),
+                        swerving: subs.reduce((n, s) => n + s.swerving, 0),
+                        abrupt_stopping: subs.reduce((n, s) => n + s.abrupt_stopping, 0),
+                        vehicle_breakdown: [],
+                        subareas: subs,
+                    };
+                });
+
+                setAois(built);
             })
-            .catch(() => { /* keep mock values on error */ })
+            .catch(() => {})
             .finally(() => { if (!cancelled) setListLoading(false); });
+
         return () => { cancelled = true; };
-    }, []);
+    }, [refreshTrigger]);
 
     const handleSelectAOI = (aoi: AOISummary) => {
         setSelectedAOI(aoi);
@@ -363,11 +362,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea }: SideMenuProps) 
     };
 
     const handleAddArea = () => {
-        if (onAddArea) {
-            onAddArea();
-        } else {
-            router.push("/explore");
-        }
+        onAddArea?.();
     };
 
     return (
@@ -424,10 +419,15 @@ export default function SideMenu({ onAddArea, onSelectSubarea }: SideMenuProps) 
                                 sx={{ color: "#161b4c", borderColor: "#161b4c", borderWidth: "2px", fontWeight: 700, fontSize: "0.75rem", height: 22, minWidth: 28 }}
                             />
                             <Button
-                                onClick={() => { if (onAddArea) onAddArea(); else router.push("/explore"); }}
-                                sx={{ marginLeft: "auto", minWidth: 0, padding: "2px 6px", color: "#161b4c", borderRadius: "8px", "&:hover": { bgcolor: "#161b4c", color: "rgb(236, 237, 245)" } }}
+                                onClick={handleAddArea}
+                                sx={{
+                                    marginLeft: "auto", minWidth: 0, padding: "2px 6px", borderRadius: "8px",
+                                    color: isDrawingAOI ? "rgb(236, 237, 245)" : "#161b4c",
+                                    bgcolor: isDrawingAOI ? "#161b4c" : "transparent",
+                                    "&:hover": { bgcolor: "#161b4c", color: "rgb(236, 237, 245)" },
+                                }}
                             >
-                                <AddIcon />
+                                {isDrawingAOI ? <CloseIcon /> : <AddIcon />}
                             </Button>
                         </Box>
 
@@ -435,9 +435,26 @@ export default function SideMenu({ onAddArea, onSelectSubarea }: SideMenuProps) 
                             <Box sx={{ display: "flex", justifyContent: "center", pt: 4 }}>
                                 <CircularProgress size={24} sx={{ color: "#1d1f3f" }} />
                             </Box>
+                        ) : aois.length === 0 ? (
+                            <Typography
+                                sx={{
+                                    fontSize: "0.8rem", color: "#999", padding: "14px",
+                                    borderRadius: "12px", border: "1.5px dashed rgba(0,0,0,0.15)", lineHeight: 1.6,
+                                }}
+                            >
+                                No areas yet. Press <strong>+</strong> to add one.
+                            </Typography>
                         ) : (
                             <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
-                                <AOIListItem aoi={hydratedAOI} onClick={() => handleSelectAOI(hydratedAOI)} />
+                                {aois.map((aoi) => (
+                                    <Box
+                                        key={aoi.id}
+                                        onMouseEnter={() => onAoiHover?.(aoi.id)}
+                                        onMouseLeave={() => onAoiHover?.(null)}
+                                    >
+                                        <AOIListItem aoi={aoi} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
+                                    </Box>
+                                ))}
                             </Box>
                         )}
                     </Box>

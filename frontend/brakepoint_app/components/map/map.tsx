@@ -139,6 +139,15 @@ type MapProps = {
 
   showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
   onMapReady?: (map: maplibregl.Map) => void;                                               // triggers when map has been loaded
+  onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
+  hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
+  cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
+  isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
+  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;               // called when user finishes drawing a rectangle
+  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                     // AOI geometry rings to render as blue overlays
+  hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
+  onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
+  showGeocoder?: boolean;                                                                   // show the search bar (landing page)
 };
 
 // a MapLibre marker for each subarea (mode = "dashboard")
@@ -468,6 +477,15 @@ export default function MapView({
   goToBounds,
   showMapillarySigns = true,
   onMapReady,
+  onAoiSaved,
+  hideEditControls = false,
+  cleanMap = false,
+  isDrawingAOI = false,
+  onAoiDrawn,
+  aoiItems,
+  hoveredAoiId,
+  onAoiClick,
+  showGeocoder = false,
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -492,6 +510,7 @@ export default function MapView({
     subFocusAreas: FocusArea[];
   } | null>(() => {
     if (mode !== "explore") return null;
+    if (onAoiSaved) return null;
     try {
       const raw = sessionStorage.getItem("bp_explore_v1");
       if (!raw) return null;
@@ -565,6 +584,10 @@ export default function MapView({
   const modeRef = useLatestRef(mode);
   const goToRef = useLatestRef(goTo ?? null);
   const goToBoundsRef = useLatestRef(goToBounds ?? null);
+  const onAoiSavedRef = useLatestRef(onAoiSaved ?? null);
+  const onAoiDrawnRef = useLatestRef(onAoiDrawn ?? null);
+  const onAoiClickRef = useLatestRef(onAoiClick ?? null);
+  const aoiDrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const [savedAoiId, setSavedAoiId] = useState<number | null>(
     exploreInitFromCache?.savedAoiId ?? null,
   );
@@ -1113,6 +1136,10 @@ export default function MapView({
   );
 
   const loadSavedExploreAreas = useCallback(async () => {
+    if (onAoiSavedRef.current) {
+      startPrimaryDrawingMode();
+      return;
+    }
     try {
       const raw = sessionStorage.getItem(EXPLORE_CACHE_KEY);
       if (raw) applyExploreLocations(JSON.parse(raw) as SavedLocationRecord[]);
@@ -1402,6 +1429,15 @@ export default function MapView({
         return;
       }
 
+      if (onAoiSavedRef.current) {
+        await createSavedArea({ name: label, coords: ring, locationType: "aoi" });
+        clearTerradrawSelection();
+        setFocusError(null);
+        di.setMode?.("select");
+        onAoiSavedRef.current();
+        return;
+      }
+
       if (savedAoiId) {
         await updateSavedArea({
           id: savedAoiId,
@@ -1439,6 +1475,7 @@ export default function MapView({
     savedAoiId,
     savedSubAreaIds,
     subFocusAreasRef,
+    clearTerradrawSelection,
     createSavedArea,
     updateSavedArea,
   ]);
@@ -1790,8 +1827,165 @@ export default function MapView({
   }, [mode, loadSavedExploreAreas]);
 
   useEffect(() => {
+    if (mode !== "explore") return;
+    if (!onAoiSavedRef.current) return;
+    if (explorePhase === "idle") startPrimaryDrawingMode();
+  }, [explorePhase, mode, startPrimaryDrawingMode]);
+
+  useEffect(() => {
     if (toolMode !== "addPoint") clearGuideline();
   }, [clearGuideline, toolMode]);
+
+  // AOI rectangle drawing — independent of explore mode
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    if (isDrawingAOI) {
+      if (aoiDrawControlRef.current) return;
+
+      const drawControl = new MaplibreTerradrawControl({
+        modes: ["select", "rectangle"],
+        open: false,
+        showDeleteConfirmation: false,
+      });
+      map.addControl(drawControl, "bottom-right");
+      aoiDrawControlRef.current = drawControl;
+
+      const di = drawControl.getTerraDrawInstance();
+      if (di) {
+        try { di.setMode("rectangle"); } catch {}
+
+        const onFinish = () => {
+          const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+          const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+          if (polys.length === 0) return;
+          const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
+          const clearDrawing = () => {
+            try { di.clear?.(); di.setMode("rectangle"); } catch {}
+          };
+          onAoiDrawnRef.current?.(ring, clearDrawing);
+        };
+
+        try { di.on("finish", onFinish); } catch {}
+      }
+    } else {
+      if (aoiDrawControlRef.current) {
+        try { map.removeControl(aoiDrawControlRef.current); } catch {}
+        aoiDrawControlRef.current = null;
+      }
+    }
+  }, [isDrawingAOI]);
+
+  // Render saved AOIs as blue rectangle overlays
+  const latestAoiItemsRef  = useRef(aoiItems ?? []);
+  latestAoiItemsRef.current = aoiItems ?? [];           
+  const aoiLayersReadyRef   = useRef(false);
+  const aoiCleanupRef       = useRef<(() => void) | null>(null);
+  const aoiPendingSetupRef  = useRef(false);           
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const SOURCE = "aoi-polygons";
+    const FILL   = "aoi-fill";
+    const LINE   = "aoi-line";
+
+    const toFC = (items: NonNullable<typeof aoiItems>) => ({
+      type: "FeatureCollection" as const,
+      features: items.map((item) => ({
+        type: "Feature" as const,
+        id: item.id,
+        geometry: { type: "Polygon" as const, coordinates: [item.ring] },
+        properties: { id: item.id },
+      })),
+    });
+
+    // Fast path — layers already exist: just swap data, no rebuild
+    if (aoiLayersReadyRef.current && map.getSource(SOURCE)) {
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? []) as any);
+      return;
+    }
+
+    // First-time setup
+    const setup = () => {
+      if (map.getLayer(FILL))    map.removeLayer(FILL);
+      if (map.getLayer(LINE))    map.removeLayer(LINE);
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestAoiItemsRef.current) as any });
+      map.addLayer({
+        id: FILL, type: "fill", source: SOURCE,
+        paint: {
+          "fill-color": "#2563eb",
+          "fill-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
+        },
+      });
+      map.addLayer({
+        id: LINE, type: "line", source: SOURCE,
+        paint: {
+          "line-color": "#2563eb",
+          "line-width":  ["case", ["boolean", ["feature-state", "hovered"], false], 3,   2],
+          "line-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+        },
+      });
+
+      const clickHandler  = (e: any) => {
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onAoiClickRef.current?.(Number(id));
+      };
+      const enterHandler = () => { map.getCanvas().style.cursor = "pointer"; };
+      const leaveHandler = () => { map.getCanvas().style.cursor = ""; };
+
+      map.on("click",      FILL, clickHandler);
+      map.on("mouseenter", FILL, enterHandler);
+      map.on("mouseleave", FILL, leaveHandler);
+
+      aoiLayersReadyRef.current  = true;
+      aoiPendingSetupRef.current = false;
+      aoiCleanupRef.current = () => {
+        try {
+          map.off("click",      FILL, clickHandler);
+          map.off("mouseenter", FILL, enterHandler);
+          map.off("mouseleave", FILL, leaveHandler);
+          if (map.getLayer(FILL))    map.removeLayer(FILL);
+          if (map.getLayer(LINE))    map.removeLayer(LINE);
+          if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+        } catch {}
+        aoiLayersReadyRef.current = false;
+      };
+    };
+
+    if (map.isStyleLoaded()) {
+      setup();
+    } else if (!aoiPendingSetupRef.current) {
+      aoiPendingSetupRef.current = true;
+      map.once("load", setup);
+    }
+  }, [aoiItems]);
+
+  useEffect(() => {
+    return () => { aoiCleanupRef.current?.(); aoiCleanupRef.current = null; };
+  }, []);
+
+  // Hover highlight via feature-state
+  const prevHoveredAoiIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const SOURCE = "aoi-polygons";
+    if (!map.getSource(SOURCE)) return;
+
+    const prev = prevHoveredAoiIdRef.current;
+    if (prev != null) {
+      try { map.setFeatureState({ source: SOURCE, id: prev }, { hovered: false }); } catch {}
+    }
+    if (hoveredAoiId != null) {
+      try { map.setFeatureState({ source: SOURCE, id: hoveredAoiId }, { hovered: true }); } catch {}
+    }
+    prevHoveredAoiIdRef.current = hoveredAoiId ?? null;
+  }, [hoveredAoiId]);
 
   const cancelFocusDrawing = useCallback(() => {
     clearTerradrawSelection();
@@ -2107,6 +2301,7 @@ export default function MapView({
       editControlRef.current = null;
       drawControlRef.current = null;
       geocoderControlRef.current = null;
+      aoiDrawControlRef.current = null;
     };
   }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
 
@@ -2114,7 +2309,7 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    if ( /* mode === "map" || */ mode === "explore") {
+    if ( /* mode === "map" || */ mode === "explore" || showGeocoder) {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
@@ -2203,8 +2398,9 @@ export default function MapView({
       }
     */
 
-      if (!editControlRef.current) {
-        editControlRef.current = new createToggleButtons((toolMode) => {
+      if (!hideEditControls) {
+        if (!editControlRef.current) {
+          editControlRef.current = new createToggleButtons((toolMode) => {
           setToolMode(toolMode);
           
           // if setting to add polygon, bring up the add polygon specific menu options
@@ -2239,6 +2435,7 @@ export default function MapView({
           editControlRef.current = null;
         }
       }
+      } // end hideEditControls check
 
 /*
                 <button
@@ -2390,18 +2587,20 @@ export default function MapView({
   }, [showMapillarySigns]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map" && mode !== "heatmap") return;
     loadCamerasFromDatabase();
 
     return () => {
       loadAbortRef.current?.abort();
     };
-  }, [loadCamerasFromDatabase, mode]);
+  }, [cleanMap, loadCamerasFromDatabase, mode]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map") return;
     if (refreshTrigger > 0 && mapRef.current) loadCamerasFromDatabase();
-  }, [loadCamerasFromDatabase, mode, refreshTrigger]);
+  }, [cleanMap, loadCamerasFromDatabase, mode, refreshTrigger]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2901,7 +3100,7 @@ export default function MapView({
   }, []);
 
   return (
-    <div className="map-wrap">
+    <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
       <div ref={mapContainer} className="map" />
       {mode === "explore" && (
           <SideTab side="bottom" open={open} invisible={false} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>

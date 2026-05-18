@@ -16,7 +16,7 @@ export default function LogInPage() {
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
-      router.replace('/dashboard');
+      router.replace('/landing');
     } else {
       setIsCheckingAuth(false);
     }
@@ -50,7 +50,7 @@ export default function LogInPage() {
         localStorage.setItem('refresh_token', data.refresh);
         localStorage.setItem('username', data.user.username);
 
-        router.replace('/dashboard');
+        router.replace('/landing');
       } else {
         const errData = await response.json();
         setError(errData.error || "Invalid username or password");
