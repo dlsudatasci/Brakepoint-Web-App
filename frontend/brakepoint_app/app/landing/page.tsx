@@ -10,7 +10,7 @@ export default function LandingPage() {
 
   return (
     <Box>
-      <SideMenu activeView={activeView} onViewChange={setActiveView} />
+      <SideMenu />
     </Box>
   );
 }

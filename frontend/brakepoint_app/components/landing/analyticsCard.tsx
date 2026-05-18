@@ -40,7 +40,6 @@ export function StackedBar({ data }: { data: ChartData[] }) {
 
   return (
     <Box>
-      {/* proportional bar */}
       <Box sx={{ display: "flex", height: 20, borderRadius: "8px", overflow: "hidden", width: "100%" }}>
         {cleaned.map((d, i) => (
           <Box
