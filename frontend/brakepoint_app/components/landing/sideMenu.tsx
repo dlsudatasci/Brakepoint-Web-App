@@ -59,8 +59,8 @@ interface SideMenuProps {
 // mock data for main AOI
 const MOCK_AOI: AOISummary = {
     id: 1,
-    name: "Central",
-    location: "Cebu City",
+    name: "Manila",
+    location: "Manila",
     subarea_count: 0,
     camera_count: 0,
     vehicles: 0,
@@ -69,6 +69,7 @@ const MOCK_AOI: AOISummary = {
     swerving: 0,
     abrupt_stopping: 0,
 };
+
 
 // displays list of AOIs
 function AOIListItem({ aoi, onClick }: { aoi: AOISummary; onClick: () => void }) {
@@ -91,7 +92,7 @@ function AOIListItem({ aoi, onClick }: { aoi: AOISummary; onClick: () => void })
             <LocationCard
                 type="area"
                 locationDetails={details}
-                onClickCard={() => {}}
+                onClickCard={() => { }}
                 onClickSideButton={onClick}
             />
         </Box>
@@ -435,6 +436,20 @@ export default function SideMenu({ onAddArea, onSelectSubarea }: SideMenuProps) 
                             <Box sx={{ display: "flex", justifyContent: "center", pt: 4 }}>
                                 <CircularProgress size={24} sx={{ color: "#1d1f3f" }} />
                             </Box>
+                        ) : aois.length === 0 ? (
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    color: "text.secondary",
+                                    fontSize: "0.8rem",
+                                    lineHeight: 1.6,
+                                    padding: "12px",
+                                    borderRadius: "12px",
+                                    border: "1.5px dashed rgba(0,0,0,0.15)",
+                                }}
+                            >
+                                You are not monitoring any areas yet. Press the <strong>+</strong> icon to get started.
+                            </Typography>
                         ) : (
                             <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
                                 <AOIListItem aoi={hydratedAOI} onClick={() => handleSelectAOI(hydratedAOI)} />
