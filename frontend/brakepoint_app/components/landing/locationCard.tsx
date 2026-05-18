@@ -2,7 +2,7 @@
 
 import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip } from "@mui/material";
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
-import type { SubAreaSummary } from "./analytics";
+//import type { SubAreaSummary } from "./analytics";
 import "./locationCard.css";
 
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';                                  // vehicles icon
@@ -13,9 +13,27 @@ import PanToolOutlinedIcon from "@mui/icons-material/PanToolOutlined";          
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';                        // rightwards icon
 import { ReportProblem } from "@mui/icons-material";
 
+export type SubAreaSummary = {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  geometry: [number, number][] | null;
+  bounds: [[number, number], [number, number]] | null;
+  camera_count: number;
+  vehicles: number;
+  speeding: number;
+  swerving: number;
+  abrupt_stopping: number;
+  adb: number;
+  tags: string[];
+  thumbnail?: string | null;
+  location?: string;
+};
+
 // details for this area/subarea
 // obtained from api/dashboard-summary; class SavedLocation in models.py
-type LocationSummary = {
+export type LocationSummary = {
   location_type: "aoi" | "subarea";
 
   name: string;
@@ -112,7 +130,7 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
         )}
 
         {/* the list of tags that applies to this area/subarea */}
-        { camera.tags && camera.tags.length > 0 && (
+        { camera?.tags && camera.tags.length > 0 && (
           <Box className="lc-tag-row">
 
             {camera.tags.map((tag) => (

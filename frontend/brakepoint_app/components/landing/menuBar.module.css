@@ -1,0 +1,71 @@
+.menuContainer {
+  background-color: rgb(236, 237, 245);
+  min-height: 100vh;
+  min-width: 350px;
+  width: clamp(500px, 15vw, 480px);
+  padding: 1.5em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+}
+
+.menuHeader {
+  background-color: #161b4c;
+  color: rgb(236, 237, 245);
+  width: calc(100% + 4em); 
+  margin-left: -2.5em; 
+  margin-top: -4em;     
+  padding: 4em 2.5em 1em;
+  align-items: center;
+  display: flex;
+}
+
+.buttonContainer {
+  margin-top:32px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menuButton {
+  width: 100%;
+  justify-content: flex-start !important;
+  border-radius: 16px;
+  color: rgb(236, 237, 245) !important;
+  text-align: left;
+  font-size:18px !important;
+}
+
+.menuButton :global(.MuiButton-startIcon) {
+  margin-right: 32px;
+  color: rgb(236, 237, 245);
+
+}
+
+.menuButton:global(.MuiButton-root) {
+  padding: 16px;
+}
+
+.menuButton:global(.MuiButton-root):hover {
+  background-color: #11153f;
+}
+
+.brakePoint {
+  color: rgb(236, 237, 245);
+  margin: 24px 0;
+}
+
+.areasHeader{
+  position: absolute;
+  left: 2em;
+  top: 10em;
+  display: flex;
+  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  width: calc(100% - 4em);
+}
