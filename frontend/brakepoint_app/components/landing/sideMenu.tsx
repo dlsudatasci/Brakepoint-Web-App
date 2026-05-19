@@ -51,14 +51,26 @@ export type AOISummary = {
     subareas?: SubAreaSummary[];
 };
 
+export type SideMenuUpdater = {
+    renameSubarea: (id: number, name: string) => void;
+    deleteSubarea: (id: number) => void;
+};
+
 // definition of types for the props for MenuBar
 interface SideMenuProps {
-    onAddArea?: () => void;                                // triggers when the user clicks the "add area" button
-    onSelectSubarea?: (subareaId: number) => void;   // triggers when the user selects a subarea
+    onAddArea?: () => void;                              // triggers when the user clicks the "add area" button
+    onSelectSubarea?: (subareaId: number) => void;       // triggers when the user selects a subarea
     refreshTrigger?: number;                             // increment to re-fetch the AOI list
     isDrawingAOI?: boolean;                              // true while the user is drawing an AOI on the map
     onAoiHover?: (id: number | null) => void;            // called with AOI id on hover, null on leave
     onAoiClick?: (id: number) => void;                   // called when an AOI card is clicked — opens edit/delete dialog
+    onAoiEnter?: (aoi: AOISummary) => void;              // called when the arrow button is clicked — zooms map to AOI
+    onAoiBack?: () => void;                              // called when the user navigates back from an AOI detail view
+    onAddSubarea?: () => void;                           // called when + in Road Segments is clicked
+    isDrawingSubarea?: boolean;                          // true while the user is drawing a road segment polygon
+    onSubareaHover?: (id: number | null) => void;        // called with sub-area id on hover, null on leave
+    onSubareaClick?: (id: number, name: string) => void;  // called when a road segment card body is clicked — opens edit/delete dialog
+    onMount?: (updater: SideMenuUpdater) => void;          // provides direct update fns to avoid full refetch on edit/delete
 }
 
 // displays list of AOIs
@@ -95,13 +107,19 @@ function AOIDetail({
     detailLoading,
     onBack,
     onAddSubarea,
+    isDrawingSubarea,
     onNavigateSubarea,
+    onSubareaHover,
+    onSubareaClick,
 }: {
     aoi: AOISummary;
     detailLoading?: boolean;
     onBack: () => void;
     onAddSubarea?: () => void;
+    isDrawingSubarea?: boolean;
     onNavigateSubarea?: (id: number) => void;
+    onSubareaHover?: (id: number | null) => void;
+    onSubareaClick?: (id: number, name: string) => void;
 }) {
     const [statsOpen, setStatsOpen] = useState(true);
 
@@ -222,9 +240,14 @@ function AOIDetail({
                 />
                 <Button
                     onClick={onAddSubarea}
-                    sx={{ marginLeft: "auto", minWidth: 0, padding: "3px 6px", color: "#1d1f3f", borderRadius: "8px", "&:hover": { bgcolor: "#1d1f3f", color: "#fff" } }}
+                    sx={{
+                        marginLeft: "auto", minWidth: 0, padding: "3px 6px", borderRadius: "8px",
+                        color: isDrawingSubarea ? "rgb(236, 237, 245)" : "#1d1f3f",
+                        bgcolor: isDrawingSubarea ? "#1d1f3f" : "transparent",
+                        "&:hover": { bgcolor: "#1d1f3f", color: "rgb(236, 237, 245)" },
+                    }}
                 >
-                    <AddIcon />
+                    {isDrawingSubarea ? <CloseIcon /> : <AddIcon />}
                 </Button>
             </Box>
 
@@ -252,12 +275,18 @@ function AOIDetail({
                             tags: sub.tags,
                         };
                         return (
-                            <LocationCard
+                            <Box
                                 key={sub.id}
-                                type="subarea"
-                                locationDetails={subDetails}
-                                onClickSideButton={() => onNavigateSubarea?.(sub.id)}
-                            />
+                                onMouseEnter={() => onSubareaHover?.(sub.id)}
+                                onMouseLeave={() => onSubareaHover?.(null)}
+                            >
+                                <LocationCard
+                                    type="subarea"
+                                    locationDetails={subDetails}
+                                    onClickCard={() => onSubareaClick?.(sub.id, sub.name)}
+                                    onClickSideButton={() => onNavigateSubarea?.(sub.id)}
+                                />
+                            </Box>
                         );
                     })
                 ) : (
@@ -275,7 +304,7 @@ function AOIDetail({
     );
 }
 
-export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick }: SideMenuProps) {
+export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount }: SideMenuProps) {
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -283,6 +312,43 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
     const [selectedAOI, setSelectedAOI] = useState<AOISummary | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [listLoading, setListLoading] = useState(true);
+
+    // Register direct-update functions so the parent can optimistically update
+    // the sub-area list without triggering a full API refetch.
+    useEffect(() => {
+        onMount?.({
+            renameSubarea: (id, name) => {
+                setAois((prev) => prev.map((a) => ({
+                    ...a,
+                    subareas: a.subareas?.map((s) => (s.id === id ? { ...s, name } : s)),
+                })));
+                setSelectedAOI((prev) => prev ? ({
+                    ...prev,
+                    subareas: prev.subareas?.map((s) => (s.id === id ? { ...s, name } : s)),
+                }) : null);
+            },
+            deleteSubarea: (id) => {
+                setAois((prev) => prev.map((a) => {
+                    const had = a.subareas?.some((s) => s.id === id) ?? false;
+                    return {
+                        ...a,
+                        subareas: a.subareas?.filter((s) => s.id !== id),
+                        subarea_count: had ? Math.max(0, a.subarea_count - 1) : a.subarea_count,
+                    };
+                }));
+                setSelectedAOI((prev) => {
+                    if (!prev) return null;
+                    const had = prev.subareas?.some((s) => s.id === id) ?? false;
+                    return {
+                        ...prev,
+                        subareas: prev.subareas?.filter((s) => s.id !== id),
+                        subarea_count: had ? Math.max(0, prev.subarea_count - 1) : prev.subarea_count,
+                    };
+                });
+            },
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -336,6 +402,11 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                 });
 
                 setAois(built);
+                // Keep selectedAOI in sync with fresh data (e.g. new sub-areas)
+                setSelectedAOI((prev) => {
+                    if (!prev) return null;
+                    return built.find((a) => a.id === prev.id) ?? prev;
+                });
             })
             .catch(() => {})
             .finally(() => { if (!cancelled) setListLoading(false); });
@@ -344,11 +415,13 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
     }, [refreshTrigger]);
 
     const handleSelectAOI = (aoi: AOISummary) => {
+        onAoiEnter?.(aoi);
         setSelectedAOI(aoi);
         scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     };
 
     const handleBack = () => {
+        onAoiBack?.();
         setSelectedAOI(null);
         scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     };
@@ -399,7 +472,10 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                         aoi={selectedAOI}
                         detailLoading={detailLoading}
                         onBack={handleBack}
-                        onAddSubarea={() => { if (onAddArea) onAddArea(); else router.push("/explore"); }}
+                        onAddSubarea={onAddSubarea}
+                        isDrawingSubarea={isDrawingSubarea}
+                        onSubareaHover={onSubareaHover}
+                        onSubareaClick={onSubareaClick}
                         onNavigateSubarea={(id) => {
                             onSelectSubarea?.(id);
                             router.push(`/configuration?savedLocationId=${id}`);
