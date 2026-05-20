@@ -29,6 +29,9 @@ export default function LandingPage() {
   // Sync ref so handleAoiDrawn (useCallback) can always read the latest value
   const selectedAoiIdRef = useRef<number | null>(null);
   selectedAoiIdRef.current = selectedAoiId;
+  // Guard ref: true while any drawing mode is active — used to suppress polygon click dialogs
+  const isDrawingRef = useRef(false);
+  isDrawingRef.current = isDrawing || isDrawingSubarea;
   const [aoiBounds, setAoiBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [aoiMaxBounds, setAoiMaxBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [subAreaItems, setSubAreaItems] = useState<AoiItem[]>([]);
@@ -147,6 +150,7 @@ export default function LandingPage() {
   }, []);
 
   const handleAoiClick = useCallback((id: number) => {
+    if (isDrawingRef.current) return; // never open edit dialog while drawing
     const aoi = aoiItems.find((a) => a.id === id);
     if (!aoi) return;
     setEditAoi(aoi);
@@ -154,6 +158,7 @@ export default function LandingPage() {
   }, [aoiItems]);
 
   const handleSubareaClick = useCallback((id: number, name: string) => {
+    if (isDrawingRef.current) return; // never open edit dialog while drawing
     const ring = subAreaItems.find((s) => s.id === id)?.ring ?? [];
     setEditSubarea({ id, name, ring });
     setEditSubareaName(name);

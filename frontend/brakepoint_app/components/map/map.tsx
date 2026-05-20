@@ -499,22 +499,16 @@ export default function MapView({
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  // Becomes true once the map's "load" event fires (style JSON applied, safe to add layers)
   const mapLoadedRef = useRef(false);
-
   const [open, setOpen] = useState(true);
-
   const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
-
   const [showPolygonModal, setShowPolygonModal] = useState(false);
   const [cameras, setCameras] = useState<CameraMarkerEntry[]>([]);
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
   const [completedPolygons, setCompletedPolygons] = useState<CompletedPolygon[]>([]);
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
-
-
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
     savedSubAreaIds: Record<number, number>;
@@ -566,16 +560,13 @@ export default function MapView({
   const [focusError, setFocusError] = useState<string | null>(null);
   const [hoverSubAreaIndex, setHoverSubAreaIndex] = useState<number | null>(null);
   const [selectedSubAreaIndex, setSelectedSubAreaIndex] = useState<number | null>(null);
-
   const camerasRef = useRef<CameraMarkerEntry[]>([]);
   const dashboardRegistryRef = useRef<Map<string, DashMarkerEntry>>(new Map());
   const openDashboardPopupRef = useRef<maplibregl.Popup | null>(null);
-
   const editControlRef = useRef<createToggleButtons | null>(null);
   const polygonEditControlRef = useRef<createPolygonEditButtons | null>(null);
   const geocoderControlRef = useRef<MaplibreGeocoder | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
-
   const rectIdRef = useRef<string | null>(null);
   const lockAfterFitRef = useRef(false);
   const isFirstGoToRef = useRef(true);
@@ -583,7 +574,6 @@ export default function MapView({
   const defaultMinZoomRef = useRef(0);
   const defaultMaxZoomRef = useRef(22);
   const loadAbortRef = useRef<AbortController | null>(null);
-
   const toolModeRef = useLatestRef(toolMode);
   const selectedPolygonIndexRef = useLatestRef(selectedPolygonIndex);
   const completedPolygonsRef = useLatestRef(completedPolygons);
@@ -603,6 +593,7 @@ export default function MapView({
   const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
   const isDrawingAOIRef = useRef(isDrawingAOI);
   isDrawingAOIRef.current = isDrawingAOI;
+  const lastDrawingFinishTimeRef = useRef(0);
   const aoiDrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const [savedAoiId, setSavedAoiId] = useState<number | null>(
     exploreInitFromCache?.savedAoiId ?? null,
@@ -1873,14 +1864,33 @@ export default function MapView({
         try { di.setMode("rectangle"); } catch {}
 
         const onFinish = () => {
-          const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
-          const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
-          if (polys.length === 0) return;
-          const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
-          const clearDrawing = () => {
+          try {
+            const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+            const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+            if (polys.length === 0) return;
+            const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
+
+            let area = 0;
+            for (let i = 0; i < ring.length; i++) {
+              const [x1, y1] = ring[i];
+              const [x2, y2] = ring[(i + 1) % ring.length];
+              area += x1 * y2 - x2 * y1;
+            }
+            if (Math.abs(area / 2) < 1e-8) {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+              return;
+            }
+
+            lastDrawingFinishTimeRef.current = Date.now();
+
+            const clearDrawing = () => {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+            };
+            onAoiDrawnRef.current?.(ring, clearDrawing);
+          } catch (err) {
+            console.warn("AOI drawing error (likely degenerate polygon):", err);
             try { di.clear?.(); di.setMode("rectangle"); } catch {}
-          };
-          onAoiDrawnRef.current?.(ring, clearDrawing);
+          }
         };
 
         try { di.on("finish", onFinish); } catch {}
@@ -1918,7 +1928,6 @@ export default function MapView({
       })),
     });
 
-    // Fast path — layers already exist: just swap data, no rebuild
     if (aoiLayersReadyRef.current && map.getSource(SOURCE)) {
       (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? []) as any);
       return;
@@ -1949,6 +1958,7 @@ export default function MapView({
 
       const clickHandler  = (e: any) => {
         if (isDrawingAOIRef.current) return; // ignore clicks while drawing a new AOI
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; // ignore clicks immediately after finishing a draw
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onAoiClickRef.current?.(Number(id));
       };
@@ -2062,6 +2072,7 @@ export default function MapView({
 
       const clickHandler = (e: any) => {
         if (isDrawingAOIRef.current) return;
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; 
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaClickRef.current?.(Number(id));
       };
@@ -2124,7 +2135,7 @@ export default function MapView({
     prevHoveredSubAreaIdRef.current = hoveredSubAreaId ?? null;
   }, [hoveredSubAreaId]);
 
-  // ── Max-bounds lock (restricts panning when an AOI is entered) ────────────
+  // Max-bounds lock
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3090,8 +3101,6 @@ export default function MapView({
     };
   }, [mode, primaryFocusArea, subFocusAreas, activeSubAreaIndex, selectedSubAreaIndex]);
 
-  // Lightweight hover effect: update fill-opacity via setPaintProperty so we
-  // don't rebuild the entire GeoJSON FeatureCollection on every mousemove.
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.getLayer("focus-areas-fill")) return;
