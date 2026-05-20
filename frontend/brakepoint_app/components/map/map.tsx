@@ -603,6 +603,7 @@ export default function MapView({
   const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
   const isDrawingAOIRef = useRef(isDrawingAOI);
   isDrawingAOIRef.current = isDrawingAOI;
+  const lastDrawingFinishTimeRef = useRef(0);
   const aoiDrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const [savedAoiId, setSavedAoiId] = useState<number | null>(
     exploreInitFromCache?.savedAoiId ?? null,
@@ -1873,14 +1874,37 @@ export default function MapView({
         try { di.setMode("rectangle"); } catch {}
 
         const onFinish = () => {
-          const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
-          const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
-          if (polys.length === 0) return;
-          const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
-          const clearDrawing = () => {
+          try {
+            const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+            const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+            if (polys.length === 0) return;
+            const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
+
+            // Reject degenerate (near-zero area) polygons using the Shoelace formula.
+            // Threshold: ~1e-8 deg² ≈ 100 m² — catches accidental double-clicks.
+            let area = 0;
+            for (let i = 0; i < ring.length; i++) {
+              const [x1, y1] = ring[i];
+              const [x2, y2] = ring[(i + 1) % ring.length];
+              area += x1 * y2 - x2 * y1;
+            }
+            if (Math.abs(area / 2) < 1e-8) {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+              return;
+            }
+
+            // Stamp the finish time BEFORE invoking the callback so the AOI
+            // and sub-area click handlers can ignore the same-click event.
+            lastDrawingFinishTimeRef.current = Date.now();
+
+            const clearDrawing = () => {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+            };
+            onAoiDrawnRef.current?.(ring, clearDrawing);
+          } catch (err) {
+            console.warn("AOI drawing error (likely degenerate polygon):", err);
             try { di.clear?.(); di.setMode("rectangle"); } catch {}
-          };
-          onAoiDrawnRef.current?.(ring, clearDrawing);
+          }
         };
 
         try { di.on("finish", onFinish); } catch {}
@@ -1949,6 +1973,7 @@ export default function MapView({
 
       const clickHandler  = (e: any) => {
         if (isDrawingAOIRef.current) return; // ignore clicks while drawing a new AOI
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; // ignore clicks immediately after finishing a draw
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onAoiClickRef.current?.(Number(id));
       };
@@ -2062,6 +2087,7 @@ export default function MapView({
 
       const clickHandler = (e: any) => {
         if (isDrawingAOIRef.current) return;
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; 
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaClickRef.current?.(Number(id));
       };

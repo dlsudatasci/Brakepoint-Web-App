@@ -34,6 +34,7 @@ export type SubAreaSummary = {
     swerving: number;
     abrupt_stopping: number;
     tags: string[];
+    vehicle_breakdown: Record<string, number>;
 };
 
 export type AOISummary = {
@@ -313,8 +314,6 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
     const [detailLoading, setDetailLoading] = useState(false);
     const [listLoading, setListLoading] = useState(true);
 
-    // Register direct-update functions so the parent can optimistically update
-    // the sub-area list without triggering a full API refetch.
     useEffect(() => {
         onMount?.({
             renameSubarea: (id, name) => {
@@ -347,7 +346,6 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                 });
             },
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -383,6 +381,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                         swerving: s.swerving ?? 0,
                         abrupt_stopping: s.abrupt_stopping ?? 0,
                         tags: s.tags ?? [],
+                        vehicle_breakdown: (s.vehicle_breakdown ?? {}) as Record<string, number>,
                     }));
 
                     return {
@@ -396,13 +395,23 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                         speeding: subs.reduce((n, s) => n + s.speeding, 0),
                         swerving: subs.reduce((n, s) => n + s.swerving, 0),
                         abrupt_stopping: subs.reduce((n, s) => n + s.abrupt_stopping, 0),
-                        vehicle_breakdown: [],
+                        vehicle_breakdown: (() => {
+                            const merged: Record<string, number> = {};
+                            for (const s of subs) {
+                                for (const [type, count] of Object.entries(s.vehicle_breakdown)) {
+                                    merged[type] = (merged[type] ?? 0) + count;
+                                }
+                            }
+                            return Object.entries(merged).map(([label, value]) => ({
+                                label: label.charAt(0).toUpperCase() + label.slice(1),
+                                value,
+                            }));
+                        })(),
                         subareas: subs,
                     };
                 });
 
                 setAois(built);
-                // Keep selectedAOI in sync with fresh data (e.g. new sub-areas)
                 setSelectedAOI((prev) => {
                     if (!prev) return null;
                     return built.find((a) => a.id === prev.id) ?? prev;
