@@ -120,7 +120,7 @@ function AOIDetail({
     onSubareaHover?: (id: number | null) => void;
     onSubareaClick?: (id: number, name: string) => void;
 }) {
-    const [statsOpen, setStatsOpen] = useState(true);
+    const [statsOpen, setStatsOpen] = useState(false);
 
     const pct = (n: number) =>
         aoi.vehicles > 0 ? `${((n / aoi.vehicles) * 100).toFixed(1)}%` : "0.0%";
