@@ -85,6 +85,18 @@ class SavedLocation(models.Model):
         return behaviors if behaviors else ['No Data']
 
     @property
+    def total_vehicle_breakdown(self):
+        """Aggregate vehicle-type breakdown across all completed videos at this location"""
+        from collections import Counter
+        counter = Counter()
+        for v in Video.objects.filter(
+            camera__saved_location=self, processing_status='completed'
+        ):
+            if isinstance(v.vehicle_breakdown, dict):
+                counter.update(v.vehicle_breakdown)
+        return dict(counter)
+
+    @property
     def camera_count(self):
         """Number of cameras linked to this location"""
         return self.cameras.count()

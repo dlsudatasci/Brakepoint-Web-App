@@ -136,9 +136,23 @@ type MapProps = {
   refreshTrigger: number;                                                                   // periodically incremented to refresh this Map object
   goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
   goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
+  mapMaxBounds?: [[number, number], [number, number]] | null;                               // when set, restricts panning to this padded bounding box
+  subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;          // sub-area polygons rendered when an AOI is selected
 
   showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
   onMapReady?: (map: maplibregl.Map) => void;                                               // triggers when map has been loaded
+  onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
+  hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
+  cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
+  isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
+  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;               // called when user finishes drawing a rectangle
+  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                     // AOI geometry rings to render as blue overlays
+  hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
+  onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
+  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that orange polygon
+  onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
+  onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
+  showGeocoder?: boolean;                                                                   // show the search bar (landing page)
 };
 
 // a MapLibre marker for each subarea (mode = "dashboard")
@@ -468,23 +482,33 @@ export default function MapView({
   goToBounds,
   showMapillarySigns = true,
   onMapReady,
+  onAoiSaved,
+  hideEditControls = false,
+  cleanMap = false,
+  isDrawingAOI = false,
+  onAoiDrawn,
+  aoiItems,
+  hoveredAoiId,
+  onAoiClick,
+  hoveredSubAreaId,
+  onSubAreaClick,
+  onSubAreaHover,
+  showGeocoder = false,
+  mapMaxBounds,
+  subAreaItems,
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-
+  const mapLoadedRef = useRef(false);
   const [open, setOpen] = useState(true);
-
   const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
-
   const [showPolygonModal, setShowPolygonModal] = useState(false);
   const [cameras, setCameras] = useState<CameraMarkerEntry[]>([]);
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
   const [completedPolygons, setCompletedPolygons] = useState<CompletedPolygon[]>([]);
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
-
-
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
     savedSubAreaIds: Record<number, number>;
@@ -492,6 +516,7 @@ export default function MapView({
     subFocusAreas: FocusArea[];
   } | null>(() => {
     if (mode !== "explore") return null;
+    if (onAoiSaved) return null;
     try {
       const raw = sessionStorage.getItem("bp_explore_v1");
       if (!raw) return null;
@@ -535,16 +560,13 @@ export default function MapView({
   const [focusError, setFocusError] = useState<string | null>(null);
   const [hoverSubAreaIndex, setHoverSubAreaIndex] = useState<number | null>(null);
   const [selectedSubAreaIndex, setSelectedSubAreaIndex] = useState<number | null>(null);
-
   const camerasRef = useRef<CameraMarkerEntry[]>([]);
   const dashboardRegistryRef = useRef<Map<string, DashMarkerEntry>>(new Map());
   const openDashboardPopupRef = useRef<maplibregl.Popup | null>(null);
-
   const editControlRef = useRef<createToggleButtons | null>(null);
   const polygonEditControlRef = useRef<createPolygonEditButtons | null>(null);
   const geocoderControlRef = useRef<MaplibreGeocoder | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
-
   const rectIdRef = useRef<string | null>(null);
   const lockAfterFitRef = useRef(false);
   const isFirstGoToRef = useRef(true);
@@ -552,7 +574,6 @@ export default function MapView({
   const defaultMinZoomRef = useRef(0);
   const defaultMaxZoomRef = useRef(22);
   const loadAbortRef = useRef<AbortController | null>(null);
-
   const toolModeRef = useLatestRef(toolMode);
   const selectedPolygonIndexRef = useLatestRef(selectedPolygonIndex);
   const completedPolygonsRef = useLatestRef(completedPolygons);
@@ -565,6 +586,15 @@ export default function MapView({
   const modeRef = useLatestRef(mode);
   const goToRef = useLatestRef(goTo ?? null);
   const goToBoundsRef = useLatestRef(goToBounds ?? null);
+  const onAoiSavedRef = useLatestRef(onAoiSaved ?? null);
+  const onAoiDrawnRef = useLatestRef(onAoiDrawn ?? null);
+  const onAoiClickRef = useLatestRef(onAoiClick ?? null);
+  const onSubAreaClickRef = useLatestRef(onSubAreaClick ?? null);
+  const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
+  const isDrawingAOIRef = useRef(isDrawingAOI);
+  isDrawingAOIRef.current = isDrawingAOI;
+  const lastDrawingFinishTimeRef = useRef(0);
+  const aoiDrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const [savedAoiId, setSavedAoiId] = useState<number | null>(
     exploreInitFromCache?.savedAoiId ?? null,
   );
@@ -1113,6 +1143,10 @@ export default function MapView({
   );
 
   const loadSavedExploreAreas = useCallback(async () => {
+    if (onAoiSavedRef.current) {
+      startPrimaryDrawingMode();
+      return;
+    }
     try {
       const raw = sessionStorage.getItem(EXPLORE_CACHE_KEY);
       if (raw) applyExploreLocations(JSON.parse(raw) as SavedLocationRecord[]);
@@ -1402,6 +1436,15 @@ export default function MapView({
         return;
       }
 
+      if (onAoiSavedRef.current) {
+        await createSavedArea({ name: label, coords: ring, locationType: "aoi" });
+        clearTerradrawSelection();
+        setFocusError(null);
+        di.setMode?.("select");
+        onAoiSavedRef.current();
+        return;
+      }
+
       if (savedAoiId) {
         await updateSavedArea({
           id: savedAoiId,
@@ -1439,6 +1482,7 @@ export default function MapView({
     savedAoiId,
     savedSubAreaIds,
     subFocusAreasRef,
+    clearTerradrawSelection,
     createSavedArea,
     updateSavedArea,
   ]);
@@ -1790,8 +1834,313 @@ export default function MapView({
   }, [mode, loadSavedExploreAreas]);
 
   useEffect(() => {
+    if (mode !== "explore") return;
+    if (!onAoiSavedRef.current) return;
+    if (explorePhase === "idle") startPrimaryDrawingMode();
+  }, [explorePhase, mode, startPrimaryDrawingMode]);
+
+  useEffect(() => {
     if (toolMode !== "addPoint") clearGuideline();
   }, [clearGuideline, toolMode]);
+
+  // AOI rectangle drawing — independent of explore mode
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (isDrawingAOI) {
+      if (aoiDrawControlRef.current) return;
+
+      const drawControl = new MaplibreTerradrawControl({
+        modes: ["select", "rectangle"],
+        open: false,
+        showDeleteConfirmation: false,
+      });
+      map.addControl(drawControl, "bottom-right");
+      aoiDrawControlRef.current = drawControl;
+
+      const di = drawControl.getTerraDrawInstance();
+      if (di) {
+        try { di.setMode("rectangle"); } catch {}
+
+        const onFinish = () => {
+          try {
+            const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+            const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+            if (polys.length === 0) return;
+            const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
+
+            let area = 0;
+            for (let i = 0; i < ring.length; i++) {
+              const [x1, y1] = ring[i];
+              const [x2, y2] = ring[(i + 1) % ring.length];
+              area += x1 * y2 - x2 * y1;
+            }
+            if (Math.abs(area / 2) < 1e-8) {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+              return;
+            }
+
+            lastDrawingFinishTimeRef.current = Date.now();
+
+            const clearDrawing = () => {
+              try { di.clear?.(); di.setMode("rectangle"); } catch {}
+            };
+            onAoiDrawnRef.current?.(ring, clearDrawing);
+          } catch (err) {
+            console.warn("AOI drawing error (likely degenerate polygon):", err);
+            try { di.clear?.(); di.setMode("rectangle"); } catch {}
+          }
+        };
+
+        try { di.on("finish", onFinish); } catch {}
+      }
+    } else {
+      if (aoiDrawControlRef.current) {
+        try { map.removeControl(aoiDrawControlRef.current); } catch {}
+        aoiDrawControlRef.current = null;
+      }
+    }
+  }, [isDrawingAOI]);
+
+  // Render saved AOIs as blue rectangle overlays
+  const latestAoiItemsRef  = useRef(aoiItems ?? []);
+  latestAoiItemsRef.current = aoiItems ?? [];           
+  const aoiLayersReadyRef   = useRef(false);
+  const aoiCleanupRef       = useRef<(() => void) | null>(null);
+  const aoiPendingSetupRef  = useRef(false);           
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const SOURCE = "aoi-polygons";
+    const FILL   = "aoi-fill";
+    const LINE   = "aoi-line";
+
+    const toFC = (items: NonNullable<typeof aoiItems>) => ({
+      type: "FeatureCollection" as const,
+      features: items.map((item) => ({
+        type: "Feature" as const,
+        id: item.id,
+        geometry: { type: "Polygon" as const, coordinates: [item.ring] },
+        properties: { id: item.id },
+      })),
+    });
+
+    if (aoiLayersReadyRef.current && map.getSource(SOURCE)) {
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? []) as any);
+      return;
+    }
+
+    // First-time setup
+    const setup = () => {
+      if (map.getLayer(FILL))    map.removeLayer(FILL);
+      if (map.getLayer(LINE))    map.removeLayer(LINE);
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestAoiItemsRef.current) as any });
+      map.addLayer({
+        id: FILL, type: "fill", source: SOURCE,
+        paint: {
+          "fill-color": "#2563eb",
+          "fill-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
+        },
+      });
+      map.addLayer({
+        id: LINE, type: "line", source: SOURCE,
+        paint: {
+          "line-color": "#2563eb",
+          "line-width":  ["case", ["boolean", ["feature-state", "hovered"], false], 3,   2],
+          "line-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+        },
+      });
+
+      const clickHandler  = (e: any) => {
+        if (isDrawingAOIRef.current) return; // ignore clicks while drawing a new AOI
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; // ignore clicks immediately after finishing a draw
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onAoiClickRef.current?.(Number(id));
+      };
+      const enterHandler = () => { map.getCanvas().style.cursor = "pointer"; };
+      const leaveHandler = () => { map.getCanvas().style.cursor = ""; };
+
+      map.on("click",      FILL, clickHandler);
+      map.on("mouseenter", FILL, enterHandler);
+      map.on("mouseleave", FILL, leaveHandler);
+
+      aoiLayersReadyRef.current  = true;
+      aoiPendingSetupRef.current = false;
+      aoiCleanupRef.current = () => {
+        try {
+          map.off("click",      FILL, clickHandler);
+          map.off("mouseenter", FILL, enterHandler);
+          map.off("mouseleave", FILL, leaveHandler);
+          if (map.getLayer(FILL))    map.removeLayer(FILL);
+          if (map.getLayer(LINE))    map.removeLayer(LINE);
+          if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+        } catch {}
+        aoiLayersReadyRef.current = false;
+      };
+    };
+
+    if (mapLoadedRef.current) {
+      setup();
+    } else if (!aoiPendingSetupRef.current) {
+      aoiPendingSetupRef.current = true;
+      map.once("load", setup);
+    }
+  }, [aoiItems]);
+
+  useEffect(() => {
+    return () => { aoiCleanupRef.current?.(); aoiCleanupRef.current = null; };
+  }, []);
+
+  // Hover highlight via feature-state
+  const prevHoveredAoiIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const SOURCE = "aoi-polygons";
+    if (!map.getSource(SOURCE)) return;
+
+    const prev = prevHoveredAoiIdRef.current;
+    if (prev != null) {
+      try { map.setFeatureState({ source: SOURCE, id: prev }, { hovered: false }); } catch {}
+    }
+    if (hoveredAoiId != null) {
+      try { map.setFeatureState({ source: SOURCE, id: hoveredAoiId }, { hovered: true }); } catch {}
+    }
+    prevHoveredAoiIdRef.current = hoveredAoiId ?? null;
+  }, [hoveredAoiId]);
+
+  // Sub-area polygons
+  const latestSubAreaItemsRef  = useRef(subAreaItems ?? []);
+  latestSubAreaItemsRef.current = subAreaItems ?? [];
+  const subAreaLayersReadyRef   = useRef(false);
+  const subAreaCleanupRef       = useRef<(() => void) | null>(null);
+  const subAreaPendingSetupRef  = useRef(false);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const SOURCE = "sub-area-polygons";
+    const FILL   = "sub-area-fill";
+    const LINE   = "sub-area-line";
+
+    const toFC = (items: NonNullable<typeof subAreaItems>) => ({
+      type: "FeatureCollection" as const,
+      features: items.map((item) => ({
+        type: "Feature" as const,
+        id: item.id,
+        geometry: { type: "Polygon" as const, coordinates: [item.ring] },
+        properties: { id: item.id },
+      })),
+    });
+
+    // Fast path — layers exist: just swap data
+    if (subAreaLayersReadyRef.current && map.getSource(SOURCE)) {
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(subAreaItems ?? []) as any);
+      return;
+    }
+
+    // Nothing to render yet
+    if (!subAreaItems || subAreaItems.length === 0) return;
+
+    const setup = () => {
+      if (map.getLayer(FILL))    map.removeLayer(FILL);
+      if (map.getLayer(LINE))    map.removeLayer(LINE);
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestSubAreaItemsRef.current) as any });
+      map.addLayer({
+        id: FILL, type: "fill", source: SOURCE,
+        paint: {
+          "fill-color": "#ea580c",
+          "fill-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 0.38, 0.15],
+        },
+      });
+      map.addLayer({
+        id: LINE, type: "line", source: SOURCE,
+        paint: {
+          "line-color": "#ea580c",
+          "line-width":  ["case", ["boolean", ["feature-state", "hovered"], false], 3, 2],
+          "line-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+        },
+      });
+
+      const clickHandler = (e: any) => {
+        if (isDrawingAOIRef.current) return;
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; 
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onSubAreaClickRef.current?.(Number(id));
+      };
+      const enterHandler = (e: any) => {
+        map.getCanvas().style.cursor = "pointer";
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onSubAreaHoverRef.current?.(Number(id));
+      };
+      const leaveHandler = () => {
+        map.getCanvas().style.cursor = "";
+        onSubAreaHoverRef.current?.(null);
+      };
+
+      map.on("click",      FILL, clickHandler);
+      map.on("mouseenter", FILL, enterHandler);
+      map.on("mouseleave", FILL, leaveHandler);
+
+      subAreaLayersReadyRef.current  = true;
+      subAreaPendingSetupRef.current = false;
+      subAreaCleanupRef.current = () => {
+        try {
+          map.off("click",      FILL, clickHandler);
+          map.off("mouseenter", FILL, enterHandler);
+          map.off("mouseleave", FILL, leaveHandler);
+          if (map.getLayer(FILL))    map.removeLayer(FILL);
+          if (map.getLayer(LINE))    map.removeLayer(LINE);
+          if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+        } catch {}
+        subAreaLayersReadyRef.current = false;
+      };
+    };
+
+    if (mapLoadedRef.current) {
+      setup();
+    } else if (!subAreaPendingSetupRef.current) {
+      subAreaPendingSetupRef.current = true;
+      map.once("load", setup);
+    }
+  }, [subAreaItems]);
+
+  useEffect(() => {
+    return () => { subAreaCleanupRef.current?.(); subAreaCleanupRef.current = null; };
+  }, []);
+
+  // Hover highlight for sub-area polygons (feature-state)
+  const prevHoveredSubAreaIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const SOURCE = "sub-area-polygons";
+    if (!map.getSource(SOURCE)) return;
+
+    const prev = prevHoveredSubAreaIdRef.current;
+    if (prev != null) {
+      try { map.setFeatureState({ source: SOURCE, id: prev }, { hovered: false }); } catch {}
+    }
+    if (hoveredSubAreaId != null) {
+      try { map.setFeatureState({ source: SOURCE, id: hoveredSubAreaId }, { hovered: true }); } catch {}
+    }
+    prevHoveredSubAreaIdRef.current = hoveredSubAreaId ?? null;
+  }, [hoveredSubAreaId]);
+
+  // Max-bounds lock
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try { map.setMaxBounds(mapMaxBounds ?? null); } catch {}
+  }, [mapMaxBounds]);
 
   const cancelFocusDrawing = useCallback(() => {
     clearTerradrawSelection();
@@ -2074,6 +2423,7 @@ export default function MapView({
     map.on("moveend", onViewportSave);
 
     map.once("load", () => {
+      mapLoadedRef.current = true;
       add3DBuildingsLayer(map);
       restoreDefaultExploreCamera(map);
 
@@ -2104,9 +2454,11 @@ export default function MapView({
       } catch {}
 
       mapRef.current = null;
+      mapLoadedRef.current = false;
       editControlRef.current = null;
       drawControlRef.current = null;
       geocoderControlRef.current = null;
+      aoiDrawControlRef.current = null;
     };
   }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
 
@@ -2114,7 +2466,7 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
 
-    if ( /* mode === "map" || */ mode === "explore") {
+    if ( /* mode === "map" || */ mode === "explore" || showGeocoder) {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
@@ -2203,8 +2555,9 @@ export default function MapView({
       }
     */
 
-      if (!editControlRef.current) {
-        editControlRef.current = new createToggleButtons((toolMode) => {
+      if (!hideEditControls) {
+        if (!editControlRef.current) {
+          editControlRef.current = new createToggleButtons((toolMode) => {
           setToolMode(toolMode);
           
           // if setting to add polygon, bring up the add polygon specific menu options
@@ -2239,6 +2592,7 @@ export default function MapView({
           editControlRef.current = null;
         }
       }
+      } // end hideEditControls check
 
 /*
                 <button
@@ -2390,18 +2744,20 @@ export default function MapView({
   }, [showMapillarySigns]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map" && mode !== "heatmap") return;
     loadCamerasFromDatabase();
 
     return () => {
       loadAbortRef.current?.abort();
     };
-  }, [loadCamerasFromDatabase, mode]);
+  }, [cleanMap, loadCamerasFromDatabase, mode]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map") return;
     if (refreshTrigger > 0 && mapRef.current) loadCamerasFromDatabase();
-  }, [loadCamerasFromDatabase, mode, refreshTrigger]);
+  }, [cleanMap, loadCamerasFromDatabase, mode, refreshTrigger]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2745,8 +3101,6 @@ export default function MapView({
     };
   }, [mode, primaryFocusArea, subFocusAreas, activeSubAreaIndex, selectedSubAreaIndex]);
 
-  // Lightweight hover effect: update fill-opacity via setPaintProperty so we
-  // don't rebuild the entire GeoJSON FeatureCollection on every mousemove.
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.getLayer("focus-areas-fill")) return;
@@ -2901,7 +3255,7 @@ export default function MapView({
   }, []);
 
   return (
-    <div className="map-wrap">
+    <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
       <div ref={mapContainer} className="map" />
       {mode === "explore" && (
           <SideTab side="bottom" open={open} invisible={false} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>

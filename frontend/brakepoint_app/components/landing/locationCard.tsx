@@ -32,7 +32,6 @@ export type SubAreaSummary = {
 };
 
 // details for this area/subarea
-// obtained from api/dashboard-summary; class SavedLocation in models.py
 export type LocationSummary = {
   location_type: "aoi" | "subarea";
 

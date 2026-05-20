@@ -130,6 +130,7 @@ def saved_locations_list_create(request):
                     "swerving": loc.total_swerving,
                     "abrupt_stopping": loc.total_abrupt_stopping,
                     "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
                 })
 
             return Response({"success": True, "saved_locations": payload})
@@ -278,6 +279,7 @@ def saved_locations_list_create(request):
                     "swerving": loc.total_swerving,
                     "abrupt_stopping": loc.total_abrupt_stopping,
                     "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
                 })
 
             return JsonResponse({"success": True, "saved_locations": payload})
