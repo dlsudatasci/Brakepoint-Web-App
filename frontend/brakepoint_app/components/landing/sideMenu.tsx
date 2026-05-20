@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Box, Typography, Button, Chip, CircularProgress, Divider } from "@mui/material";
 import { useRouter } from "next/navigation";
-
 import LogoutIcon from "@mui/icons-material/Logout";
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
@@ -15,7 +14,6 @@ import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-
 import AnalyticsCard, { StackedBar } from "./analyticsCard";
 import LocationCard, { type LocationSummary } from "./locationCard";
 import styles from "./menuBar.module.css";
@@ -59,18 +57,18 @@ export type SideMenuUpdater = {
 
 // definition of types for the props for MenuBar
 interface SideMenuProps {
-    onAddArea?: () => void;                              // triggers when the user clicks the "add area" button
-    onSelectSubarea?: (subareaId: number) => void;       // triggers when the user selects a subarea
-    refreshTrigger?: number;                             // increment to re-fetch the AOI list
-    isDrawingAOI?: boolean;                              // true while the user is drawing an AOI on the map
-    onAoiHover?: (id: number | null) => void;            // called with AOI id on hover, null on leave
-    onAoiClick?: (id: number) => void;                   // called when an AOI card is clicked — opens edit/delete dialog
-    onAoiEnter?: (aoi: AOISummary) => void;              // called when the arrow button is clicked — zooms map to AOI
-    onAoiBack?: () => void;                              // called when the user navigates back from an AOI detail view
-    onAddSubarea?: () => void;                           // called when + in Road Segments is clicked
-    isDrawingSubarea?: boolean;                          // true while the user is drawing a road segment polygon
-    onSubareaHover?: (id: number | null) => void;        // called with sub-area id on hover, null on leave
-    onSubareaClick?: (id: number, name: string) => void;  // called when a road segment card body is clicked — opens edit/delete dialog
+    onAddArea?: () => void;                               // triggers when the user clicks the "add area" button
+    onSelectSubarea?: (subareaId: number) => void;         // triggers when the user selects a subarea
+    refreshTrigger?: number;                               // increment to re-fetch the AOI list
+    isDrawingAOI?: boolean;                                // true while the user is drawing an AOI on the map
+    onAoiHover?: (id: number | null) => void;              // called with AOI id on hover, null on leave
+    onAoiClick?: (id: number) => void;                     // called when an AOI card is clicked — opens edit/delete dialog
+    onAoiEnter?: (aoi: AOISummary) => void;                // called when the arrow button is clicked — zooms map to AOI
+    onAoiBack?: () => void;                                // called when the user navigates back from an AOI detail view
+    onAddSubarea?: () => void;                             // called when + in Road Segments is clicked
+    isDrawingSubarea?: boolean;                            // true while the user is drawing a road segment polygon
+    onSubareaHover?: (id: number | null) => void;          // called with sub-area id on hover, null on leave
+    onSubareaClick?: (id: number, name: string) => void;   // called when a road segment card body is clicked — opens edit/delete dialog
     onMount?: (updater: SideMenuUpdater) => void;          // provides direct update fns to avoid full refetch on edit/delete
 }
 
@@ -476,7 +474,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
             >
                 {selectedAOI ? (
 
-                    // ── Panel 2: AOI detail ──
+                    // AOI detail
                     <AOIDetail
                         aoi={selectedAOI}
                         detailLoading={detailLoading}
