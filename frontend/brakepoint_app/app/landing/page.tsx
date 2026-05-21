@@ -9,7 +9,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SideMenu from "@/components/landing/sideMenu";
-import type { SideMenuUpdater } from "@/components/landing/sideMenu";
+import type { SideMenuUpdater, SubAreaType } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
@@ -18,20 +18,19 @@ type AoiItem = { id: number; name: string; ring: [number, number][] };
 
 export default function LandingPage() {
   const [isDrawing, setIsDrawing] = useState(false);
-  const [isDrawingSubarea, setIsDrawingSubarea] = useState(false);
+  const [isDrawingSubarea, setIsDrawingSubarea] = useState<SubAreaType | false>(false);
+  const isDrawingSubareaRef = useRef<SubAreaType | false>(false);
+  isDrawingSubareaRef.current = isDrawingSubarea;
+  const pendingSubAreaTypeRef = useRef<SubAreaType | null>(null);
   const [sideMenuTrigger, setSideMenuTrigger] = useState(0);
   const [aoiItems, setAoiItems] = useState<AoiItem[]>([]);
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
   const [hoveredSubAreaId, setHoveredSubAreaId] = useState<number | null>(null);
-
-  // Selected AOI state (when the user clicks the arrow on an AOI card)
   const [selectedAoiId, setSelectedAoiId] = useState<number | null>(null);
-  // Sync ref so handleAoiDrawn (useCallback) can always read the latest value
   const selectedAoiIdRef = useRef<number | null>(null);
   selectedAoiIdRef.current = selectedAoiId;
-  // Guard ref: true while any drawing mode is active — used to suppress polygon click dialogs
   const isDrawingRef = useRef(false);
-  isDrawingRef.current = isDrawing || isDrawingSubarea;
+  isDrawingRef.current = isDrawing || isDrawingSubarea !== false;
   const [aoiBounds, setAoiBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [aoiMaxBounds, setAoiMaxBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [subAreaItems, setSubAreaItems] = useState<AoiItem[]>([]);
@@ -48,10 +47,13 @@ export default function LandingPage() {
   const [savingSubarea, setSavingSubarea] = useState(false);
   const [deletingSubarea, setDeletingSubarea] = useState(false);
 
-  // Direct updater for SideMenu sub-area list (avoids full API refetch on edit/delete)
+  // Direct updater for SideMenu sub-area list
   const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
 
-  // Initial fetch — runs once on mount; all subsequent changes are optimistic.
+  // Loading state
+  const [isMapLoading, setIsMapLoading] = useState(true);
+
+  // Initial fetch
   useEffect(() => {
     let cancelled = false;
     authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`)
@@ -64,9 +66,10 @@ export default function LandingPage() {
           .map((loc) => ({ id: loc.id as number, name: loc.name as string, ring: loc.geometry as [number, number][] }));
         setAoiItems(items);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setIsMapLoading(false); });
     return () => { cancelled = true; };
-  }, []); // empty deps — mount only
+  }, []);
 
   const handleAoiDrawn = useCallback(async (ring: [number, number][], clearDrawing: () => void) => {
     const lngs = ring.map((p) => p[0]);
@@ -83,7 +86,9 @@ export default function LandingPage() {
     const parentId = selectedAoiIdRef.current;
 
     if (parentId != null) {
-      // ── Drawing a road segment inside an AOI ──────────────────────────────
+      // Drawing a road segment inside an AOI
+      const subAreaType = (pendingSubAreaTypeRef.current ?? isDrawingSubareaRef.current) || "road_segment";
+      pendingSubAreaTypeRef.current = null;
       const tempId = -(Date.now());
       setSubAreaItems((prev) => [...prev, { id: tempId, name: "New Segment", ring }]);
       clearDrawing();
@@ -100,6 +105,7 @@ export default function LandingPage() {
             geometry: ring,
             bounds,
             location_type: "sub_area",
+            sub_area_type: subAreaType,
             parent_id: parentId,
           }),
         });
@@ -109,13 +115,28 @@ export default function LandingPage() {
         setSubAreaItems((prev) => prev.map((s) =>
           s.id === tempId ? { id: realId, name: "New Segment", ring } : s
         ));
-        setSideMenuTrigger((n) => n + 1);
+        sideMenuUpdaterRef.current?.addSubarea({
+          id: realId,
+          name: "New Segment",
+          lat: centroid.lat,
+          lng: centroid.lng,
+          camera_count: 0,
+          subarea_count: 0,
+          vehicles: 0,
+          adb: 0,
+          speeding: 0,
+          swerving: 0,
+          abrupt_stopping: 0,
+          tags: [],
+          vehicle_breakdown: {},
+          sub_area_type: subAreaType,
+        });
       } catch (err) {
         console.error("Failed to save sub-area:", err);
         setSubAreaItems((prev) => prev.filter((s) => s.id !== tempId));
       }
     } else {
-      // ── Drawing an AOI ────────────────────────────────────────────────────
+      // Drawing an AOI
       const tempId = -(Date.now());
       setAoiItems((prev) => [...prev, { id: tempId, name: "New Area", ring }]);
       clearDrawing();
@@ -150,7 +171,7 @@ export default function LandingPage() {
   }, []);
 
   const handleAoiClick = useCallback((id: number) => {
-    if (isDrawingRef.current) return; // never open edit dialog while drawing
+    if (isDrawingRef.current) return; 
     const aoi = aoiItems.find((a) => a.id === id);
     if (!aoi) return;
     setEditAoi(aoi);
@@ -158,7 +179,7 @@ export default function LandingPage() {
   }, [aoiItems]);
 
   const handleSubareaClick = useCallback((id: number, name: string) => {
-    if (isDrawingRef.current) return; // never open edit dialog while drawing
+    if (isDrawingRef.current) return;
     const ring = subAreaItems.find((s) => s.id === id)?.ring ?? [];
     setEditSubarea({ id, name, ring });
     setEditSubareaName(name);
@@ -207,8 +228,8 @@ export default function LandingPage() {
     } catch (err) {
       console.error("Failed to delete road segment:", err);
       setSubAreaItems((prev) => [...prev, { id: target.id, name: target.name, ring: target.ring }]);
-      sideMenuUpdaterRef.current?.renameSubarea(target.id, target.name); // re-add via rename to restore name
-      setSideMenuTrigger((n) => n + 1); // full refetch to restore the deleted card
+      sideMenuUpdaterRef.current?.renameSubarea(target.id, target.name);
+      setSideMenuTrigger((n) => n + 1); 
     } finally {
       setDeletingSubarea(false);
     }
@@ -225,12 +246,12 @@ export default function LandingPage() {
 
     setSelectedAoiId(aoi.id);
     setAoiBounds([[minLng, minLat], [maxLng, maxLat]]);
-    // Padded max-bounds: allow panning ~1× the AOI size in each direction
     setAoiMaxBounds([
       [minLng - dLng, minLat - dLat],
       [maxLng + dLng, maxLat + dLat],
     ]);
 
+    setIsMapLoading(true);
     try {
       const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area&parent_id=${aoi.id}`
@@ -244,6 +265,8 @@ export default function LandingPage() {
       );
     } catch (err) {
       console.error("Failed to fetch sub-areas:", err);
+    } finally {
+      setIsMapLoading(false);
     }
   }, [aoiItems]);
 
@@ -255,8 +278,12 @@ export default function LandingPage() {
     setIsDrawingSubarea(false);
   }, []);
 
-  const handleAddSubarea = useCallback(() => {
-    setIsDrawingSubarea((d) => !d);
+  const handleAddSubarea = useCallback((type: SubAreaType) => {
+    setIsDrawingSubarea((d) => {
+      const next = d === type ? false : type;
+      pendingSubAreaTypeRef.current = next || null;
+      return next;
+    });
     setIsDrawing(false);
   }, []);
 
@@ -266,8 +293,7 @@ export default function LandingPage() {
     if (!editAoi) return;
     const target = editAoi;
     const newName = editName.trim() || target.name;
-
-    // Optimistic: update immediately and close dialog.
+    
     setAoiItems((prev) => prev.map((a) => a.id === target.id ? { ...a, name: newName } : a));
     setEditAoi(null);
 
@@ -292,7 +318,6 @@ export default function LandingPage() {
     if (!editAoi) return;
     const target = editAoi;
 
-    // Optimistic: remove immediately and close dialog.
     setAoiItems((prev) => prev.filter((a) => a.id !== target.id));
     setEditAoi(null);
 
@@ -321,7 +346,7 @@ export default function LandingPage() {
           hideEditControls
           cleanMap
           showGeocoder
-          isDrawingAOI={isDrawing || isDrawingSubarea}
+          isDrawingAOI={isDrawing || isDrawingSubarea !== false}
           onAoiDrawn={handleAoiDrawn}
           aoiItems={selectedAoiId != null ? [] : aoiItems}
           hoveredAoiId={hoveredAoiId}
@@ -338,7 +363,7 @@ export default function LandingPage() {
         />
       </Box>
 
-      {/* SideMenu — always visible */}
+      {/* SideMenu */}
       <Box sx={{ position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 10, overflowY: "auto" }}>
         <SideMenu
           onAddArea={() => setIsDrawing((d) => !d)}
@@ -355,6 +380,41 @@ export default function LandingPage() {
           onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
         />
       </Box>
+
+      {/* Loading overlay */}
+      {isMapLoading && (
+        <Box sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f5f5f5',
+          zIndex: 9999,
+        }}>
+          <Box sx={{ textAlign: 'center' }}>
+            <Box sx={{
+              width: 50,
+              height: 50,
+              border: '4px solid #f3f3f3',
+              borderTop: '4px solid #161b4cff',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 16px',
+            }} />
+            <Typography variant="h6" style={{ color: '#161b4cff' }}>Loading...</Typography>
+          </Box>
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </Box>
+      )}
 
       {/* AOI edit dialog */}
       <Dialog
