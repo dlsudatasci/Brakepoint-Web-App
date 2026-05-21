@@ -1903,7 +1903,7 @@ export default function MapView({
     }
   }, [isDrawingAOI]);
 
-  // Render saved AOIs as blue rectangle overlays
+  const [polygonReloadKey, setPolygonReloadKey] = useState(0);
   const latestAoiItemsRef  = useRef(aoiItems ?? []);
   latestAoiItemsRef.current = aoiItems ?? [];           
   const aoiLayersReadyRef   = useRef(false);
@@ -1990,7 +1990,7 @@ export default function MapView({
       aoiPendingSetupRef.current = true;
       map.once("load", setup);
     }
-  }, [aoiItems]);
+  }, [aoiItems, polygonReloadKey]);
 
   useEffect(() => {
     return () => { aoiCleanupRef.current?.(); aoiCleanupRef.current = null; };
@@ -2111,10 +2111,26 @@ export default function MapView({
       subAreaPendingSetupRef.current = true;
       map.once("load", setup);
     }
-  }, [subAreaItems]);
+  }, [subAreaItems, polygonReloadKey]);
 
   useEffect(() => {
     return () => { subAreaCleanupRef.current?.(); subAreaCleanupRef.current = null; };
+  }, []);
+
+  // Re-apply polygon layers when the browser tab becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const map = mapRef.current;
+      if (!map) return;
+      // Reset ready flags so the AOI / sub-area effects re-run full layer setup
+      aoiLayersReadyRef.current = false;
+      subAreaLayersReadyRef.current = false;
+      setPolygonReloadKey((k) => k + 1);
+      map.triggerRepaint();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   // Hover highlight for sub-area polygons (feature-state)
@@ -2704,25 +2720,6 @@ export default function MapView({
                 "icon-ignore-placement": true,
               },
             }, belowLayer);
-
-            map.on("click", MAPILLARY_LAYER_ID, (e: any) => {
-              const feature = e.features?.[0];
-              if (!feature) return;
-
-              const val = feature.properties?.value ?? "";
-              const cls = resolveBrakePointClass(val) ?? val;
-
-              new maplibregl.Popup({ offset: 10, closeButton: false })
-                .setLngLat(e.lngLat)
-                .setHTML(
-                  `<div style="font-family:Montserrat,sans-serif;padding:4px 2px">
-                    <strong style="font-size:13px">${cls}</strong>
-                    <br/>
-                    <span style="font-size:11px;color:#666">${val}</span>
-                  </div>`,
-                )
-                .addTo(map);
-            });
 
             map.on("mouseenter", MAPILLARY_LAYER_ID, () => {
               map.getCanvas().style.cursor = "pointer";

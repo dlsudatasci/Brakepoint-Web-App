@@ -14,13 +14,8 @@ export default function LogInPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      router.replace('/landing');
-    } else {
-      setIsCheckingAuth(false);
-    }
-  }, [router]);
+    setIsCheckingAuth(false);
+  }, []);
 
     if (isCheckingAuth) {
       return null; 
@@ -29,8 +24,6 @@ export default function LogInPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-
-    
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login/`, {

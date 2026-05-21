@@ -3,11 +3,16 @@ from django.contrib.auth.models import User
 
 class SavedLocation(models.Model):
     LOCATION_TYPES = [
-
         ("aoi", "Area of Interest"),
         ("sub_area", "Sub Area"),
     ]
-    
+
+    SUB_AREA_TYPES = [
+        ("road_segment", "Road Segment"),
+        ("intersection", "Intersection"),
+        ("junction", "Junction"),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='saved_locations')
     name = models.CharField(max_length=255)
     lat = models.FloatField()
@@ -16,7 +21,7 @@ class SavedLocation(models.Model):
     bearing = models.FloatField(default=0.0)
     pitch = models.FloatField(default=0.0)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     geometry = models.JSONField(null=True, blank=True)
     bounds = models.JSONField(null=True, blank=True)
     location_type = models.CharField(
@@ -25,6 +30,12 @@ class SavedLocation(models.Model):
         default="sub_area",
     )
     parent_id = models.IntegerField(null=True, blank=True)
+    sub_area_type = models.CharField(
+        max_length=20,
+        choices=SUB_AREA_TYPES,
+        null=True,
+        blank=True,
+    )
    
     
     class Meta:

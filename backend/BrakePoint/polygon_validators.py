@@ -121,6 +121,32 @@ def point_in_polygon(point: Coord, ring: Ring) -> bool:
     return inside
 
 
+def _dist_sq_to_segment(p: Coord, a: Coord, b: Coord) -> float:
+    """Squared distance from point *p* to line segment *a*–*b*."""
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return (px - ax) ** 2 + (py - ay) ** 2
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return (px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2
+
+_BOUNDARY_TOL = 1e-5
+
+
 def polygon_within_polygon(inner: Ring, outer: Ring) -> bool:
-    """Return True when every vertex of *inner* lies inside *outer*."""
-    return all(point_in_polygon(pt, outer) for pt in inner)
+    """Return True when every vertex of *inner* lies inside *outer* or within
+    a small tolerance of its boundary (to handle floating-point edge cases)."""
+    n = len(outer)
+    for pt in inner:
+        if point_in_polygon(pt, outer):
+            continue
+        # Allow vertices that sit right on or very near the AOI boundary
+        if any(
+            _dist_sq_to_segment(pt, outer[i], outer[(i + 1) % n]) <= _BOUNDARY_TOL ** 2
+            for i in range(n)
+        ):
+            continue
+        return False
+    return True
