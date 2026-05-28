@@ -23,6 +23,10 @@
   border-radius: 8px;
 }
 
+.landing-map .maplibregl-ctrl-geocoder {
+  left: 520px;
+}
+
 .maplibregl-ctrl-geocoder .suggestions {
   border-radius: 8px;
 }

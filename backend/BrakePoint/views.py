@@ -109,6 +109,10 @@ def saved_locations_list_create(request):
             if parent_id:
                 qs = qs.filter(parent_id=parent_id)
 
+            sub_area_type = request.query_params.get("sub_area_type")
+            if sub_area_type:
+                qs = qs.filter(sub_area_type=sub_area_type)
+
             payload = []
             for loc in qs:
                 payload.append({
@@ -122,6 +126,7 @@ def saved_locations_list_create(request):
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
                     "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
                     "camera_count": loc.camera_count,
                     "vehicles": loc.total_vehicles,
@@ -130,6 +135,7 @@ def saved_locations_list_create(request):
                     "swerving": loc.total_swerving,
                     "abrupt_stopping": loc.total_abrupt_stopping,
                     "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
                 })
 
             return Response({"success": True, "saved_locations": payload})
@@ -163,7 +169,7 @@ def saved_locations_list_create(request):
                         status=status.HTTP_404_NOT_FOUND,
                     )
 
-            # ── Polygon geometry validation ──────────────────────────────────
+            # Polygon geometry validation
             raw_geometry = body.get("geometry")
             if raw_geometry is not None:
                 try:
@@ -199,10 +205,9 @@ def saved_locations_list_create(request):
                                         status=status.HTTP_400_BAD_REQUEST,
                                     )
                             except ValueError:
-                                pass  # parent geometry malformed — skip containment check
+                                pass  
                     except SavedLocation.DoesNotExist:
-                        pass  # already handled above
-            # ────────────────────────────────────────────────────────────────
+                        pass  
 
             loc = SavedLocation.objects.create(
                 user=request.user,
@@ -215,6 +220,7 @@ def saved_locations_list_create(request):
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
                 location_type=body.get("location_type", "sub_area"),
+                sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
             )
 
@@ -232,6 +238,7 @@ def saved_locations_list_create(request):
                         "geometry": loc.geometry,
                         "bounds": loc.bounds,
                         "location_type": loc.location_type,
+                        "sub_area_type": loc.sub_area_type,
                         "parent_id": loc.parent_id,
                     },
                 },
@@ -257,6 +264,10 @@ def saved_locations_list_create(request):
             if parent_id:
                 qs = qs.filter(parent_id=parent_id)
 
+            sub_area_type_filter = request.GET.get("sub_area_type")
+            if sub_area_type_filter:
+                qs = qs.filter(sub_area_type=sub_area_type_filter)
+
             payload = []
             for loc in qs:
                 payload.append({
@@ -270,6 +281,7 @@ def saved_locations_list_create(request):
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
                     "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
                     "camera_count": loc.camera_count,
                     "vehicles": loc.total_vehicles,
@@ -278,6 +290,7 @@ def saved_locations_list_create(request):
                     "swerving": loc.total_swerving,
                     "abrupt_stopping": loc.total_abrupt_stopping,
                     "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
                 })
 
             return JsonResponse({"success": True, "saved_locations": payload})
@@ -323,6 +336,7 @@ def saved_locations_list_create(request):
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
                 location_type=body.get("location_type", "sub_area"),
+                sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
             )
 
@@ -339,6 +353,7 @@ def saved_locations_list_create(request):
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
                     "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
                 }
             }, status=201)
@@ -378,6 +393,7 @@ def saved_location_detail(request, saved_location_id):
                 "geometry": loc.geometry,
                 "bounds": loc.bounds,
                 "location_type": loc.location_type,
+                "sub_area_type": loc.sub_area_type,
                 "parent_id": loc.parent_id,
                 "camera_count": loc.camera_count,
                 "vehicles": loc.total_vehicles,
@@ -402,6 +418,7 @@ def saved_location_detail(request, saved_location_id):
             loc.geometry = body.get("geometry", loc.geometry)
             loc.bounds = body.get("bounds", loc.bounds)
             loc.location_type = body.get("location_type", loc.location_type)
+            loc.sub_area_type = body.get("sub_area_type", loc.sub_area_type)
 
             if "parent_id" in body:
                 new_parent_id = body.get("parent_id")
@@ -480,7 +497,7 @@ def assign_camera_to_saved_location(request, camera_id):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
         
-# ---- Auth (session-based example) ----
+# Auth
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_csrf_token(request):
@@ -528,7 +545,6 @@ def api_signup(request):
         return Response({"success": True})
     return Response({"success": False, "error": ser.errors}, status=400)
 
-# Helper function for reverse geocoding
 def get_location_name(lat, lng):
     """Get location name from coordinates using Nominatim API"""
     try:
@@ -539,8 +555,7 @@ def get_location_name(lat, lng):
         if response.ok:
             data = response.json()
             address = data.get('address', {})
-            
-            # Build a readable location string
+    
             parts = []
             if address.get('road'):
                 parts.append(address['road'])
@@ -557,7 +572,7 @@ def get_location_name(lat, lng):
     
     return None
 
-# ---- Cameras ----
+# Cameras
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])  
 def cameras_api(request):
@@ -580,19 +595,15 @@ def cameras_api(request):
     except (ValueError, TypeError):
         return Response({'error': 'lat and lng must be valid numbers'}, status=400)
     
-    # Get actual location name from reverse geocoding
     location_name = get_location_name(lat, lng)
     
-    # Auto-generate name if not provided
     if not data.get('name'):
         if location_name:
-            # Extract street/area name for camera name
             parts = location_name.split(',')
             data['name'] = f"{parts[0].strip()} Camera" if parts else f"Camera at {lat:.4f}°, {lng:.4f}°"
         else:
             data['name'] = f"Camera at {lat:.4f}°, {lng:.4f}°"
     
-    # Auto-generate location if not provided
     if not data.get('location'):
         if location_name:
             data['location'] = location_name
@@ -605,7 +616,6 @@ def cameras_api(request):
     if ser.is_valid():
         camera = ser.save(user=user)
         
-        # Auto-link camera to nearest saved location (within ~500m)
         if not camera.saved_location:
             from math import radians, cos, sin, asin, sqrt
             
@@ -614,7 +624,7 @@ def cameras_api(request):
                 dlat = lat2 - lat1
                 dlng = lng2 - lng1
                 a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlng/2)**2
-                return 6371000 * 2 * asin(sqrt(a))  # meters
+                return 6371000 * 2 * asin(sqrt(a))  
             
             nearest = None
             min_dist = float('inf')
@@ -623,8 +633,8 @@ def cameras_api(request):
                 if dist < min_dist:
                     min_dist = dist
                     nearest = loc
-            
-            if nearest and min_dist <= 500:  # within 500 meters
+        
+            if nearest and min_dist <= 500: 
                 camera.saved_location = nearest
                 camera.save()
         
@@ -661,7 +671,7 @@ def _upload_and_process_video(request):
     if not camera_id:
         return Response({'error': 'Camera ID is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # ── File format & size validation ────────────────────────────────────────
+    # File format & size validation 
     _, ext = os.path.splitext(video_file.name or '')
     if ext.lower() not in ALLOWED_VIDEO_EXTENSIONS:
         allowed = ', '.join(sorted(ALLOWED_VIDEO_EXTENSIONS))
@@ -675,7 +685,6 @@ def _upload_and_process_video(request):
             {'error': f'File too large. Maximum allowed size is {MAX_VIDEO_SIZE_MB} MB.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    # ─────────────────────────────────────────────────────────────────────────
 
     try:
         camera = Camera.objects.get(pk=camera_id, user=user)
@@ -705,7 +714,6 @@ def _upload_and_process_video(request):
         except ValueError:
             return Response({'error': 'Invalid reference distance value'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Fall back to camera's saved calibration if not provided in this upload
     if not calibration_points and camera.is_calibrated:
         calibration_points = camera.calibration_points
     if not reference_points and camera.is_calibrated:
@@ -713,7 +721,6 @@ def _upload_and_process_video(request):
     if reference_distance_meters is None and camera.is_calibrated:
         reference_distance_meters = camera.reference_distance_meters
 
-    # Save calibration to camera for future reuse (if new calibration was provided)
     save_calibration = request.POST.get('save_calibration', 'true').lower() == 'true'
     if save_calibration and calibration_points_json:
         camera.calibration_points = calibration_points or []
@@ -757,7 +764,6 @@ def _upload_and_process_video(request):
                 cap.set(cv2.CAP_PROP_POS_MSEC, seek_time * 1000)
                 ret, frame = cap.read()
                 if ret and frame is not None:
-                    # Resize to reasonable thumbnail size (maintain aspect ratio, max width 640px)
                     max_width = 640
                     height, width = frame.shape[:2]
                     if width > max_width:
@@ -765,10 +771,7 @@ def _upload_and_process_video(request):
                         new_width = max_width
                         new_height = int(height * scale)
                         frame = cv2.resize(frame, (new_width, new_height))
-                    
-                    # Encode to JPEG
                     _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                    # Convert to base64
                     thumbnail_base64 = base64.b64encode(buffer).decode('utf-8')
                     video_record.thumbnail = f"data:image/jpeg;base64,{thumbnail_base64}"
             except Exception as thumb_error:
@@ -776,11 +779,9 @@ def _upload_and_process_video(request):
             
             cap.release()
         
-        # Get file size
         video_record.file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
         video_record.save()
 
-        # Return immediately, then process in background
         response_data = {
             'success': True,
             'video_id': video_record.id,
@@ -789,11 +790,9 @@ def _upload_and_process_video(request):
             'processing_status': 'processing'
         }
         
-        # Start processing in background thread (after response is sent)
         import threading
         import re as _re
         
-        # Extract speed limit from camera tags (e.g. "30kph Speed Limit" → 30)
         _speed_limit = None
         if isinstance(camera.tags, list):
             for _tag in camera.tags:
@@ -804,7 +803,6 @@ def _upload_and_process_video(request):
 
         def process_video_background(is_dry_run):
             """Process video in background thread"""
-            # Close any parent thread database connections
             from django.db import connection
             import time
             
@@ -823,11 +821,9 @@ def _upload_and_process_video(request):
                     video_record=video_obj,
                     speed_limit_kmh=_speed_limit
                 )
-                
-                # Reload Video object for Mask R-CNN
+    
                 video_obj.refresh_from_db()
                 
-                # Run Mask R-CNN traffic sign detection (only if requested)
                 sign_results = {}
                 if use_sign_detection:
                     print(f"[views.py] Starting Mask R-CNN for video {video_obj.id}", flush=True)
@@ -836,11 +832,9 @@ def _upload_and_process_video(request):
                 else:
                     print(f"[views.py] Skipping Mask R-CNN for video {video_obj.id} (not requested)", flush=True)
 
-                # Reload for final update
                 connection.close()
                 video_obj = Video.objects.get(pk=video_record.id)
                 
-                # Update video record with results
                 if yolo_results.get('status') == 'success':
                     video_obj.vehicles = yolo_results.get('total_unique', 0)
                     video_obj.speeding_count = yolo_results.get('total_speeding', 0)
@@ -901,12 +895,10 @@ def _upload_and_process_video(request):
                         print(f"[Error] Could not delete temp file: {cleanup_error}", flush=True)
                 connection.close()
         
-        # Start background thread
         thread = threading.Thread(target=process_video_background, args=(is_dry_run,), daemon=True)
         thread.start()
 
     except Exception as e:
-        # Mark as failed
         video_record.processing_status = 'failed'
         video_record.error_message = str(e)
         video_record.processing_completed_at = timezone.now()
@@ -931,7 +923,6 @@ def camera_videos_api(request, pk: int):
     except Camera.DoesNotExist:
         return Response({"success": False, "error": "Camera not found"}, status=404)
     
-    # Get all videos for this camera, ordered by most recent first
     videos = Video.objects.filter(camera=camera).order_by('-uploaded_at')
     ser = VideoSerializer(videos, many=True)
     
@@ -964,14 +955,12 @@ def camera_polygon_api(request, pk: int):
         return Response({"success": False, "error": "Camera not found"}, status=404)
     
     polygon_data = request.data.get('polygon')
-    
-    # Allow null to clear the polygon
+
     if polygon_data is None:
         camera.polygon = []
         camera.save()
         return Response({"success": True, "message": "Polygon cleared"})
     
-    # Validate that polygon is a list
     if not isinstance(polygon_data, list):
         return Response({"success": False, "error": "Polygon must be a list"}, status=400)
     
@@ -1037,12 +1026,10 @@ def camera_tags_api(request, pk: int):
     if request.method == 'GET':
         return Response({"success": True, "tags": camera.tags})
     
-    # PUT — replace all tags
     tags = request.data.get('tags', [])
     if not isinstance(tags, list):
         return Response({"success": False, "error": "Tags must be a list"}, status=400)
     
-    # Sanitise: deduplicate, strip whitespace, remove empties
     cleaned = list(dict.fromkeys(t.strip() for t in tags if isinstance(t, str) and t.strip()))
     camera.tags = cleaned
     camera.save()
@@ -1109,7 +1096,7 @@ def detect_road_features_latest(request, pk: int):
 
     import base64
     thumbnail_b64 = latest_video.thumbnail
-    # Strip optional data-URL prefix (data:image/jpeg;base64,...)
+    
     if ',' in thumbnail_b64:
         thumbnail_b64 = thumbnail_b64.split(',', 1)[1]
 
@@ -1154,7 +1141,6 @@ def video_detail_api(request, pk: int):
                 except (ValueError, TypeError):
                     return Response({"success": False, "error": f"Invalid value for {field}"}, status=400)
 
-        # Handle calibration fields
         calibration_points = request.data.get('calibration_points')
         if calibration_points is not None:
             video.calibration_points = calibration_points
@@ -1215,7 +1201,6 @@ def behavior_timeline_api(request):
     except ValueError:
         return Response({"success": False, "error": "Invalid camera_ids"}, status=400)
 
-    # Only allow cameras owned by this user
     cameras = Camera.objects.filter(pk__in=camera_ids, user=user)
     if not cameras.exists():
         return Response({"success": False, "error": "No matching cameras found"}, status=404)
@@ -1245,7 +1230,6 @@ def behavior_timeline_api(request):
         .order_by('date')
     )
 
-    # Build per-date vehicle breakdown from the JSONField
     date_breakdowns: dict[str, dict[str, int]] = {}
     for vid in qs.annotate(date=TruncDate('uploaded_at')).values('date', 'vehicle_breakdown'):
         d_iso = vid['date'].isoformat()
@@ -1311,16 +1295,12 @@ def dashboard_summary(request):
             loc_videos = videos.filter(camera__saved_location=loc)
 
             tags = set()
-            # camera_ids = set()
             camera_thumbnail = None
 
-            # set tags and camera ids
             for cam in loc.cameras.all():
-                # camera_ids.add(cam.id)
                 for tag in (cam.tags or []):
                     tags.add(tag)
 
-            # get camera thumbnail
             for video in loc_videos:
                 if camera_thumbnail == None and video.thumbnail != None:
                     camera_thumbnail = video.thumbnail

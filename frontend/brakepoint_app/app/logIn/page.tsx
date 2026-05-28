@@ -14,13 +14,8 @@ export default function LogInPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      router.replace('/dashboard');
-    } else {
-      setIsCheckingAuth(false);
-    }
-  }, [router]);
+    setIsCheckingAuth(false);
+  }, []);
 
     if (isCheckingAuth) {
       return null; 
@@ -29,8 +24,6 @@ export default function LogInPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-
-    
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login/`, {
@@ -50,7 +43,7 @@ export default function LogInPage() {
         localStorage.setItem('refresh_token', data.refresh);
         localStorage.setItem('username', data.user.username);
 
-        router.replace('/dashboard');
+        router.replace('/landing');
       } else {
         const errData = await response.json();
         setError(errData.error || "Invalid username or password");

@@ -25,6 +25,7 @@ class SavedLocationSerializer(serializers.ModelSerializer):
             "geometry",
             "bounds",
             "location_type",
+            "sub_area_type",
             "parent",
             "created_at",
             "camera_count",
