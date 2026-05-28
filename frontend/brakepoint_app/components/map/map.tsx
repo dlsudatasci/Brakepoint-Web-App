@@ -148,10 +148,17 @@ type MapProps = {
   onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;               // called when user finishes drawing a rectangle
   aoiItems?: { id: number; name: string; ring: [number, number][] }[];                     // AOI geometry rings to render as blue overlays
   hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
+  activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
   onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
-  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that orange polygon
+  onAoiEdit?: (id: number) => void;                                                         // fired when user clicks pencil icon in AOI marker
+  onAoiDelete?: (id: number) => void;                                                       // fired when user clicks trash icon in AOI marker
+  hideAoiMarkers?: boolean;                                                                 // suppress AOI marker rendering (used in sub-level view to show polygon only)
+  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that blue polygon
+  activeSubAreaId?: number | null;                                                          // id of selected sub-area — shows polygon and marker in orange
   onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
   onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
+  onSubAreaEdit?: (id: number) => void;                                                     // fired when user clicks pencil icon in sub-area marker
+  onSubAreaDelete?: (id: number) => void;                                                   // fired when user clicks trash icon in sub-area marker
   showGeocoder?: boolean;                                                                   // show the search bar (landing page)
 };
 
@@ -489,10 +496,17 @@ export default function MapView({
   onAoiDrawn,
   aoiItems,
   hoveredAoiId,
+  activeAoiId,
   onAoiClick,
+  onAoiEdit,
+  onAoiDelete,
+  hideAoiMarkers = false,
   hoveredSubAreaId,
+  activeSubAreaId,
   onSubAreaClick,
   onSubAreaHover,
+  onSubAreaEdit,
+  onSubAreaDelete,
   showGeocoder = false,
   mapMaxBounds,
   subAreaItems,
@@ -589,8 +603,14 @@ export default function MapView({
   const onAoiSavedRef = useLatestRef(onAoiSaved ?? null);
   const onAoiDrawnRef = useLatestRef(onAoiDrawn ?? null);
   const onAoiClickRef = useLatestRef(onAoiClick ?? null);
-  const onSubAreaClickRef = useLatestRef(onSubAreaClick ?? null);
-  const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
+  const onAoiEditRef   = useLatestRef(onAoiEdit  ?? null);
+  const onAoiDeleteRef = useLatestRef(onAoiDelete ?? null);
+  const onSubAreaClickRef  = useLatestRef(onSubAreaClick  ?? null);
+  const onSubAreaHoverRef  = useLatestRef(onSubAreaHover  ?? null);
+  const onSubAreaEditRef   = useLatestRef(onSubAreaEdit   ?? null);
+  const onSubAreaDeleteRef = useLatestRef(onSubAreaDelete ?? null);
+  const latestActiveSubAreaIdRef = useRef(activeSubAreaId ?? null);
+  latestActiveSubAreaIdRef.current = activeSubAreaId ?? null;
   const isDrawingAOIRef = useRef(isDrawingAOI);
   isDrawingAOIRef.current = isDrawingAOI;
   const lastDrawingFinishTimeRef = useRef(0);
@@ -1904,8 +1924,10 @@ export default function MapView({
   }, [isDrawingAOI]);
 
   const [polygonReloadKey, setPolygonReloadKey] = useState(0);
-  const latestAoiItemsRef  = useRef(aoiItems ?? []);
-  latestAoiItemsRef.current = aoiItems ?? [];           
+  const latestAoiItemsRef    = useRef(aoiItems ?? []);
+  latestAoiItemsRef.current  = aoiItems ?? [];
+  const latestActiveAoiIdRef = useRef(activeAoiId ?? null);
+  latestActiveAoiIdRef.current = activeAoiId ?? null;
   const aoiLayersReadyRef   = useRef(false);
   const aoiCleanupRef       = useRef<(() => void) | null>(null);
   const aoiPendingSetupRef  = useRef(false);           
@@ -1918,41 +1940,45 @@ export default function MapView({
     const FILL   = "aoi-fill";
     const LINE   = "aoi-line";
 
-    const toFC = (items: NonNullable<typeof aoiItems>) => ({
+    const toFC = (items: NonNullable<typeof aoiItems>, activeId: number | null) => ({
       type: "FeatureCollection" as const,
       features: items.map((item) => ({
         type: "Feature" as const,
         id: item.id,
         geometry: { type: "Polygon" as const, coordinates: [item.ring] },
-        properties: { id: item.id },
+        properties: { id: item.id, selected: item.id === activeId },
       })),
     });
 
     if (aoiLayersReadyRef.current && map.getSource(SOURCE)) {
-      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? []) as any);
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? [], activeAoiId ?? null) as any);
       return;
     }
 
     // First-time setup
     const setup = () => {
+      // Remove any previously registered handlers before re-adding them (prevents
+      // double-firing after a visibility change that resets aoiLayersReadyRef).
+      if (aoiCleanupRef.current) { aoiCleanupRef.current(); aoiCleanupRef.current = null; }
+
       if (map.getLayer(FILL))    map.removeLayer(FILL);
       if (map.getLayer(LINE))    map.removeLayer(LINE);
       if (map.getSource(SOURCE)) map.removeSource(SOURCE);
 
-      map.addSource(SOURCE, { type: "geojson", data: toFC(latestAoiItemsRef.current) as any });
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestAoiItemsRef.current, latestActiveAoiIdRef.current) as any });
       map.addLayer({
         id: FILL, type: "fill", source: SOURCE,
         paint: {
-          "fill-color": "#2563eb",
-          "fill-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
+          "fill-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#06b6d4"],
+          "fill-opacity": ["case", ["==", ["get", "selected"], true], 0.35, ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
         },
       });
       map.addLayer({
         id: LINE, type: "line", source: SOURCE,
         paint: {
-          "line-color": "#2563eb",
-          "line-width":  ["case", ["boolean", ["feature-state", "hovered"], false], 3,   2],
-          "line-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+          "line-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#06b6d4"],
+          "line-width":  ["case", ["==", ["get", "selected"], true], 3, ["boolean", ["feature-state", "hovered"], false], 3, 2],
+          "line-opacity": ["case", ["==", ["get", "selected"], true], 1, ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
         },
       });
 
@@ -1990,7 +2016,7 @@ export default function MapView({
       aoiPendingSetupRef.current = true;
       map.once("load", setup);
     }
-  }, [aoiItems, polygonReloadKey]);
+  }, [aoiItems, activeAoiId, polygonReloadKey]);
 
   useEffect(() => {
     return () => { aoiCleanupRef.current?.(); aoiCleanupRef.current = null; };
@@ -2020,6 +2046,8 @@ export default function MapView({
   const subAreaLayersReadyRef   = useRef(false);
   const subAreaCleanupRef       = useRef<(() => void) | null>(null);
   const subAreaPendingSetupRef  = useRef(false);
+  const aoiMarkersRef           = useRef<Map<number, maplibregl.Marker>>(new Map());
+  const subAreaMarkersRef       = useRef<Map<number, maplibregl.Marker>>(new Map());
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2029,19 +2057,19 @@ export default function MapView({
     const FILL   = "sub-area-fill";
     const LINE   = "sub-area-line";
 
-    const toFC = (items: NonNullable<typeof subAreaItems>) => ({
+    const toFC = (items: NonNullable<typeof subAreaItems>, activeId: number | null) => ({
       type: "FeatureCollection" as const,
       features: items.map((item) => ({
         type: "Feature" as const,
         id: item.id,
         geometry: { type: "Polygon" as const, coordinates: [item.ring] },
-        properties: { id: item.id },
+        properties: { id: item.id, selected: item.id === activeId },
       })),
     });
 
     // Fast path — layers exist: just swap data
     if (subAreaLayersReadyRef.current && map.getSource(SOURCE)) {
-      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(subAreaItems ?? []) as any);
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(subAreaItems ?? [], activeSubAreaId ?? null) as any);
       return;
     }
 
@@ -2049,24 +2077,28 @@ export default function MapView({
     if (!subAreaItems || subAreaItems.length === 0) return;
 
     const setup = () => {
+      // Remove any previously registered handlers before re-adding them (prevents
+      // double-firing after a visibility change that resets subAreaLayersReadyRef).
+      if (subAreaCleanupRef.current) { subAreaCleanupRef.current(); subAreaCleanupRef.current = null; }
+
       if (map.getLayer(FILL))    map.removeLayer(FILL);
       if (map.getLayer(LINE))    map.removeLayer(LINE);
       if (map.getSource(SOURCE)) map.removeSource(SOURCE);
 
-      map.addSource(SOURCE, { type: "geojson", data: toFC(latestSubAreaItemsRef.current) as any });
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestSubAreaItemsRef.current, latestActiveSubAreaIdRef.current) as any });
       map.addLayer({
         id: FILL, type: "fill", source: SOURCE,
         paint: {
-          "fill-color": "#ea580c",
-          "fill-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 0.38, 0.15],
+          "fill-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#1e40af"],
+          "fill-opacity": ["case", ["==", ["get", "selected"], true], 0.35, ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
         },
       });
       map.addLayer({
         id: LINE, type: "line", source: SOURCE,
         paint: {
-          "line-color": "#ea580c",
-          "line-width":  ["case", ["boolean", ["feature-state", "hovered"], false], 3, 2],
-          "line-opacity": ["case", ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+          "line-color":   ["case", ["==", ["get", "selected"], true], "#f97316", "#1e40af"],
+          "line-width":   ["case", ["==", ["get", "selected"], true], 3, ["boolean", ["feature-state", "hovered"], false], 3, 2],
+          "line-opacity": ["case", ["==", ["get", "selected"], true], 1, ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
         },
       });
 
@@ -2111,7 +2143,7 @@ export default function MapView({
       subAreaPendingSetupRef.current = true;
       map.once("load", setup);
     }
-  }, [subAreaItems, polygonReloadKey]);
+  }, [subAreaItems, activeSubAreaId, polygonReloadKey]);
 
   useEffect(() => {
     return () => { subAreaCleanupRef.current?.(); subAreaCleanupRef.current = null; };
@@ -2131,6 +2163,165 @@ export default function MapView({
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // ── AOI polygon centroid label markers ───────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const items   = aoiItems ?? [];
+    const registry = aoiMarkersRef.current;
+
+    // In sub-level view, remove all AOI markers (the polygon still renders via aoiItems)
+    if (hideAoiMarkers) {
+      for (const [id, marker] of registry) {
+        marker.remove();
+        registry.delete(id);
+      }
+      return;
+    }
+
+    // Remove stale markers
+    for (const [id, marker] of registry) {
+      if (!items.find((a) => a.id === id)) {
+        marker.remove();
+        registry.delete(id);
+      }
+    }
+
+    // Add or update markers
+    for (const item of items) {
+      if (registry.has(item.id)) {
+        const wrap = registry.get(item.id)!.getElement() as HTMLElement;
+        const pill = wrap.firstElementChild as HTMLElement | null;
+        const nameSpan = pill?.querySelector(".aoi-pin-name") as HTMLElement | null;
+        if (nameSpan) nameSpan.textContent = item.name;
+      } else {
+        const wrap = document.createElement("div");
+        const pill = document.createElement("div");
+        pill.className = "aoi-label-pin";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "aoi-pin-name";
+        nameSpan.textContent = item.name;
+        pill.appendChild(nameSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "aoi-pin-btn aoi-pin-btn--edit";
+        editBtn.title = "Rename";
+        editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onAoiEditRef.current?.(item.id); });
+        pill.appendChild(editBtn);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "aoi-pin-btn aoi-pin-btn--delete";
+        deleteBtn.title = "Delete";
+        deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onAoiDeleteRef.current?.(item.id); });
+        pill.appendChild(deleteBtn);
+
+        wrap.appendChild(pill);
+        const lngs = item.ring.map((p) => p[0]);
+        const lats = item.ring.map((p) => p[1]);
+        const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        registry.set(item.id, marker);
+      }
+    }
+  }, [aoiItems, hideAoiMarkers]);
+
+  // Update selected class on AOI markers when activeAoiId changes
+  useEffect(() => {
+    for (const [id, marker] of aoiMarkersRef.current) {
+      const pill = marker.getElement().firstElementChild as HTMLElement | null;
+      if (!pill) continue;
+      pill.className = id === activeAoiId ? "aoi-label-pin aoi-label-pin--selected" : "aoi-label-pin";
+    }
+  }, [activeAoiId]);
+
+  useEffect(() => {
+    return () => {
+      for (const marker of aoiMarkersRef.current.values()) marker.remove();
+      aoiMarkersRef.current.clear();
+    };
+  }, []);
+
+  // ── Sub-area polygon centroid label markers ──────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const items    = subAreaItems ?? [];
+    const registry = subAreaMarkersRef.current;
+
+    // Remove stale markers
+    for (const [id, marker] of registry) {
+      if (!items.find((a) => a.id === id)) {
+        marker.remove();
+        registry.delete(id);
+      }
+    }
+
+    // Add or update markers
+    for (const item of items) {
+      if (registry.has(item.id)) {
+        const wrap = registry.get(item.id)!.getElement() as HTMLElement;
+        const pill = wrap.firstElementChild as HTMLElement | null;
+        const nameSpan = pill?.querySelector(".sub-area-pin-name") as HTMLElement | null;
+        if (nameSpan) nameSpan.textContent = item.name;
+      } else {
+        const wrap = document.createElement("div");
+        const pill = document.createElement("div");
+        pill.className = "sub-area-label-pin";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "sub-area-pin-name";
+        nameSpan.textContent = item.name;
+        pill.appendChild(nameSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "sub-area-pin-btn sub-area-pin-btn--edit";
+        editBtn.title = "Rename";
+        editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onSubAreaEditRef.current?.(item.id); });
+        pill.appendChild(editBtn);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "sub-area-pin-btn sub-area-pin-btn--delete";
+        deleteBtn.title = "Delete";
+        deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onSubAreaDeleteRef.current?.(item.id); });
+        pill.appendChild(deleteBtn);
+
+        wrap.appendChild(pill);
+        const lngs = item.ring.map((p) => p[0]);
+        const lats = item.ring.map((p) => p[1]);
+        const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        registry.set(item.id, marker);
+      }
+    }
+  }, [subAreaItems]);
+
+  // Update selected class on sub-area markers when activeSubAreaId changes
+  useEffect(() => {
+    for (const [id, marker] of subAreaMarkersRef.current) {
+      const pill = marker.getElement().firstElementChild as HTMLElement | null;
+      if (!pill) continue;
+      pill.className = id === activeSubAreaId ? "sub-area-label-pin sub-area-label-pin--selected" : "sub-area-label-pin";
+    }
+  }, [activeSubAreaId]);
+
+  useEffect(() => {
+    return () => {
+      for (const marker of subAreaMarkersRef.current.values()) marker.remove();
+      subAreaMarkersRef.current.clear();
+    };
   }, []);
 
   // Hover highlight for sub-area polygons (feature-state)
