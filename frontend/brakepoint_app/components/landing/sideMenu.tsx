@@ -19,6 +19,9 @@ import LocationCard, { type LocationSummary } from "./locationCard";
 import styles from "./menuBar.module.css";
 import { authFetch } from "@/lib/authFetch";
 
+import ModeSegmentedControl from "@/components/landing/modeToggle";
+import Timeline from "@/components/landing/timeline";
+
 export type SubAreaType = "road_segment" | "intersection" | "junction";
 
 export type SubAreaSummary = {
@@ -678,7 +681,9 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                     <LogoutIcon sx={{ fontSize: '1.8rem' }} />
                 </Button>
             </Box>
-
+            
+            <ModeSegmentedControl />
+            <Timeline />
             <Box
                 ref={scrollRef}
                 sx={{
