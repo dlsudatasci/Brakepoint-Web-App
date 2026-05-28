@@ -9,7 +9,7 @@ type DataView = "pie" | "bar" | "text";
 
 // definition of types for the props for AnalyticsCard
 type ACProps = {
-  headerText: string;           // header text / statistic being displayed here
+  headerText?: string;           // header text / statistic being displayed here
   icon?: React.ReactNode;       // icon to display
   variant?: DataView;           // what format to display this data point as
   valueText?: React.ReactNode;  // for text displays, the value to display
@@ -295,16 +295,18 @@ function Fallback({ label }: { label: string }) {
 // analytics card to display various analytics to the user
 export default function AnalyticsCard({ headerText, icon, variant = "text", valueText, data, compact = false }: ACProps) {
   return (
-    <Box className="ac-container">
+    <Box className={`ac-container ac-container-${variant}`}>
       {/* header and icon */}
-      <Box className="ac-header">
-        <Typography variant={compact ? "body2" : "h6"} fontWeight={600}>
-          {headerText}
-        </Typography>
-        <Box className="ac-icon" sx={{ display: "grid", placeItems: "center" }}>
-          {icon ?? null}
-        </Box>
-      </Box>
+      {( headerText &&
+          <Box className="ac-header">
+            <Typography variant={compact ? "body2" : "h6"} fontWeight={600}>
+              {headerText}
+            </Typography>
+            <Box className="ac-icon" sx={{ display: "grid", placeItems: "center" }}>
+              {icon ?? null}
+            </Box>
+          </Box>
+      )}
 
       <Box className="ac-content">
         {/* for text display: display the valueText / statistic count */}

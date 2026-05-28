@@ -1,0 +1,11 @@
+.backButtonContainer {
+	display: flex;
+	flex-direction: row;
+	gap: 0.5em;
+	align-items: center;
+}
+
+.placeholderText {
+	color: "#777777";
+	font-style: italic;
+}

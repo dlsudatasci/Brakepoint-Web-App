@@ -44,7 +44,7 @@
 
 .landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-subheader > h1 {
 	font-weight: 450;
-	font-size: 175%;
+	font-size: 133%;
 }
 
 .chip-counter {
@@ -52,6 +52,21 @@
 	font-size: 75%;
 
 	border: 4px solid #161b4c;
-	padding: 0em 0.5em;
+	padding: 0em 0.75em;
 	border-radius: 1000px;
+}
+
+.landingSection > .landingSectionContents {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5em;
+}
+
+.addButton-active > .MuiIconButton-root {
+	background-color: #161b4c;
+	color: white;
+}
+
+.addButton-inactive > .MuiIconButton-root {
+	background-color: #161b4c00;
 }
