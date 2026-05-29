@@ -57,13 +57,14 @@ type LCProps = {
   locationDetails?: LocationSummary;            // details of the location to incorporate into this card
   onClickCard?: () => void;                     // what happens when the user clicks on the main card itself?
   onClickSideButton?: () => void;               // what happens when the user clicks on the highlighted side button?
+  isAlert?: undefined | true | false;            // force alert status. by default, triggers if camera_count == 0
 
   camera?: SubAreaSummary;                      // deprecated - subarea details. future uses of LC must use locationDetails, please!
   onClick?: () => void;                         // deprecated - triggers when the user clicks on this card
 };
 
 // LocationCard - displays an information card for a subarea (if applicable)
-export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, camera, onClick }: LCProps) {
+export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, isAlert, camera, onClick }: LCProps) {
 
   // move all details from deprecated camera to locationDetails
   if (camera && !locationDetails) {
@@ -87,10 +88,16 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
 
   // temp variables
   // const type = "area";
-  const adbDisplay = type == "area" ? "row" : "list";
+  const adbDisplay = "list";
+
+  // if isAlert is not set, set it automatically based on how the locationDetails are set up
+  if (isAlert === undefined) {
+    if (locationDetails.camera_count < 1) { isAlert = true }
+    else { isAlert = false; }
+  }
 
   return (
-    <Box className="lc-container">
+    <Box className={`lc-container ${isAlert ? "alert" : ""}`}>
       {/* main - contains the main details regarding this card (area/subarea) */}
       <Box className="lc-main" onClick={onClickCard} >
 
@@ -98,11 +105,12 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
         <div className="lc-header-container">
           <div className="lc-header">{locationDetails.name}</div>
           { type == "area" && (
-            <div className="lc-subheader">{locationDetails.subarea_count} road segment{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
+            <div className="lc-subheader">{locationDetails.subarea_count} subarea{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
           )}
         </div>
 
         {/* the list of adbs and other statistics as a quick-glance row */}
+        {/*
         { adbDisplay == "row" && (
           <div className="lc-stat-row">
             <div className="lc-stat"> <DirectionsCarIcon /> {locationDetails.vehicles} </div>
@@ -111,7 +119,7 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
             <div className="lc-stat lc-adb"> <SwapCallsIcon/> {locationDetails.swerving} </div>
             <div className="lc-stat lc-adb"> <PanToolOutlinedIcon/> {locationDetails.abrupt_stopping} </div>
           </div>
-        )}
+        )} */}
 
         {/* the list of adbs and other statistics as a list */}
         { adbDisplay == "list" && (
