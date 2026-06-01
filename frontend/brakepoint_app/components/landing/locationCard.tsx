@@ -1,6 +1,8 @@
 "use client";
 
 import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip } from "@mui/material";
+import { SubAreaSummary, LocationSummary, isAreaSummary, isSubareaSummary, isCameraSummary } from "@components/landing/summaryTypes"
+
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 //import type { SubAreaSummary } from "./analytics";
 import "./locationCard.css";
@@ -13,7 +15,7 @@ import PanToolOutlinedIcon from "@mui/icons-material/PanToolOutlined";          
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';                        // rightwards icon
 import { ReportProblem } from "@mui/icons-material";
 
-export type SubAreaSummary = {
+export type SubAreaSummaryLegacy = {
   id: number;
   name: string;
   lat: number;
@@ -31,67 +33,21 @@ export type SubAreaSummary = {
   location?: string;
 };
 
-// details for this area/subarea
-export type LocationSummary = {
-  location_type: "aoi" | "subarea";
-
-  name: string;
-  lat: number;
-  lng: number;
-
-  camera_count: number;
-  subarea_count: number;
-
-  vehicles: number;
-  speeding: number;
-  swerving: number;
-  abrupt_stopping: number;
-  adb: number;
-
-  tags: string[];
-}
-
 // definition of types for the props for LocationCard
 type LCProps = {
-  type: "area" | "subarea";                     // whether this card is an area or a subarea (road segment) card
-  locationDetails?: LocationSummary;            // details of the location to incorporate into this card
+  type: "area" | "subarea" | "camera";          // whether this card is an area or a subarea (road segment) card
+  // details of the location to incorporate into this card
+  locationDetails?: LocationSummary;            
   onClickCard?: () => void;                     // what happens when the user clicks on the main card itself?
   onClickSideButton?: () => void;               // what happens when the user clicks on the highlighted side button?
-  isAlert?: undefined | true | false;            // force alert status. by default, triggers if camera_count == 0
-
-  camera?: SubAreaSummary;                      // deprecated - subarea details. future uses of LC must use locationDetails, please!
-  onClick?: () => void;                         // deprecated - triggers when the user clicks on this card
+  isAlert?: undefined | true | false;           // force alert status. by default, triggers if camera_count == 0
 };
 
 // LocationCard - displays an information card for a subarea (if applicable)
-export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, isAlert, camera, onClick }: LCProps) {
-
-  // move all details from deprecated camera to locationDetails
-  if (camera && !locationDetails) {
-    console.log(camera)
-    type = "subarea"
-    locationDetails = {
-      location_type: "subarea",
-      name: camera.name,
-      lat: camera.lat, lng: camera.lng,
-      camera_count: camera.camera_count, subarea_count: 0,
-      vehicles: camera.vehicles,
-      speeding: camera.speeding, swerving: camera.swerving, abrupt_stopping: camera.abrupt_stopping, adb: camera.adb,
-      tags: camera.tags,
-    }
-  };
-
-  // move details from deprecated onClick to onClickSideButton
-  if (!onClickSideButton && onClick) {
-    onClickSideButton = onClick;
-  }
-
-  // temp variables
-  // const type = "area";
-  const adbDisplay = "list";
+export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, isAlert }: LCProps) {
 
   // if isAlert is not set, set it automatically based on how the locationDetails are set up
-  if (isAlert === undefined) {
+  if (isAlert === undefined && isSubareaSummary(locationDetails)) {
     if (locationDetails.camera_count < 1) { isAlert = true }
     else { isAlert = false; }
   }
@@ -104,12 +60,12 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
         {/* header and subheader */}
         <div className="lc-header-container">
           <div className="lc-header">{locationDetails.name}</div>
-          { type == "area" && (
+          { type == "area" && isAreaSummary(locationDetails) && (
             <div className="lc-subheader">{locationDetails.subarea_count} subarea{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
           )}
         </div>
-
-        {/* the list of adbs and other statistics as a quick-glance row */}
+        
+        {/* deprecated - the list of adbs and other statistics as a quick-glance row */}
         {/*
         { adbDisplay == "row" && (
           <div className="lc-stat-row">
@@ -121,8 +77,8 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
           </div>
         )} */}
 
-        {/* the list of adbs and other statistics as a list */}
-        { adbDisplay == "list" && (
+        {/* the list of adbs and other statistics as a textual list */}
+        { !isCameraSummary(locationDetails) && (
           <div className="lc-stat-list">
             <div>
               <div className="lc-stat"> <DirectionsCarIcon /> <span><b>{locationDetails.vehicles}</b> total vehicles</span> </div>
@@ -136,11 +92,19 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
           </div>
         )}
 
+        {/* the number of videos uploaded and last video uploaded display */}
+        { isCameraSummary(locationDetails) && (
+          <Box className="lc-dateContainer">
+            <span><b>{locationDetails.videoCount ?? "0"}</b> video{locationDetails.videoCount == 1 ? "" : "s"} uploaded</span>
+            <span>Last video uploaded on <b>{locationDetails.latest_upload ? locationDetails.latest_upload.getDate() : "—"}</b></span>
+          </Box>
+        )}
+
         {/* the list of tags that applies to this area/subarea */}
-        { camera?.tags && camera.tags.length > 0 && (
+        { (isSubareaSummary(locationDetails) || isCameraSummary(locationDetails)) && locationDetails.tags.length > 0 && (
           <Box className="lc-tag-row">
 
-            {camera.tags.map((tag) => (
+            {locationDetails.tags.map((tag) => (
               <div key={tag} className="lc-tag">
                 {tag}
               </div>

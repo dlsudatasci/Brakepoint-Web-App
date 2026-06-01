@@ -126,6 +126,13 @@
   color: #925964;
 }
 
+/* flex for dates in camera cards */
+.lc-dateContainer {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
 /* tag chips */
 .lc-tag-row > .lc-tag {
   color: #1d1f3f;

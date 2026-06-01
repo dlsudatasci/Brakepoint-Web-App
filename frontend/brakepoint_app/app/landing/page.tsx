@@ -9,8 +9,15 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SideMenu from "@/components/landing/sideMenu";
-import type { SideMenuUpdater, SubAreaType } from "@/components/landing/sideMenu";
+import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
+
+import {
+    SubAreaType, 
+    AOISummary, SubAreaSummary, CameraSummary,
+    isAreaSummary, isSubareaSummary, isCameraSummary,
+    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary
+} from "@/components/landing/summaryTypes"
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
 
@@ -115,7 +122,7 @@ export default function LandingPage() {
         setSubAreaItems((prev) => prev.map((s) =>
           s.id === tempId ? { id: realId, name: "New Segment", ring } : s
         ));
-        sideMenuUpdaterRef.current?.addSubarea({
+        sideMenuUpdaterRef.current?.addSubarea(convertObjectToSubareaSummary({
           id: realId,
           name: "New Segment",
           lat: centroid.lat,
@@ -130,7 +137,7 @@ export default function LandingPage() {
           tags: [],
           vehicle_breakdown: {},
           sub_area_type: subAreaType,
-        });
+        }))
       } catch (err) {
         console.error("Failed to save sub-area:", err);
         setSubAreaItems((prev) => prev.filter((s) => s.id !== tempId));
@@ -381,8 +388,8 @@ export default function LandingPage() {
         />
       </Box>
 
-      {/* Loading overlay */}
-      {isMapLoading && (
+      {/* Loading overlay - disabled currently */}
+      {false && isMapLoading && (
         <Box sx={{
           position: 'fixed',
           top: 0,
