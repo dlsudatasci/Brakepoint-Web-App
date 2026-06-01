@@ -7,7 +7,6 @@ import {
   TextField, Button, IconButton, CircularProgress, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SideMenu from "@/components/landing/sideMenu";
 import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
@@ -32,15 +31,19 @@ export default function LandingPage() {
   const [sideMenuTrigger, setSideMenuTrigger] = useState(0);
   const [aoiItems, setAoiItems] = useState<AoiItem[]>([]);
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
+  const [activeAoiId, setActiveAoiId] = useState<number | null>(null);
   const [hoveredSubAreaId, setHoveredSubAreaId] = useState<number | null>(null);
   const [selectedAoiId, setSelectedAoiId] = useState<number | null>(null);
   const selectedAoiIdRef = useRef<number | null>(null);
   selectedAoiIdRef.current = selectedAoiId;
+  const aoiItemsRef = useRef(aoiItems);
+  aoiItemsRef.current = aoiItems;
   const isDrawingRef = useRef(false);
   isDrawingRef.current = isDrawing || isDrawingSubarea !== false;
   const [aoiBounds, setAoiBounds] = useState<[[number, number], [number, number]] | null>(null);
-  const [aoiMaxBounds, setAoiMaxBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [subAreaItems, setSubAreaItems] = useState<AoiItem[]>([]);
+  const [activeSubAreaId, setActiveSubAreaId] = useState<number | null>(null);
+  const [drawError, setDrawError] = useState<string | null>(null);
 
   // Edit-dialog state
   const [editAoi, setEditAoi] = useState<AoiItem | null>(null);
@@ -48,11 +51,17 @@ export default function LandingPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // AOI delete confirmation state
+  const [deleteConfirmAoi, setDeleteConfirmAoi] = useState<AoiItem | null>(null);
+
   // Sub-area edit-dialog state
   const [editSubarea, setEditSubarea] = useState<AoiItem | null>(null);
   const [editSubareaName, setEditSubareaName] = useState("");
   const [savingSubarea, setSavingSubarea] = useState(false);
   const [deletingSubarea, setDeletingSubarea] = useState(false);
+
+  // Sub-area delete confirmation state
+  const [deleteConfirmSubArea, setDeleteConfirmSubArea] = useState<AoiItem | null>(null);
 
   // Direct updater for SideMenu sub-area list
   const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
@@ -78,6 +87,13 @@ export default function LandingPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Auto-clear draw error after 4 seconds
+  useEffect(() => {
+    if (!drawError) return;
+    const t = setTimeout(() => setDrawError(null), 4000);
+    return () => clearTimeout(t);
+  }, [drawError]);
+
   const handleAoiDrawn = useCallback(async (ring: [number, number][], clearDrawing: () => void) => {
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
@@ -93,6 +109,23 @@ export default function LandingPage() {
     const parentId = selectedAoiIdRef.current;
 
     if (parentId != null) {
+      // Validate that the drawn polygon is within the AOI's bounding box
+      const parentAoiData = aoiItemsRef.current.find((a) => a.id === parentId);
+      if (parentAoiData) {
+        const aoiLngs = parentAoiData.ring.map((p) => p[0]);
+        const aoiLats = parentAoiData.ring.map((p) => p[1]);
+        const aoiMinLng = Math.min(...aoiLngs), aoiMaxLng = Math.max(...aoiLngs);
+        const aoiMinLat = Math.min(...aoiLats), aoiMaxLat = Math.max(...aoiLats);
+        const [subMinLng, subMinLat] = bounds[0] as [number, number];
+        const [subMaxLng, subMaxLat] = bounds[1] as [number, number];
+        if (subMinLng < aoiMinLng || subMinLat < aoiMinLat || subMaxLng > aoiMaxLng || subMaxLat > aoiMaxLat) {
+          clearDrawing();
+          setIsDrawingSubarea(false);
+          setDrawError("Polygon must be within the AOI boundaries.");
+          return;
+        }
+      }
+
       // Drawing a road segment inside an AOI
       const subAreaType = (pendingSubAreaTypeRef.current ?? isDrawingSubareaRef.current) || "road_segment";
       pendingSubAreaTypeRef.current = null;
@@ -178,19 +211,46 @@ export default function LandingPage() {
   }, []);
 
   const handleAoiClick = useCallback((id: number) => {
-    if (isDrawingRef.current) return; 
+    if (isDrawingRef.current) return;
+    if (selectedAoiIdRef.current != null) return; // in sub-level view the AOI is displayed as context only — ignore clicks
+    setActiveAoiId((prev) => prev === id ? null : id);
+  }, []);
+
+  const handleAoiEdit = useCallback((id: number) => {
     const aoi = aoiItems.find((a) => a.id === id);
     if (!aoi) return;
     setEditAoi(aoi);
     setEditName(aoi.name);
   }, [aoiItems]);
 
-  const handleSubareaClick = useCallback((id: number, name: string) => {
+  const handleAoiDelete = useCallback((id: number) => {
+    const aoi = aoiItems.find((a) => a.id === id);
+    if (!aoi) return;
+    setDeleteConfirmAoi(aoi);
+  }, [aoiItems]);
+
+  const handleSubAreaClick = useCallback((id: number) => {
     if (isDrawingRef.current) return;
-    const ring = subAreaItems.find((s) => s.id === id)?.ring ?? [];
-    setEditSubarea({ id, name, ring });
-    setEditSubareaName(name);
+    setActiveSubAreaId((prev) => prev === id ? null : id);
+  }, []);
+
+  const handleSubAreaEdit = useCallback((id: number) => {
+    const sub = subAreaItems.find((s) => s.id === id);
+    if (!sub) return;
+    setEditSubarea(sub);
+    setEditSubareaName(sub.name);
   }, [subAreaItems]);
+
+  const handleSubAreaDelete = useCallback((id: number) => {
+    const sub = subAreaItems.find((s) => s.id === id);
+    if (!sub) return;
+    setDeleteConfirmSubArea(sub);
+  }, [subAreaItems]);
+
+  const handleSubareaClick = useCallback((id: number, _name: string) => {
+    if (isDrawingRef.current) return;
+    setActiveSubAreaId((prev) => prev === id ? null : id);
+  }, []);
 
   const handleSaveSubareaName = async () => {
     if (!editSubarea) return;
@@ -200,6 +260,7 @@ export default function LandingPage() {
     setSubAreaItems((prev) => prev.map((s) => s.id === target.id ? { ...s, name: newName } : s));
     sideMenuUpdaterRef.current?.renameSubarea(target.id, newName);
     setEditSubarea(null);
+    setActiveSubAreaId(null);
 
     setSavingSubarea(true);
     try {
@@ -219,12 +280,13 @@ export default function LandingPage() {
   };
 
   const handleDeleteSubarea = async () => {
-    if (!editSubarea) return;
-    const target = editSubarea;
+    if (!deleteConfirmSubArea) return;
+    const target = deleteConfirmSubArea;
 
     setSubAreaItems((prev) => prev.filter((s) => s.id !== target.id));
     sideMenuUpdaterRef.current?.deleteSubarea(target.id);
-    setEditSubarea(null);
+    setDeleteConfirmSubArea(null);
+    setActiveSubAreaId(null);
 
     setDeletingSubarea(true);
     try {
@@ -249,14 +311,9 @@ export default function LandingPage() {
     const lats  = aoiData.ring.map((p) => p[1]);
     const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
     const minLat = Math.min(...lats),  maxLat = Math.max(...lats);
-    const dLng = maxLng - minLng, dLat = maxLat - minLat;
 
     setSelectedAoiId(aoi.id);
     setAoiBounds([[minLng, minLat], [maxLng, maxLat]]);
-    setAoiMaxBounds([
-      [minLng - dLng, minLat - dLat],
-      [maxLng + dLng, maxLat + dLat],
-    ]);
 
     setIsMapLoading(true);
     try {
@@ -280,9 +337,9 @@ export default function LandingPage() {
   const handleAoiBack = useCallback(() => {
     setSelectedAoiId(null);
     setAoiBounds(null);
-    setAoiMaxBounds(null);
     setSubAreaItems([]);
     setIsDrawingSubarea(false);
+    setActiveSubAreaId(null);
   }, []);
 
   const handleAddSubarea = useCallback((type: SubAreaType) => {
@@ -294,7 +351,7 @@ export default function LandingPage() {
     setIsDrawing(false);
   }, []);
 
-  const handleEditClose = () => { setEditAoi(null); };
+  const handleEditClose = () => { setEditAoi(null); setActiveAoiId(null); };
 
   const handleSaveName = async () => {
     if (!editAoi) return;
@@ -303,6 +360,7 @@ export default function LandingPage() {
     
     setAoiItems((prev) => prev.map((a) => a.id === target.id ? { ...a, name: newName } : a));
     setEditAoi(null);
+    setActiveAoiId(null);
 
     setSaving(true);
     try {
@@ -321,12 +379,13 @@ export default function LandingPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!editAoi) return;
-    const target = editAoi;
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmAoi) return;
+    const target = deleteConfirmAoi;
 
     setAoiItems((prev) => prev.filter((a) => a.id !== target.id));
-    setEditAoi(null);
+    setDeleteConfirmAoi(null);
+    setActiveAoiId(null);
 
     setDeleting(true);
     try {
@@ -355,17 +414,20 @@ export default function LandingPage() {
           showGeocoder
           isDrawingAOI={isDrawing || isDrawingSubarea !== false}
           onAoiDrawn={handleAoiDrawn}
-          aoiItems={selectedAoiId != null ? [] : aoiItems}
+          aoiItems={selectedAoiId != null ? aoiItems.filter((a) => a.id === selectedAoiId) : aoiItems}
           hoveredAoiId={hoveredAoiId}
+          activeAoiId={activeAoiId}
           onAoiClick={handleAoiClick}
+          onAoiEdit={handleAoiEdit}
+          onAoiDelete={handleAoiDelete}
           goToBounds={aoiBounds}
-          mapMaxBounds={aoiMaxBounds}
+          hideAoiMarkers={selectedAoiId != null}
           subAreaItems={subAreaItems.length > 0 ? subAreaItems : null}
           hoveredSubAreaId={hoveredSubAreaId}
-          onSubAreaClick={(id) => {
-            const sub = subAreaItems.find((s) => s.id === id);
-            if (sub) handleSubareaClick(sub.id, sub.name);
-          }}
+          activeSubAreaId={activeSubAreaId}
+          onSubAreaClick={handleSubAreaClick}
+          onSubAreaEdit={handleSubAreaEdit}
+          onSubAreaDelete={handleSubAreaDelete}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}
         />
       </Box>
@@ -423,7 +485,29 @@ export default function LandingPage() {
         </Box>
       )}
 
-      {/* AOI edit dialog */}
+      {/* Draw error toast */}
+      {drawError && (
+        <Box sx={{
+          position: "fixed",
+          bottom: 24,
+          left: "50%",
+          transform: "translateX(-50%)",
+          bgcolor: "#b91c1c",
+          color: "#fff",
+          px: 3,
+          py: 1.5,
+          borderRadius: "10px",
+          fontWeight: 600,
+          fontSize: 14,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+          zIndex: 10000,
+          pointerEvents: "none",
+        }}>
+          {drawError}
+        </Box>
+      )}
+
+      {/* AOI rename dialog */}
       <Dialog
         open={editAoi !== null}
         onClose={handleEditClose}
@@ -432,7 +516,7 @@ export default function LandingPage() {
         }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
-          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Edit Area</Typography>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Rename Area</Typography>
           <IconButton size="small" onClick={handleEditClose}>
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -451,39 +535,61 @@ export default function LandingPage() {
           />
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "space-between" }}>
-          <Button
-            onClick={handleDelete}
-            disabled={deleting || saving}
-            startIcon={deleting ? <CircularProgress size={14} /> : <DeleteOutlineIcon />}
-            sx={{ color: "#d32f2f", textTransform: "none" }}
-          >
-            Delete
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={handleEditClose} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
           </Button>
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Button onClick={handleEditClose} sx={{ textTransform: "none", color: "#555" }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveName}
-              disabled={saving || deleting}
-              variant="contained"
-              sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
-            >
-              {saving ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Save"}
-            </Button>
-          </Box>
+          <Button
+            onClick={handleSaveName}
+            disabled={saving}
+            variant="contained"
+            sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
+          >
+            {saving ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Save"}
+          </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Road segment edit dialog */}
+      {/* AOI delete confirmation dialog */}
+      <Dialog
+        open={deleteConfirmAoi !== null}
+        onClose={() => setDeleteConfirmAoi(null)}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 300, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Delete Area</Typography>
+          <IconButton size="small" onClick={() => setDeleteConfirmAoi(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <Typography sx={{ color: "#444" }}>
+            Delete &ldquo;{deleteConfirmAoi?.name}&rdquo;? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={() => setDeleteConfirmAoi(null)} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteConfirm}
+            disabled={deleting}
+            variant="contained"
+            sx={{ bgcolor: "#d32f2f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#b71c1c" } }}
+          >
+            {deleting ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Road segment rename dialog */}
       <Dialog
         open={editSubarea !== null}
         onClose={() => setEditSubarea(null)}
         PaperProps={{ sx: { borderRadius: "14px", minWidth: 340, p: 0.5 } }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
-          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Edit Road Segment</Typography>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Rename Road Segment</Typography>
           <IconButton size="small" onClick={() => setEditSubarea(null)}>
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -502,28 +608,50 @@ export default function LandingPage() {
           />
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "space-between" }}>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={() => setEditSubarea(null)} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveSubareaName}
+            disabled={savingSubarea}
+            variant="contained"
+            sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
+          >
+            {savingSubarea ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Road segment delete confirmation dialog */}
+      <Dialog
+        open={deleteConfirmSubArea !== null}
+        onClose={() => setDeleteConfirmSubArea(null)}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 300, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Delete Road Segment</Typography>
+          <IconButton size="small" onClick={() => setDeleteConfirmSubArea(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <Typography sx={{ color: "#444" }}>
+            Delete &ldquo;{deleteConfirmSubArea?.name}&rdquo;? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={() => setDeleteConfirmSubArea(null)} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
           <Button
             onClick={handleDeleteSubarea}
-            disabled={deletingSubarea || savingSubarea}
-            startIcon={deletingSubarea ? <CircularProgress size={14} /> : <DeleteOutlineIcon />}
-            sx={{ color: "#d32f2f", textTransform: "none" }}
+            disabled={deletingSubarea}
+            variant="contained"
+            sx={{ bgcolor: "#d32f2f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#b71c1c" } }}
           >
-            Delete
+            {deletingSubarea ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Delete"}
           </Button>
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Button onClick={() => setEditSubarea(null)} sx={{ textTransform: "none", color: "#555" }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveSubareaName}
-              disabled={savingSubarea || deletingSubarea}
-              variant="contained"
-              sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
-            >
-              {savingSubarea ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Save"}
-            </Button>
-          </Box>
         </DialogActions>
       </Dialog>
     </Box>
