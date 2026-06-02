@@ -100,6 +100,142 @@ input[type="search"]::-webkit-search-cancel-button {
   padding: 0 6px;
 }
 
+/* -------------------------------------------------------------------------- */
+/* AOI and sub-area polygon centroid label pins                               */
+/* -------------------------------------------------------------------------- */
+
+.aoi-label-pin,
+.sub-area-label-pin {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+  cursor: default;
+}
+
+.aoi-label-pin {
+  background: #06b6d4;
+  color: #fff;
+}
+
+.aoi-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.sub-area-label-pin {
+  background: #1e40af;
+  color: #fff;
+}
+
+.sub-area-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.aoi-label-pin::after,
+.sub-area-label-pin::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+}
+
+.aoi-label-pin::after {
+  border-top: 10px solid #06b6d4;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.aoi-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside AOI marker pill */
+.aoi-pin-name {
+  pointer-events: none;
+}
+
+.aoi-pin-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 5px;
+  color: inherit;
+  opacity: 0.75;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.aoi-label-pin--selected .aoi-pin-btn {
+  display: inline-flex;
+}
+
+.aoi-pin-btn:hover {
+  opacity: 1;
+}
+
+.aoi-pin-btn--delete:hover {
+  color: #fca5a5;
+}
+
+.sub-area-label-pin::after {
+  border-top: 10px solid #1e40af;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.sub-area-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside sub-area marker pill */
+.sub-area-pin-name {
+  pointer-events: none;
+}
+
+.sub-area-pin-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 5px;
+  color: inherit;
+  opacity: 0.75;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sub-area-label-pin--selected .sub-area-pin-btn {
+  display: inline-flex;
+}
+
+.sub-area-pin-btn:hover {
+  opacity: 1;
+}
+
+.sub-area-pin-btn--delete:hover {
+  color: #fca5a5;
+}
+
 .dash-popup {
   width: 320px;
 }

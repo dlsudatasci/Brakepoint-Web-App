@@ -1,57 +1,43 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Box, Typography, Button, Chip, CircularProgress, Divider } from "@mui/material";
+import { Box, Typography, Button, Chip, CircularProgress, Divider, IconButton } from "@mui/material";
 import { useRouter } from "next/navigation";
+import styles from "./menuBar.module.css";
+import { authFetch } from "@/lib/authFetch";
+
+// components
+import AnalyticsCard, { StackedBar } from "./analyticsCard";
+import LocationCard from "./locationCard";
+import ModeSegmentedControl from "@/components/landing/modeToggle";
+import LandingSection from "@/components/landing/landingSection"
+import Timeline from "@/components/landing/timeline";
+import {
+    SubAreaType, 
+    LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
+    isAreaSummary, isSubareaSummary, isCameraSummary,
+    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
+    VideoSummary, convertObjectToVideoSummary,
+} from "@/components/landing/summaryTypes"
+
+// icons
 import LogoutIcon from "@mui/icons-material/Logout";
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import EditIcon from '@mui/icons-material/Edit';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
+import UploadIcon from '@mui/icons-material/Upload';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import AnalyticsCard, { StackedBar } from "./analyticsCard";
-import LocationCard, { type LocationSummary } from "./locationCard";
-import styles from "./menuBar.module.css";
-import { authFetch } from "@/lib/authFetch";
 
-export type SubAreaType = "road_segment" | "intersection" | "junction";
+// css
+import "./sideMenu.css";
 
-export type SubAreaSummary = {
-    id: number;
-    name: string;
-    lat: number;
-    lng: number;
-    camera_count: number;
-    subarea_count: number;
-    vehicles: number;
-    adb: number;
-    speeding: number;
-    swerving: number;
-    abrupt_stopping: number;
-    tags: string[];
-    vehicle_breakdown: Record<string, number>;
-    sub_area_type: SubAreaType | null;
-};
-
-export type AOISummary = {
-    id: number;
-    name: string;
-    location?: string;
-    subarea_count: number;
-    camera_count: number;
-    vehicles: number;
-    adb: number;
-    speeding: number;
-    swerving: number;
-    abrupt_stopping: number;
-    vehicle_breakdown?: { label: string; value: number }[];
-    subareas?: SubAreaSummary[];
-};
 
 export type SideMenuUpdater = {
     renameSubarea: (id: number, name: string) => void;
@@ -59,41 +45,12 @@ export type SideMenuUpdater = {
     addSubarea: (sub: SubAreaSummary) => void;
 };
 
-// definition of types for the props for MenuBar
-interface SideMenuProps {
-    onAddArea?: () => void;                                // triggers when the user clicks the "add area" button
-    onSelectSubarea?: (subareaId: number) => void;         // triggers when the user selects a subarea
-    refreshTrigger?: number;                               // increment to re-fetch the AOI list
-    isDrawingAOI?: boolean;                                // true while the user is drawing an AOI on the map
-    onAoiHover?: (id: number | null) => void;              // called with AOI id on hover, null on leave
-    onAoiClick?: (id: number) => void;                     // called when an AOI card is clicked — opens edit/delete dialog
-    onAoiEnter?: (aoi: AOISummary) => void;                // called when the arrow button is clicked — zooms map to AOI
-    onAoiBack?: () => void;                                // called when the user navigates back from an AOI detail view
-    onAddSubarea?: (type: SubAreaType) => void;            // called when + in any segment section is clicked
-    isDrawingSubarea?: SubAreaType | false;                // which sub-area type is currently being drawn
-    onSubareaHover?: (id: number | null) => void;          // called with sub-area id on hover, null on leave
-    onSubareaClick?: (id: number, name: string) => void;   // called when a road segment card body is clicked — opens edit/delete dialog
-    onMount?: (updater: SideMenuUpdater) => void;          // provides direct update fns to avoid full refetch on edit/delete
-}
-
-// displays list of AOIs
+// displays a single AOI card
 function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: () => void; onEditClick?: () => void }) {
-    const details: LocationSummary = {
-        location_type: "aoi",
-        name: aoi.name,
-        lat: 0, lng: 0,
-        camera_count: aoi.camera_count,
-        subarea_count: aoi.subarea_count,
-        vehicles: aoi.vehicles,
-        adb: aoi.adb,
-        speeding: aoi.speeding,
-        swerving: aoi.swerving,
-        abrupt_stopping: aoi.abrupt_stopping,
-        tags: [],
-    };
+   const details = convertObjectToAreaSummary(aoi);
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+        <Box>
             <LocationCard
                 type="area"
                 locationDetails={details}
@@ -104,124 +61,164 @@ function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: 
     );
 }
 
-// displays the details for a selected AOI (name, loc, stats, subareas)
-function AOIDetail({
-    aoi,
-    detailLoading,
-    onBack,
-    onAddSubarea,
-    isDrawingSubarea,
-    onNavigateSubarea,
-    onSubareaHover,
-    onSubareaClick,
-}: {
+// displays a single subarea card
+function subareaListItem({ subarea, onNavigateSubarea, onSubareaHover, onSubareaClick } : {
+    subarea : SubAreaSummary
+    onNavigateSubarea?: (sub: SubAreaSummary) => void;
+    onSubareaHover?: (id: number | null) => void;
+    onSubareaClick?: (id: number, name: string) => void;
+}) {
+   
+   const subDetails: SubAreaSummary = convertObjectToSubareaSummary(subarea);
+    return (
+        <Box
+            key={subarea.id}
+            onMouseEnter={() => onSubareaHover?.(subarea.id)}
+            onMouseLeave={() => onSubareaHover?.(null)}
+        >
+            <LocationCard
+                type="subarea"
+                locationDetails={subDetails}
+                onClickCard={() => onSubareaClick?.(subarea.id, subarea.name)}
+                onClickSideButton={() => onNavigateSubarea?.(subarea)}
+            />
+        </Box>
+    )
+}
+
+// displays a single camera card
+function cameraListItem({ camera, onNavigateCamera, onCameraHover, onCameraClick } : {
+    camera: CameraSummary
+    onNavigateCamera?: (sub: CameraSummary) => void;
+    onCameraHover?: (id: number | null) => void;
+    onCameraClick?: (id: number, name: string) => void;
+}) {
+    const cameraDetails: CameraSummary = convertObjectToCameraSummary(camera);
+    return (
+        <Box
+            key={camera.id}
+            onMouseEnter={() => onCameraHover?.(camera.id)}
+            onMouseLeave={() => onCameraHover?.(null)}
+        >
+            <LocationCard
+                type="subarea"
+                locationDetails={cameraDetails}
+                onClickCard={() => onCameraClick?.(camera.id, camera.name)}
+                onClickSideButton={() => onNavigateCamera?.(camera)}
+            />
+        </Box>
+    )
+}
+
+// puts out a percentage as a string value
+const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
+
+// displays the back button for a menu
+function BackButton({onBack, label} : {onBack: () => void, label: string}) {
+    return <div className="backButtonContainer">
+        <IconButton onClick={onBack}> <ChevronLeftIcon /> </IconButton>
+        Back to {label}
+    </div>
+}
+
+
+
+
+
+// displays the sidebar for all AOIs
+function AllAoiMenu({ aois, listLoading, isDrawingAOI, onAoiHover, onAoiClick, handleAddArea, handleSelectAOI } : {
+    aois: AOISummary[];
+    listLoading: boolean;
+    isDrawingAOI?: boolean;
+    onAoiHover?: (id: number | null) => void;
+    onAoiClick?: (id: number) => void;
+    handleAddArea?: () => void;
+    handleSelectAOI?: (aoi: AOISummary) => void;
+}) {
+
+    return (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            <LandingSection
+                type="header"
+                labelHeader="Areas"
+                chipCount={aois.length}
+
+                canAdd
+                isAddButtonActive={ isDrawingAOI }
+                onActivateAdd={() => { handleAddArea(); }}
+                onDeactivateAdd={() => { handleAddArea(); }}
+            >
+            
+                {listLoading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", pt: 4 }}>
+                        <CircularProgress size={24} sx={{ color: "#1d1f3f" }} />
+                    </Box>
+                ) : aois.length === 0 ? (
+                    <span className="placeholderText"> You are not monitoring any areas yet. Press the + icon to get started. </span>
+                ) : (
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
+                        {aois.map((aoi) => (
+                            <Box
+                                key={aoi.id}
+                                onMouseEnter={() => onAoiHover?.(aoi.id)}
+                                onMouseLeave={() => onAoiHover?.(null)}
+                            >
+                                <AOIListItem aoi={aoi} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
+                            </Box>
+                        ))}
+                    </Box>
+                )}
+
+            </LandingSection>
+        </Box>
+    )
+}
+
+
+
+// displays the sidebar for a selected AOI (name, loc, stats, subareas)
+function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSubarea, onNavigateSubarea, onSubareaHover, onSubareaClick, } : {
     aoi: AOISummary;
     detailLoading?: boolean;
     onBack: () => void;
     onAddSubarea?: (type: SubAreaType) => void;
     isDrawingSubarea?: SubAreaType | false;
-    onNavigateSubarea?: (id: number) => void;
+    onNavigateSubarea?: (sub: SubAreaSummary) => void;
     onSubareaHover?: (id: number | null) => void;
     onSubareaClick?: (id: number, name: string) => void;
 }) {
-    const [statsOpen, setStatsOpen] = useState(false);
-    const [roadOpen, setRoadOpen] = useState(false);
-    const [intersectionOpen, setIntersectionOpen] = useState(false);
-    const [junctionOpen, setJunctionOpen] = useState(false);
-
-    const pct = (n: number) =>
-        aoi.vehicles > 0 ? `${((n / aoi.vehicles) * 100).toFixed(1)}%` : "0.0%";
 
     const roadSegments = aoi.subareas?.filter((s) => s.sub_area_type === "road_segment") ?? [];
     const intersections = aoi.subareas?.filter((s) => s.sub_area_type === "intersection") ?? [];
     const junctions = aoi.subareas?.filter((s) => s.sub_area_type === "junction") ?? [];
 
     return (
-        <Box sx={{ width: "100%", display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-
+        <Box className="menuContainer main">
             {/* back button */}
-            <Button
-                onClick={onBack}
-                startIcon={<ChevronLeftIcon />}
-                sx={{
-                    alignSelf: "flex-start",
-                    color: "#1d1f3f",
-                    fontWeight: 600,
-                    fontSize: "0.78rem",
-                    padding: "4px 12px",
-                    borderRadius: "20px",
-                    bgcolor: "#fff",
-                    boxShadow: "0 1px 4px #00000018",
-                    textTransform: "none",
-                    "&:hover": { bgcolor: "#1d1f3f", color: "#fff" },
-                }}
-            >
-                Back to all AOIs
-            </Button>
+            <BackButton onBack={onBack} label="all areas"/>
 
-            {/* AOI name + city */}
-            <Box>
-                <Typography variant="h4" fontWeight={800} sx={{ color: "#1d1f3f", lineHeight: 1.1 }}>
-                    {aoi.name}
-                </Typography>
-                {aoi.location && (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.5 }}>
-                        <LocationOnOutlinedIcon sx={{ fontSize: "0.85rem", color: "#888" }} />
-                        <Typography sx={{ fontSize: "0.82rem", color: "#888" }}>{aoi.location}</Typography>
-                    </Box>
-                )}
-            </Box>
+            { /* title, with edit name functions */ }
+            <LandingSection type="title" labelHeader={ aoi.name } labelSubheader={ aoi.location } icon={ <EditIcon /> } onClickIcon={ () => { alert("[TODO: Edit this section]") } } />
 
-            {/* Overview */}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: "#1d1f3f" }}>Overview</Typography>
-                {detailLoading ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
-                        <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
-                        <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading breakdown…</Typography>
-                    </Box>
-                ) : (
-                    <AnalyticsCard
-                        headerText="Total Vehicle Count"
-                        icon={<DirectionsCarIcon />}
-                        variant="bar"
-                        data={aoi.vehicle_breakdown ?? []}
-                        compact
-                    />
-                )}
-            </Box>
+            { /* overview – basic statistics */ }
+            <LandingSection type="header" labelHeader="Overview" canHide startHidden>
+                <LandingSection type="subheader" labelHeader="Total vehicle count">
+                    {detailLoading ? (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
+                            <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
+                            <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading breakdown...</Typography>
+                        </Box>
+                    ) : (
+                        <AnalyticsCard
+                            variant="bar"
+                            data={aoi.vehicle_breakdown ?? []}
+                            compact
+                        />
+                    )}
+                </LandingSection>
 
-            {/* Statistics */}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-
-                {/* toggle header */}
-                <Box
-                    onClick={() => setStatsOpen((o) => !o)}
-                    sx={{
-                        display: "flex", alignItems: "center", gap: 0.5,
-                        cursor: "pointer", userSelect: "none",
-                        "&:hover .stats-label": { color: "#1d1f3f" },
-                    }}
-                >
-                    <Typography
-                        className="stats-label"
-                        sx={{ fontSize: "0.9rem", fontWeight: 700, color: "#444", transition: "color 0.15s ease" }}
-                    >
-                        Statistics
-                    </Typography>
-                    <ExpandMoreIcon
-                        sx={{
-                            fontSize: "1.1rem",
-                            color: "#888",
-                            transition: "transform 0.2s ease",
-                            transform: statsOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                    />
-                </Box>
-
-                {/* collapsible content */}
-                {statsOpen && (
-                    detailLoading ? (
+                <LandingSection type="subheader" labelHeader="ADB statistics">
+                    { detailLoading ? (
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
                             <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
                             <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading statistics…</Typography>
@@ -229,282 +226,343 @@ function AOIDetail({
                     ) : (
                         <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
                             <AnalyticsCard compact headerText="Total ADB" icon={<ReportProblemOutlinedIcon />} variant="text" valueText={aoi.adb.toLocaleString()} />
-                            <AnalyticsCard compact headerText="Speeding" icon={<SpeedOutlinedIcon />} variant="text" valueText={`${aoi.speeding} (${pct(aoi.speeding)})`} />
-                            <AnalyticsCard compact headerText="Swerving" icon={<SwapCallsIcon />} variant="text" valueText={`${aoi.swerving} (${pct(aoi.swerving)})`} />
-                            <AnalyticsCard compact headerText="Abrupt Stop" icon={<PanToolOutlinedIcon />} variant="text" valueText={`${aoi.abrupt_stopping} (${pct(aoi.abrupt_stopping)})`} />
+                            <AnalyticsCard compact headerText="Speeding" icon={<SpeedOutlinedIcon />} variant="text" valueText={`${aoi.speeding} (${pct(aoi.vehicles, aoi.speeding)})`} />
+                            <AnalyticsCard compact headerText="Swerving" icon={<SwapCallsIcon />} variant="text" valueText={`${aoi.swerving} (${pct(aoi.vehicles, aoi.swerving)})`} />
+                            <AnalyticsCard compact headerText="Abrupt Stop" icon={<PanToolOutlinedIcon />} variant="text" valueText={`${aoi.abrupt_stopping} (${pct(aoi.vehicles, aoi.abrupt_stopping)})`} />
                         </Box>
-                    )
+                    )}
+                </LandingSection>
+            </LandingSection>
+
+            {/*list down all subareas noted as INTERSECTION */}
+            <LandingSection
+                type="header"
+                labelHeader="Intersections"
+                chipCount={intersections.length}
+                canHide startHidden
+
+                canAdd
+                isAddButtonActive={ isDrawingSubarea === "intersection" }
+                onActivateAdd={ () => onAddSubarea?.("intersection")}
+                onDeactivateAdd={ () => onAddSubarea?.("intersection")}
+            >
+                {intersections.length > 0 ? (
+                    intersections.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                ) : (
+                    <span className="placeholderText">You are not monitoring any intersections yet. Press the + icon to get started.</span>
                 )}
-            </Box>
+            </LandingSection>
 
-            <Divider sx={{ borderColor: "#aeb2b9" }} />
+            {/*list down all subareas noted as JUNCTION */}
+            <LandingSection
+                type="header"
+                labelHeader="Junctions"
+                chipCount={junctions.length}
+                canHide startHidden
 
-            {/* Road Segments header */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: "#1d1f3f" }}>Road Segments</Typography>
-                <Chip
-                    label={roadSegments.length}
-                    size="small"
-                    variant="outlined"
-                    sx={{ color: "#161b4c", borderColor: "#161b4c", borderWidth: "2px", fontWeight: 700, fontSize: "0.75rem", height: 22, minWidth: 28 }}
-                />
-                <ExpandMoreIcon
-                    onClick={() => setRoadOpen((o) => !o)}
-                        sx={{
-                            marginLeft: 22, minWidth: 0, borderRadius: "8px",
-                            fontSize: "1.3rem",
-                            color: "#888",
-                            transition: "transform 0.2s ease",
-                            transform: roadOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                />
-                <Button
-                    onClick={() => onAddSubarea?.("road_segment")}
-                    sx={{
-                        marginLeft: "auto", minWidth: 0, padding: "3px 6px", borderRadius: "8px",
-                        color: isDrawingSubarea === "road_segment" ? "rgb(236, 237, 245)" : "#1d1f3f",
-                        bgcolor: isDrawingSubarea === "road_segment" ? "#1d1f3f" : "transparent",
-                        "&:hover": { bgcolor: "#1d1f3f", color: "rgb(236, 237, 245)" },
-                    }}
-                >
-                    {isDrawingSubarea === "road_segment" ? <CloseIcon /> : <AddIcon />}
-                </Button>
-            </Box>
-
-            {roadOpen && (
-                detailLoading ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
-                        <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
-                        <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading road segments…</Typography>
-                    </Box>
+                canAdd
+                isAddButtonActive={ isDrawingSubarea === "junction" }
+                onActivateAdd={ () => onAddSubarea?.("junction")}
+                onDeactivateAdd={ () => onAddSubarea?.("junction")}
+            >
+                {junctions.length > 0 ? (
+                    junctions.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
                 ) : (
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                        {roadSegments.length > 0 ? (
-                            roadSegments.map((sub) => {
-                                const subDetails: LocationSummary = {
-                                    location_type: "subarea",
-                                    name: sub.name,
-                                    lat: sub.lat,
-                                    lng: sub.lng,
-                                    camera_count: sub.camera_count,
-                                    subarea_count: 0,
-                                    vehicles: sub.vehicles,
-                                    adb: sub.adb,
-                                    speeding: sub.speeding,
-                                    swerving: sub.swerving,
-                                    abrupt_stopping: sub.abrupt_stopping,
-                                    tags: sub.tags,
-                                };
-                                return (
-                                    <Box
-                                        key={sub.id}
-                                        onMouseEnter={() => onSubareaHover?.(sub.id)}
-                                        onMouseLeave={() => onSubareaHover?.(null)}
-                                    >
-                                        <LocationCard
-                                            type="subarea"
-                                            locationDetails={subDetails}
-                                            onClickCard={() => onSubareaClick?.(sub.id, sub.name)}
-                                            onClickSideButton={() => onNavigateSubarea?.(sub.id)}
-                                        />
-                                    </Box>
-                                );
-                            })
-                        ) : (
-                            <Typography
-                                sx={{
-                                    fontSize: "0.8rem", color: "#999", padding: "14px",
-                                    borderRadius: "12px", border: "1.5px dashed rgba(0,0,0,0.15)", lineHeight: 1.6,
-                                }}
-                            >
-                                No road segments yet. Press <strong>+</strong> to add one.
-                            </Typography>
-                        )}
-                    </Box>
-                )
-            )}
+                    <span className="placeholderText">You are not monitoring any junctions yet. Press the + icon to get started.</span>
+                )}
+            </LandingSection>
 
-            {/* Intersections header */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: "#1d1f3f" }}>Intersections</Typography>
-                <Chip
-                    label={intersections.length}
-                    size="small"
-                    variant="outlined"
-                    sx={{ color: "#161b4c", borderColor: "#161b4c", borderWidth: "2px", fontWeight: 700, fontSize: "0.75rem", height: 22, minWidth: 28 }}
-                />
-                <ExpandMoreIcon
-                    onClick={() => setIntersectionOpen((o) => !o)}
-                        sx={{
-                            marginLeft: 25.7, minWidth: 0, borderRadius: "8px",
-                            fontSize: "1.3rem",
-                            color: "#888",
-                            transition: "transform 0.2s ease",
-                            transform: intersectionOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                />
-                <Button
-                    onClick={() => onAddSubarea?.("intersection")}
-                    sx={{
-                        marginLeft: "auto", minWidth: 0, padding: "3px 6px", borderRadius: "8px",
-                        color: isDrawingSubarea === "intersection" ? "rgb(236, 237, 245)" : "#1d1f3f",
-                        bgcolor: isDrawingSubarea === "intersection" ? "#1d1f3f" : "transparent",
-                        "&:hover": { bgcolor: "#1d1f3f", color: "rgb(236, 237, 245)" },
-                    }}
-                >
-                    {isDrawingSubarea === "intersection" ? <CloseIcon /> : <AddIcon />}
-                </Button>
-            </Box>
+            {/*list down all subareas noted as ROAD SEGMENT */}
+            <LandingSection
+                type="header"
+                labelHeader="Road Segments"
+                chipCount={roadSegments.length}
+                canHide startHidden
 
-            {intersectionOpen && (
-                detailLoading ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
-                        <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
-                        <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading intersections…</Typography>
-                    </Box>
+                canAdd
+                isAddButtonActive={ isDrawingSubarea === "road_segment" }
+                onActivateAdd={ () => {onAddSubarea?.("road_segment")}}
+                onDeactivateAdd={ () => {onAddSubarea?.("road_segment")}}
+            >
+                {roadSegments.length > 0 ? (
+                    roadSegments.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
                 ) : (
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                        {intersections.length > 0 ? (
-                            intersections.map((sub) => {
-                                const subDetails: LocationSummary = {
-                                    location_type: "subarea",
-                                    name: sub.name,
-                                    lat: sub.lat,
-                                    lng: sub.lng,
-                                    camera_count: sub.camera_count,
-                                    subarea_count: 0,
-                                    vehicles: sub.vehicles,
-                                    adb: sub.adb,
-                                    speeding: sub.speeding,
-                                    swerving: sub.swerving,
-                                    abrupt_stopping: sub.abrupt_stopping,
-                                    tags: sub.tags,
-                                };
-                                return (
-                                    <Box
-                                        key={sub.id}
-                                        onMouseEnter={() => onSubareaHover?.(sub.id)}
-                                        onMouseLeave={() => onSubareaHover?.(null)}
-                                    >
-                                        <LocationCard
-                                            type="subarea"
-                                            locationDetails={subDetails}
-                                            onClickCard={() => onSubareaClick?.(sub.id, sub.name)}
-                                            onClickSideButton={() => onNavigateSubarea?.(sub.id)}
-                                        />
-                                    </Box>
-                                );
-                            })
-                        ) : (
-                            <Typography
-                                sx={{
-                                    fontSize: "0.8rem", color: "#999", padding: "14px",
-                                    borderRadius: "12px", border: "1.5px dashed rgba(0,0,0,0.15)", lineHeight: 1.6,
-                                }}
-                            >
-                                No road intersections yet. Press <strong>+</strong> to add one.
-                            </Typography>
-                        )}
-                    </Box>
-                )
-            )}
+                    <span className="placeholderText">You are not monitoring any road segments yet. Press the + icon to get started.</span>
+                )}
+            </LandingSection>
 
-            {/* Junctions header */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: "#1d1f3f" }}>Junctions</Typography>
-                <Chip
-                    label={junctions.length}
-                    size="small"
-                    variant="outlined"
-                    sx={{ color: "#161b4c", borderColor: "#161b4c", borderWidth: "2px", fontWeight: 700, fontSize: "0.75rem", height: 22, minWidth: 28 }}
-                />
-                <ExpandMoreIcon
-                    onClick={() => setJunctionOpen((o) => !o)}
-                        sx={{
-                            marginLeft: 30.2, minWidth: 0, borderRadius: "8px",
-                            fontSize: "1.3rem",
-                            color: "#888",
-                            transition: "transform 0.2s ease",
-                            transform: junctionOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                />
-                <Button
-                    onClick={() => onAddSubarea?.("junction")}
-                    sx={{
-                        marginLeft: "auto", minWidth: 0, padding: "3px 6px", borderRadius: "8px",
-                        color: isDrawingSubarea === "junction" ? "rgb(236, 237, 245)" : "#1d1f3f",
-                        bgcolor: isDrawingSubarea === "junction" ? "#1d1f3f" : "transparent",
-                        "&:hover": { bgcolor: "#1d1f3f", color: "rgb(236, 237, 245)" },
-                    }}
-                >
-                    {isDrawingSubarea === "junction" ? <CloseIcon /> : <AddIcon />}
-                </Button>
-            </Box>
-
-            {junctionOpen && (
-                detailLoading ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
-                        <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
-                        <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading junctions…</Typography>
-                    </Box>
-                ) : (
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                        {junctions.length > 0 ? (
-                            junctions.map((sub) => {
-                                const subDetails: LocationSummary = {
-                                    location_type: "subarea",
-                                    name: sub.name,
-                                    lat: sub.lat,
-                                    lng: sub.lng,
-                                    camera_count: sub.camera_count,
-                                    subarea_count: 0,
-                                    vehicles: sub.vehicles,
-                                    adb: sub.adb,
-                                    speeding: sub.speeding,
-                                    swerving: sub.swerving,
-                                    abrupt_stopping: sub.abrupt_stopping,
-                                    tags: sub.tags,
-                                };
-                                return (
-                                    <Box
-                                        key={sub.id}
-                                        onMouseEnter={() => onSubareaHover?.(sub.id)}
-                                        onMouseLeave={() => onSubareaHover?.(null)}
-                                    >
-                                        <LocationCard
-                                            type="subarea"
-                                            locationDetails={subDetails}
-                                            onClickCard={() => onSubareaClick?.(sub.id, sub.name)}
-                                            onClickSideButton={() => onNavigateSubarea?.(sub.id)}
-                                        />
-                                    </Box>
-                                );
-                            })
-                        ) : (
-                            <Typography
-                                sx={{
-                                    fontSize: "0.8rem", color: "#999", padding: "14px",
-                                    borderRadius: "12px", border: "1.5px dashed rgba(0,0,0,0.15)", lineHeight: 1.6,
-                                }}
-                            >
-                                No road junctions yet. Press <strong>+</strong> to add one.
-                            </Typography>
-                        )}
-                    </Box>
-                )
-            )}
         </Box>
     );
 }
 
-export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount }: SideMenuProps) {
+// displays the sidebar for a certain subarea
+function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, onCameraHover, onCameraClick, parentName } : {
+    subarea: SubAreaSummary,
+    detailLoading?: boolean,
+    onBack: () => void;
+
+    onNavigateCamera?: (camera: CameraSummary) => void;
+    onCameraHover?: (id: number | null) => void;
+    onCameraClick?: (id: number, name: string) => void;
+
+    parentName: string,
+}) {
+    return (
+        <Box className="menuContainer main">
+            {/* back button */}
+            <BackButton onBack={onBack} label={parentName}/>
+            
+            { /* title, with edit name functions */ }
+            <LandingSection
+                type="title"
+                labelHeader={ subarea.name }
+                icon={ <EditIcon /> }
+                onClickIcon={ () => { alert("[TODO: Edit this section]") } }
+            />
+
+            { /* overview – basic statistics */ }
+            <LandingSection type="header" labelHeader="Overview" canHide startHidden>
+                <LandingSection type="subheader" labelHeader="Total vehicle count">
+                    {detailLoading ? (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
+                            <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
+                            <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading breakdown...</Typography>
+                        </Box>
+                    ) : (
+                        <AnalyticsCard
+                            variant="bar"
+                            data={subarea.vehicle_breakdown ?? []}
+                            compact
+                        />
+                    )}
+                </LandingSection>
+
+                <LandingSection type="subheader" labelHeader="ADB statistics">
+                    { detailLoading ? (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
+                            <CircularProgress size={14} sx={{ color: "#1d1f3f" }} />
+                            <Typography sx={{ fontSize: "0.75rem", color: "#999" }}>Loading statistics…</Typography>
+                        </Box>
+                    ) : (
+                        <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
+                            <AnalyticsCard compact headerText="Total ADB" icon={<ReportProblemOutlinedIcon />} variant="text" valueText={subarea.adb.toLocaleString()} />
+                            <AnalyticsCard compact headerText="Speeding" icon={<SpeedOutlinedIcon />} variant="text" valueText={`${subarea.speeding} (${pct(subarea.vehicles, subarea.speeding)})`} />
+                            <AnalyticsCard compact headerText="Swerving" icon={<SwapCallsIcon />} variant="text" valueText={`${subarea.swerving} (${pct(subarea.vehicles, subarea.swerving)})`} />
+                            <AnalyticsCard compact headerText="Abrupt Stop" icon={<PanToolOutlinedIcon />} variant="text" valueText={`${subarea.abrupt_stopping} (${pct(subarea.vehicles, subarea.abrupt_stopping)})`} />
+                        </Box>
+                    )}
+                </LandingSection>
+            </LandingSection>
+
+            { /* for all cameras within this subarea */ }
+            <LandingSection
+                type="header"
+                labelHeader="Cameras"
+                chipCount={subarea.camera_count}
+                labelSubheader={ subarea.location }
+                canHide
+
+                canAdd
+                isAddButtonActive={ false }
+                onActivateAdd={ () => {} }
+                onDeactivateAdd={ () => {} }
+            >
+                {subarea.cameras.length > 0 ? (
+                    subarea.cameras.map((c) => { return cameraListItem({ camera: c, onNavigateCamera, onCameraClick, onCameraHover }) })
+                ) : (
+                    <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type}. Press the + icon to get started.</span>
+                )}
+            </LandingSection>
+        </Box>
+    )
+}
+
+// displays part of the sidebar for the camera feed tab
+function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo} : {
+    camera: CameraSummary,              // summary objecet for this camera
+    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
+    videosLoading?: boolean,            // whether videos are still being loaded
+    videosError?: boolean,              // whether video loading have posted an error
+    thumbnail?: string;                 // the thumbnail to display
+    onClickUploadVideo?: () => void,    // event to trigger when user clicks on Upload Video button
+}) {
+    return (
+        <div className="menuContainer">
+            { /* thumbnail */ }
+            <div className="thumbnail">
+                { videosError && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
+                { !videosError && videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
+                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail == undefined || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
+                { !videosError && !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
+                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail != undefined && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
+            </div>
+
+            <LandingSection type="header"
+                labelHeader="Videos"
+                chipCount={ !videosLoading && !videosError ? ( loadedVideos.length ?? 0 ) : (0) }
+                canHide
+
+                icon={ <UploadIcon /> }
+                onClickIcon={ onClickUploadVideo }
+            >
+                { /* TODO video table */ }
+            </LandingSection>
+        </div>
+    )
+}
+
+// displays part of the sidebar for the camera statistics tab
+function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading} : {
+    camera: CameraSummary,              // summary objecet for this camera
+    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
+    videosLoading?: boolean,            // whether videos are still being loaded
+    videosError?: boolean,              // whether video loading have posted an error
+}) {
+    return (
+        <div className="menuContainer">
+            <Timeline cameraIds={[camera.id]} />
+        </div>
+    )
+}
+
+// displays the sidebar for a certain camera
+function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo} : {
+    camera: CameraSummary,
+    detailLoading?: boolean,
+    onBack: () => void;
+
+    parentName: string;
+    onClickUploadVideo?: () => void
+}) {
+    const [videosLoading, setVideosLoading] = useState<boolean>(true);
+    const [videosError, setVideosError] = useState<boolean>(false);
+    const [loadedVideos, setLoadedVideos] = useState<VideoSummary[]>()
+    const [thumbnail, setThumbnail] = useState<string | undefined>(undefined)
+    const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
+    
+    // get a video from the api
+    useEffect(() => {
+        const fetchVideos = async () => {
+            try {
+                const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camera.id}/videos/`);
+                if (!response.ok) { setVideosLoading(false); setVideosError(true); } // quickfail
+                const data = await response.json();
+
+                // convert everything to a VideoSummary
+                const allVideos: VideoSummary[] = data.videos
+                    .map((v) => ( convertObjectToVideoSummary(v) ))
+                    .sort((a: VideoSummary, b: VideoSummary) => { a.uploaded_at < b.uploaded_at ? 1 : a.uploaded_at > b.uploaded_at ? -1 : 0  });
+
+                // process the data here
+                // ...
+
+                // set our data
+                setLoadedVideos(allVideos);
+                setThumbnail(allVideos.length > 0 ? allVideos[0].thumbnail : "");
+                setVideosLoading(false);
+            } catch(e) {
+                // error handler — notify immediately and clean up
+                setVideosLoading(false);
+                setVideosError(true);
+            }
+        }
+
+        fetchVideos();
+    }, [camera])
+
+    // toggles the tab
+    const handleToggleTab = (newMode: "feed" | "statistics") => {
+        setActiveTab(newMode);
+    }
+
+    // display page here
+    return (
+        <Box className="menuContainer main">
+            {/* back button */}
+            <BackButton onBack={onBack} label={parentName}/>
+
+            { /* title, with edit name functions */ }
+            <LandingSection
+                type="title"
+                labelHeader={ camera.name }
+                labelSubheader={ camera.location }
+                icon={ <EditIcon /> }
+                onClickIcon={ () => { alert("[TODO: Edit this section]") } }
+            />
+
+            { /* mode toggle between feed and statistics */ }
+            <ModeSegmentedControl currentMode={activeTab} onClick={handleToggleTab} />
+
+            {activeTab == "feed" && (<CameraFeedMenu
+                camera={camera} loadedVideos={loadedVideos}
+                videosLoading={videosLoading} videosError={videosError} thumbnail={thumbnail}
+                onClickUploadVideo={onClickUploadVideo}
+            />)}
+
+            {activeTab == "statistics" && (<CameraStatisticsMenu
+                camera={camera} loadedVideos={loadedVideos}
+                videosLoading={videosLoading} videosError={videosError}
+            />)}
+        </Box>
+    )
+}
+
+
+
+
+
+
+// definition of types for the props for MenuBar
+interface SideMenuProps {
+    refreshTrigger?: number;                                // increment to re-fetch the AOI list
+    onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
+
+    onAoiHover?: (id: number | null) => void;               // called with AOI id on hover, null on leave
+    onAoiClick?: (id: number) => void;                      // called when an AOI card is clicked — opens edit/delete dialog
+    onAoiEnter?: (aoi: AOISummary) => void;                 // called when the arrow button is clicked — zooms map to AOI
+    onAoiBack?: () => void;                                 // called when the user navigates back from an AOI detail view
+    onAddArea?: () => void;                                 // triggers when the user clicks the "add area" button
+    isDrawingAOI?: boolean;                                 // true while the user is drawing an AOI on the map
+
+    onSelectSubarea?: (subareaId: number) => void;          // triggers when the user selects a subarea
+    onSubareaHover?: (id: number | null) => void;           // called with sub-area id on hover, null on leave
+    onSubareaClick?: (id: number, name: string) => void;    // called when a road segment card body is clicked — opens edit/delete dialog
+    onAddSubarea?: (type: SubAreaType) => void;             // called when + in any segment section is clicked
+    isDrawingSubarea?: SubAreaType | false;                 // which sub-area type is currently being drawn
+
+    onCameraClick?: (id: number) => void;                   // called when a camera card is clicked — opens edit/delete dialog
+    onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
+    onAddCamera?: () => void;                               // called when + in the camera section is clicked
+    isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
+}
+
+// handles a general function for the side menu
+export default function SideMenu({
+    onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, isDrawingAOI = false,
+    onSelectSubarea, onSubareaHover, onSubareaClick, onAddSubarea, isDrawingSubarea = false,
+    onCameraClick, onCameraEnter, onAddCamera, isDrawingCamera,
+    onMount, refreshTrigger, 
+    // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
+}: SideMenuProps) {
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
-
+    // list of all AOIs; ontaining a list of all subareas and cameras by parent
     const [aois, setAois] = useState<AOISummary[]>([]);
+
+    // selections for AOI, subarea, and camera
     const [selectedAOI, setSelectedAOI] = useState<AOISummary | null>(null);
     const selectedAOIRef = useRef<AOISummary | null>(null);
     selectedAOIRef.current = selectedAOI;
+    
+    const [selectedSubarea, setSelectedSubarea] = useState<SubAreaSummary | null>(null)
+    const selectedSubareaRef = useRef<SubAreaSummary | null>(null)
+    selectedSubareaRef.current = selectedSubarea;
+
+    const [selectedCamera, setSelectedCamera] = useState<CameraSummary | null>(null);
+    const selectedCameraRef = useRef<CameraSummary | null>(null);
+    selectedCameraRef.current = selectedCamera;
+
+    // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
     const [listLoading, setListLoading] = useState(true);
 
@@ -561,16 +619,20 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
     }, []);
 
     useEffect(() => {
+        // flip when user cancels loading operation
         let cancelled = false;
         setListLoading(true);
-
+        
+        // load all data for all the user's saved locations and cameras
         Promise.all([
             authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
             authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
+            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras`).then((r) => r.json())
         ])
-            .then(([aoiData, subData]) => {
-                if (cancelled) return;
+            .then(([aoiData, subData, cameraData]) => {
+                if (cancelled) return; // quickfail if cancelled
 
+                // sorts subareas by their parent area
                 const rawSubs: any[] = Array.isArray(subData?.saved_locations) ? subData.saved_locations : [];
                 const subsByParent = rawSubs.reduce<Record<number, any[]>>((acc, s) => {
                     const pid = s.parent_id;
@@ -578,29 +640,26 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                     return acc;
                 }, {});
 
+                // sorts cameras by their parent subarea
+                const rawCameras: any[] = Array.isArray(cameraData?.cameras) ? cameraData.cameras : [];
+                const camerasByParent = rawCameras.reduce<Record<number, any[]>>((acc, s) => {
+                    const pid = s.saved_location;
+                    if (pid != null) (acc[pid] ??= []).push(s);
+                    return acc;
+                }, {});
+
                 const rawAois: any[] = Array.isArray(aoiData?.saved_locations) ? aoiData.saved_locations : [];
                 const built: AOISummary[] = rawAois.map((a) => {
-                    const subs: SubAreaSummary[] = (subsByParent[a.id] ?? []).map((s: any) => ({
-                        id: s.id,
-                        name: s.name,
-                        lat: s.lat ?? 0,
-                        lng: s.lng ?? 0,
-                        camera_count: s.camera_count ?? 0,
-                        subarea_count: 0,
-                        vehicles: s.vehicles ?? 0,
-                        adb: s.occurrences ?? 0,
-                        speeding: s.speeding ?? 0,
-                        swerving: s.swerving ?? 0,
-                        abrupt_stopping: s.abrupt_stopping ?? 0,
-                        tags: s.tags ?? [],
-                        vehicle_breakdown: (s.vehicle_breakdown ?? {}) as Record<string, number>,
-                        sub_area_type: s.sub_area_type as SubAreaType | null,
-                    }));
-
-                    return {
-                        id: a.id,
-                        name: a.name,
-                        location: undefined,
+                    const subs: SubAreaSummary[] = (subsByParent[a.id] ?? []).map((s: any) => {
+                        const cameras: CameraSummary[] = (camerasByParent[s.id] ?? []).map((c: any) => (
+                            convertObjectToCameraSummary(c)
+                        ))
+                        return convertObjectToSubareaSummary(s, {
+                            cameras: cameras,
+                            vehicle_breakdown: (s.vehicle_breakdown ?? {}) as Record<string, number>,
+                        })
+                    })
+                    return convertObjectToAreaSummary(a, {
                         subarea_count: subs.length,
                         camera_count: subs.reduce((n, s) => n + s.camera_count, 0),
                         vehicles: subs.reduce((n, s) => n + s.vehicles, 0),
@@ -621,8 +680,8 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                             }));
                         })(),
                         subareas: subs,
-                    };
-                });
+                    })
+                })
 
                 setAois(built);
                 setSelectedAOI((prev) => {
@@ -636,15 +695,40 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
         return () => { cancelled = true; };
     }, [refreshTrigger]);
 
-    const handleSelectAOI = (aoi: AOISummary) => {
-        onAoiEnter?.(aoi);
-        setSelectedAOI(aoi);
-        scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    };
+    // triggers when user selects a card, sets the related area/subarea/camera
+    const handleSelectCard = ( item: AOISummary | SubAreaSummary | CameraSummary ) => {
+        if (isCameraSummary(item)) {
+            // for cameras
+            setSelectedCamera(item);
+        } else if (isSubareaSummary(item)) {
+            // for subareas
+            onSelectSubarea?.(item.id);
+            setSelectedSubarea(item);
+        } else if (isAreaSummary(item)) {
+            // for areas
+            onAoiEnter?.(item);
+            setSelectedAOI(item);
+        } else {
+            return;
+        }
 
+        scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    // triggers when user presses a back button
     const handleBack = () => {
-        onAoiBack?.();
-        setSelectedAOI(null);
+        if (selectedCamera !== null) {
+            // onAoiBack?.();
+            setSelectedCamera(null);
+        } else if (selectedSubarea !== null) {
+            // onAoiBack?.();
+            setSelectedSubarea(null)
+        } else if (selectedAOI !== null) {
+            onAoiBack?.();
+            setSelectedAOI(null);
+        } else {
+            return;
+        }
         scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     };
 
@@ -662,6 +746,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
 
     return (
         <Box className={styles.menuContainer}>
+            { /* the header – include title and signout */ }
             <Box className={styles.menuHeader}>
                 <Typography variant="h3" className={styles.brakePoint}>BrakePoint</Typography>
                 <Button
@@ -679,6 +764,8 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                 </Button>
             </Box>
 
+
+            { /* program contents */ }
             <Box
                 ref={scrollRef}
                 sx={{
@@ -687,10 +774,28 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                     "&::-webkit-scrollbar-thumb": { bgcolor: "#c5c7d8", borderRadius: 4 },
                 }}
             >
-                {selectedAOI ? (
+                {selectedCamera && (
+                    <CameraDetailMenu
+                        camera={selectedCamera}
+                        detailLoading={detailLoading}
+                        onBack={handleBack}
+                        parentName={selectedSubarea.name}
+                    />
+                )}
+                
+                { !selectedCamera && selectedSubarea && (
+                    <SubareaDetailMenu
+                        subarea={selectedSubarea}
+                        detailLoading={detailLoading}
+                        onBack={handleBack}
+                        onNavigateCamera={handleSelectCard}
+                        parentName={selectedAOI.name}
+                    />
+                )}
 
-                    // AOI detail
-                    <AOIDetail
+                { !selectedCamera && !selectedSubarea && selectedAOI && (
+                    // AOI detail – if an AOI is currently selected
+                    <AoiDetailMenu
                         aoi={selectedAOI}
                         detailLoading={detailLoading}
                         onBack={handleBack}
@@ -698,65 +803,24 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                         isDrawingSubarea={isDrawingSubarea}
                         onSubareaHover={onSubareaHover}
                         onSubareaClick={onSubareaClick}
-                        onNavigateSubarea={(id) => {
-                            onSelectSubarea?.(id);
-                            router.push(`/configuration?savedLocationId=${id}`);
-                        }}
+                        onNavigateSubarea={handleSelectCard}
                     />
-
-                ) : (
-
-                    // Panel 1: AOI list
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
-                            <Typography variant="h5" fontWeight="bold">Areas</Typography>
-                            <Chip
-                                label={aois.length}
-                                size="small"
-                                variant="outlined"
-                                sx={{ color: "#161b4c", borderColor: "#161b4c", borderWidth: "2px", fontWeight: 700, fontSize: "0.75rem", height: 22, minWidth: 28 }}
-                            />
-                            <Button
-                                onClick={handleAddArea}
-                                sx={{
-                                    marginLeft: "auto", minWidth: 0, padding: "2px 6px", borderRadius: "8px",
-                                    color: isDrawingAOI ? "rgb(236, 237, 245)" : "#161b4c",
-                                    bgcolor: isDrawingAOI ? "#161b4c" : "transparent",
-                                    "&:hover": { bgcolor: "#161b4c", color: "rgb(236, 237, 245)" },
-                                }}
-                            >
-                                {isDrawingAOI ? <CloseIcon /> : <AddIcon />}
-                            </Button>
-                        </Box>
-
-                        {listLoading ? (
-                            <Box sx={{ display: "flex", justifyContent: "center", pt: 4 }}>
-                                <CircularProgress size={24} sx={{ color: "#1d1f3f" }} />
-                            </Box>
-                        ) : aois.length === 0 ? (
-                            <Typography
-                                sx={{
-                                    fontSize: "0.8rem", color: "#999", padding: "14px",
-                                    borderRadius: "12px", border: "1.5px dashed rgba(0,0,0,0.15)", lineHeight: 1.6,
-                                }}
-                            >
-                                No areas yet. Press <strong>+</strong> to add one.
-                            </Typography>
-                        ) : (
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
-                                {aois.map((aoi) => (
-                                    <Box
-                                        key={aoi.id}
-                                        onMouseEnter={() => onAoiHover?.(aoi.id)}
-                                        onMouseLeave={() => onAoiHover?.(null)}
-                                    >
-                                        <AOIListItem aoi={aoi} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
-                                    </Box>
-                                ))}
-                            </Box>
-                        )}
-                    </Box>
                 )}
+
+                { !selectedCamera && !selectedSubarea && !selectedAOI && (
+                    // main menu – list of all AOIs
+                    // Panel 1: AOI list
+                    <AllAoiMenu
+                        aois = {aois}
+                        listLoading = {listLoading}
+                        isDrawingAOI = {isDrawingAOI}
+                        onAoiHover = {onAoiHover}
+                        onAoiClick = {onAoiClick}
+                        handleAddArea = {handleAddArea} 
+                        handleSelectAOI = {handleSelectCard} 
+                    />
+                )}
+
             </Box>
         </Box>
     );
