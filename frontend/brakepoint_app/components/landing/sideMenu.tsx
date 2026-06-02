@@ -377,6 +377,7 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
     )
 }
 
+// displays part of the sidebar for the camera feed tab
 function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
@@ -398,7 +399,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
 
             <LandingSection type="header"
                 labelHeader="Videos"
-                chipCount={ !videosLoading && !videosError ? ( loadedVideos.length ) : (0) }
+                chipCount={ !videosLoading && !videosError ? ( loadedVideos.length ?? 0 ) : (0) }
                 canHide
 
                 icon={ <UploadIcon /> }
@@ -410,6 +411,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
     )
 }
 
+// displays part of the sidebar for the camera statistics tab
 function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
@@ -418,7 +420,7 @@ function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading}
 }) {
     return (
         <div className="menuContainer">
-            Statistics
+            <Timeline cameraIds={[camera.id]} />
         </div>
     )
 }
@@ -451,6 +453,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
                     .map((v) => ( convertObjectToVideoSummary(v) ))
                     .sort((a: VideoSummary, b: VideoSummary) => { a.uploaded_at < b.uploaded_at ? 1 : a.uploaded_at > b.uploaded_at ? -1 : 0  });
 
+                // process the data here
+                // ...
+
                 // set our data
                 setLoadedVideos(allVideos);
                 setThumbnail(allVideos.length > 0 ? allVideos[0].thumbnail : "");
@@ -464,6 +469,11 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
 
         fetchVideos();
     }, [camera])
+
+    // toggles the tab
+    const handleToggleTab = (newMode: "feed" | "statistics") => {
+        setActiveTab(newMode);
+    }
 
     // display page here
     return (
@@ -479,6 +489,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
                 icon={ <EditIcon /> }
                 onClickIcon={ () => { alert("[TODO: Edit this section]") } }
             />
+
+            { /* mode toggle between feed and statistics */ }
+            <ModeSegmentedControl currentMode={activeTab} onClick={handleToggleTab} />
 
             {activeTab == "feed" && (<CameraFeedMenu
                 camera={camera} loadedVideos={loadedVideos}
@@ -705,11 +718,10 @@ export default function SideMenu({
     // triggers when user presses a back button
     const handleBack = () => {
         if (selectedCamera !== null) {
-            onAoiBack?.();
+            // onAoiBack?.();
             setSelectedCamera(null);
-        }
-        else if (selectedSubarea !== null) {
-            onAoiBack?.();
+        } else if (selectedSubarea !== null) {
+            // onAoiBack?.();
             setSelectedSubarea(null)
         } else if (selectedAOI !== null) {
             onAoiBack?.();

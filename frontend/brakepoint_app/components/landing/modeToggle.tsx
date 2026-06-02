@@ -3,7 +3,14 @@
 import { Box, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-export default function ModeSegmentedControl() {
+
+
+export default function ModeSegmentedControl({currentMode, onClick} : {
+  currentMode: "feed" | "statistics",
+  onClick?: (newMode: "feed" | "statistics") => void,
+}) {
+
+  /*
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -12,12 +19,13 @@ export default function ModeSegmentedControl() {
     ? "monitoring"
     : "configuration";
 
+
   const handleChange = (
     _event: React.MouseEvent<HTMLElement>,
-    nextMode: "configuration" | "monitoring" | null
+    nextMode: "feed" | "statistics" | null
   ) => {
     if (!nextMode || nextMode === currentMode) return;
-
+    
     const params = new URLSearchParams(searchParams.toString());
     const nextPath =
       nextMode === "monitoring" ? "/monitoring" : "/configuration";
@@ -28,21 +36,32 @@ export default function ModeSegmentedControl() {
 
     router.push(nextUrl);
   };
+  */
+
+  // for internal use, triggers onClick if user presses on the other button
+  const handleChange = (
+    _event: React.MouseEvent<HTMLElement>,
+    nextMode: "feed" | "statistics" | null
+  ) => {
+    if (!nextMode || nextMode === currentMode) return;
+    onClick(nextMode);
+  };
 
   return (
     <Box
-      sx={{width: "100%", mt: "1.5em"}}
+      sx={{width: "100%", mt: "1em", mb: "1em"}}
     >
       <ToggleButtonGroup
         value={currentMode}
         exclusive
-        //onChange={handleChange}
+        onChange={handleChange}
         sx={{
           width: "100%",
           backgroundColor: "#fff",
           borderRadius: "14px",
           padding: "4px",
           overflow: "hidden",
+
           "& .MuiToggleButtonGroup-grouped": {
             flex: 1,
             border: "none",
@@ -59,8 +78,8 @@ export default function ModeSegmentedControl() {
           },
         }}
       >
-        <ToggleButton value="configuration">Feed</ToggleButton>
-        <ToggleButton value="monitoring">Statistics</ToggleButton>
+        <ToggleButton value="feed">Feed</ToggleButton>
+        <ToggleButton value="statistics">Statistics</ToggleButton>
       </ToggleButtonGroup>
     </Box>
   );

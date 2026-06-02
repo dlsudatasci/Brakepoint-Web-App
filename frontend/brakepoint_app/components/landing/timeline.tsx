@@ -9,6 +9,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { authFetch } from '@/lib/authFetch';
+import LandingSection from "@/components/landing/landingSection"
 
 import { BarChart } from "@mui/x-charts/BarChart";
 
@@ -241,205 +242,214 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
   // ===========================================
   return (
     <>
+    
+      <LandingSection type="header" labelHeader="Filter options" canHide startHidden>
 
-      {/* Date pickers */}
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Box sx={{ mt: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 2.5 }}>
-          <DatePicker
-            label="From"
-            value={startDate}
-            onChange={(v) => { if (!v) return; if (endDate && v.isAfter(endDate)) return; setStartDate(v); }}
-            slotProps={{ textField: { size: 'small', sx: { bgcolor: '#fff', borderRadius: '16px', minWidth: 140, '& .MuiOutlinedInput-root': { borderRadius: '12px' } } } }}
-          />
-          <DatePicker
-            label="To"
-            value={endDate}
-            onChange={(v) => { if (!v) return; if (startDate && v.isBefore(startDate)) return; setEndDate(v); }}
-            slotProps={{ textField: { size: 'small', sx: { bgcolor: '#fff', borderRadius: '16px', minWidth: 140, '& .MuiOutlinedInput-root': { borderRadius: '12px' } } } }}
-          />
+        { /* Date pickers */ }
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <Box sx={{ display: "flex", flexDirection: "row", gap: "0.75em" }}>
+            <DatePicker
+              label="From"
+              value={startDate}
+              onChange={(v) => { if (!v) return; if (endDate && v.isAfter(endDate)) return; setStartDate(v); }}
+              slotProps={{ textField: { size: 'small', sx: { bgcolor: '#fff', borderRadius: '16px', minWidth: 140, '& .MuiOutlinedInput-root': { borderRadius: '12px' } } } }}
+            />
+            <DatePicker
+              label="To"
+              value={endDate}
+              onChange={(v) => { if (!v) return; if (startDate && v.isBefore(startDate)) return; setEndDate(v); }}
+              slotProps={{ textField: { size: 'small', sx: { bgcolor: '#fff', borderRadius: '16px', minWidth: 140, '& .MuiOutlinedInput-root': { borderRadius: '12px' } } } }}
+            />
+          </Box>
+        </LocalizationProvider>
+
+        { /* Metric toggles */ }
+        <Box sx={{display: 'flex', mb: 2.5, flexDirection: 'column' }}>
+          {METRIC_CFG.filter(c => c.key !== 'vehicles').map(({ key, label, color }) => (
+            <FormControlLabel
+              key={key}
+              label={label}
+              control={
+                <Checkbox
+                  checked={isOn(key)}
+                  onChange={(e) =>
+                    setSelectedMetrics(prev =>
+                      e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
+                    )
+                  }
+                  sx={{
+                    color,
+                    '&.Mui-checked': { color: '#161b4c' },
+                  }}
+                />
+              }
+            />
+          ))}
         </Box>
-      </LocalizationProvider>
+
+      </LandingSection>
       
 
       {/* Metric toggles */}
-      <Box sx={{display: 'flex', mb: 2.5, flexDirection: 'column' }}>
-        {METRIC_CFG.filter(c => c.key !== 'vehicles').map(({ key, label, color }) => (
-          <FormControlLabel
-            key={key}
-            label={label}
-            control={
-              <Checkbox
-                checked={isOn(key)}
-                onChange={(e) =>
-                  setSelectedMetrics(prev =>
-                    e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
-                  )
-                }
-                sx={{
-                  color,
-                  '&.Mui-checked': { color: '#161b4c' },
-                }}
-              />
-            }
-          />
-        ))}
-      </Box>
 
       {/* ====== Timeline ===== */}
-      <Box ref={chartContainerRef}
-        sx={{
-          width: '100%',
-          bgcolor: '#fff',
-          borderRadius: '16px',
-          p: { xs: 2, sm: 3 },
-          boxSizing: 'border-box',
-        }}
-      >
-
-        {/* Stat cards */}
-        {/* {sortedData.length > 0 && selectedMetrics.length > 0 && (
-        <Box
+      
+      <LandingSection type="header" labelHeader="Timeline" canHide>
+        <Box ref={chartContainerRef}
           sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
-            gap: 1.5,
-            mb: 2.5,
+            width: '100%',
+            bgcolor: '#fff',
+            borderRadius: '16px',
+            p: { xs: 2, sm: 3 },
+            boxSizing: 'border-box',
           }}
         >
-          {METRIC_CFG.map(({ key, label, color }) => {
-            const s = statistics[key as MetricKey];
-            if (!s || s.mean == null) return null;
-            const isVisible = key === 'vehicles' || isOn(key);
-            if (!isVisible) return null;
 
-            return (
-              <Box
-                key={key}
-                sx={{
-                  p: 1.5,
-                  borderRadius: '12px',
-                  border: `1.5px solid ${color}40`,
-                  bgcolor: `${color}08`,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color }} />
-                  <Typography variant="caption" sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#1d1f3f' }}>
-                    {label}
-                  </Typography>
+          {/* Stat cards */}
+          {/* {sortedData.length > 0 && selectedMetrics.length > 0 && (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
+              gap: 1.5,
+              mb: 2.5,
+            }}
+          >
+            {METRIC_CFG.map(({ key, label, color }) => {
+              const s = statistics[key as MetricKey];
+              if (!s || s.mean == null) return null;
+              const isVisible = key === 'vehicles' || isOn(key);
+              if (!isVisible) return null;
+
+              return (
+                <Box
+                  key={key}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: '12px',
+                    border: `1.5px solid ${color}40`,
+                    bgcolor: `${color}08`,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color }} />
+                    <Typography variant="caption" sx={{ fontSize: '0.85rem', fontWeight: 700, color: '#1d1f3f' }}>
+                      {label}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-between', alignItems: 'center' }}>
+                    {([
+                      ['Mean (Vehicles)', (Math.floor(s.mean)).toFixed(0)],
+                      ['Std (Vehicles)', `\u00B1${(Math.ceil(s.std!)).toFixed(0)}`],
+                      ['Range', `${s.min} - ${s.max}`],
+                    ] as [string, string | number][]).map(([lbl, val]) => (
+                      <Box key={lbl}>
+                        <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>{lbl}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{val}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-between', alignItems: 'center' }}>
-                  {([
-                    ['Mean (Vehicles)', (Math.floor(s.mean)).toFixed(0)],
-                    ['Std (Vehicles)', `\u00B1${(Math.ceil(s.std!)).toFixed(0)}`],
-                    ['Range', `${s.min} - ${s.max}`],
-                  ] as [string, string | number][]).map(([lbl, val]) => (
-                    <Box key={lbl}>
-                      <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>{lbl}</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{val}</Typography>
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
-            );
-          })}
-        </Box>
-      )} */}
-
-        {/* ===== Chart Area ===== */}
-        <Box sx={{ mt: 2 }}>
-
-          {/* ---------- States ---------- */}
-          {loading && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8, gap: 1.5 }}>
-              <CircularProgress size={32} sx={{ color: '#1d1f3f' }} />
-              <Typography variant="body2" color="text.secondary">
-                Loading timeline data…
-              </Typography>
-            </Box>
-          )}
-
-          {/* {noCameras && !loading && (
-          <Box sx={{ textAlign: 'center', py: 8 }}>
-            <Typography variant="body2" color="text.secondary">
-              Select cameras on the map to view behavior data.
-            </Typography>
-          </Box>
-        )}
-
-        {noData && !noCameras && !error && (
-          <Box sx={{ textAlign: 'center', py: 8 }}>
-            <Typography variant="body2" color="text.secondary">
-              No video data found for the selected cameras and date range.
-            </Typography>
+              );
+            })}
           </Box>
         )} */}
 
-          {error && (
+        {/* ===== Chart Area ===== */}
+          <Box sx={{ mt: 2 }}>
+
+            {/* ---------- States ---------- */}
+            {loading && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8, gap: 1.5 }}>
+                <CircularProgress size={32} sx={{ color: '#1d1f3f' }} />
+                <Typography variant="body2" color="text.secondary">
+                  Loading timeline data…
+                </Typography>
+              </Box>
+            )}
+
+            {/* {noCameras && !loading && (
             <Box sx={{ textAlign: 'center', py: 8 }}>
-              <Typography variant="body2" color="error">
-                {error}
+              <Typography variant="body2" color="text.secondary">
+                Select cameras on the map to view behavior data.
               </Typography>
             </Box>
           )}
 
-          {/* ---------- Charts ---------- */}
-          {!loading && sortedData.length > 0 && (
-
-            <Box
-              sx={{
-                width: '100%'
-              }}
-            >
-              <BarChart
-                width={chartWidth}
-                layout="horizontal"
-                height={Math.max(300, sortedData.length * 52)}
-                yAxis={[{
-                  data: sortedData.map(d =>
-                    d.date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
-                  ),
-                  scaleType: 'band',
-                }]}
-                xAxis={[{ label: 'Cases' }]}
-                series={[
-                  ...(isOn('speeding') ? [{
-                    id: 'sp',
-                    data: sortedData.map(d => d.speeding ?? 0),
-                    label: 'Speeding',
-                    color: '#ef5350',
-                    stack: 'adb',
-                    valueFormatter: (v: number) => `${v} vehicles`,
-                  }] : []),
-                  ...(isOn('swerving') ? [{
-                    id: 'sw',
-                    data: sortedData.map(d => d.swerving ?? 0),
-                    label: 'Swerving',
-                    color: '#66bb6a',
-                    stack: 'adb',
-                    valueFormatter: (v: number) => `${v} vehicles`,
-                  }] : []),
-                  ...(isOn('abruptStop') ? [{
-                    id: 'as',
-                    data: sortedData.map(d => d.abruptStop ?? 0),
-                    label: 'Abrupt Stop',
-                    color: '#7e57c2',
-                    stack: 'adb',
-                    valueFormatter: (v: number) => `${v} vehicles`,
-                  }] : []),
-                ]}
-                margin={{ left: 72, right: 24, top: 8, bottom: 40 }}
-                sx={{
-                  '& .MuiChartsAxis-tickLabel': {
-                    fontFamily: 'inherit',
-                    fontSize: '0.75rem',
-                  },
-                }}
-              />
+          {noData && !noCameras && !error && (
+            <Box sx={{ textAlign: 'center', py: 8 }}>
+              <Typography variant="body2" color="text.secondary">
+                No video data found for the selected cameras and date range.
+              </Typography>
             </Box>
-          )}
+          )} */}
+
+            {error && (
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <Typography variant="body2" color="error">
+                  {error}
+                </Typography>
+              </Box>
+            )}
+
+            {/* ---------- Charts ---------- */}
+            {!loading && sortedData.length > 0 && (
+
+              <Box
+                sx={{
+                  width: '100%'
+                }}
+              >
+                <BarChart
+                  width={chartWidth}
+                  layout="horizontal"
+                  height={Math.max(300, sortedData.length * 52)}
+                  yAxis={[{
+                    data: sortedData.map(d =>
+                      d.date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
+                    ),
+                    scaleType: 'band',
+                  }]}
+                  xAxis={[{ label: 'Cases' }]}
+                  series={[
+                    ...(isOn('speeding') ? [{
+                      id: 'sp',
+                      data: sortedData.map(d => d.speeding ?? 0),
+                      label: 'Speeding',
+                      color: '#ef5350',
+                      stack: 'adb',
+                      valueFormatter: (v: number) => `${v} vehicles`,
+                    }] : []),
+                    ...(isOn('swerving') ? [{
+                      id: 'sw',
+                      data: sortedData.map(d => d.swerving ?? 0),
+                      label: 'Swerving',
+                      color: '#66bb6a',
+                      stack: 'adb',
+                      valueFormatter: (v: number) => `${v} vehicles`,
+                    }] : []),
+                    ...(isOn('abruptStop') ? [{
+                      id: 'as',
+                      data: sortedData.map(d => d.abruptStop ?? 0),
+                      label: 'Abrupt Stop',
+                      color: '#7e57c2',
+                      stack: 'adb',
+                      valueFormatter: (v: number) => `${v} vehicles`,
+                    }] : []),
+                  ]}
+                  margin={{ left: 72, right: 24, top: 8, bottom: 40 }}
+                  sx={{
+                    '& .MuiChartsAxis-tickLabel': {
+                      fontFamily: 'inherit',
+                      fontSize: '0.75rem',
+                    },
+                  }}
+                />
+              </Box>
+            )}
+          </Box>
         </Box>
-      </Box>
+      </LandingSection>
     </>
   );
 }
