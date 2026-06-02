@@ -145,45 +145,37 @@ export function convertObjectToAreaSummary(obj: any, additional?: any) {
 	} as AOISummary
 }
 
-/*
-export function convertObjectToSummary(type: SummaryType, obj: any, additional?: any) {
-	// fill in initial data
-	let res = {
-		summary_type: type,
-		lat: obj.lat ?? additional.lat ?? 0,
-		lng: obj.lng ?? additional.lng ?? 0,
-		vehicles: 0,
-		adb: 0,
-		speeding: 0,
-		swerving: 0,
-		abrupt_stopping: 0,
-		...obj
-	} as LocationSummary;
-	
-	switch (type) {
-		case "area":
-			return {
-				...default_values,
-				...obj, ...res, ...additional,
-				location: undefined,
-			} as AOISummary
-			break;
 
-		case "subarea":
-			return {
-				...obj, ...res, ...additional,
-				tags: obj.tags ?? [],
-                sub_area_type: obj.sub_area_type as SubAreaType | null,
-			} as SubAreaSummary
-			break;
 
-		case "camera":
-			return {
-				...obj, ...res, ...additional
-			} as CameraSummary
-			break;
-	}
+export type VideoSummary = {
+	summaryType: "video"
+	id: number;
+	camera: number;
+	filename?: string;
+	file_size_mb?: number;
+	duration_seconds: number;
+	fps?: number;
+	resolution: string;
+	thumbnail: string;
 
-	return res;
+	behaviors?: string[];
+	vehicles?: number;
+	occurrences?: number;
+	speeding_count?: number;
+	swerving_count?: number;
+	abrupt_stopping_count?: number;
+
+	// signs?: number; // TODO
+	jeepney_hotspot?: boolean;
+	uploaded_at: Date;
+	vehicle_breakdown: VehicleBreakdown;
 }
-	*/
+
+export function convertObjectToVideoSummary(obj: any, additional?: any) {
+	return {
+		summaryType: "video",
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
+		...obj, ...additional,
+		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
+	} as VideoSummary
+}

@@ -16,7 +16,8 @@ import {
     SubAreaType, 
     LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
     isAreaSummary, isSubareaSummary, isCameraSummary,
-    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary
+    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
+    VideoSummary, convertObjectToVideoSummary,
 } from "@/components/landing/summaryTypes"
 
 // icons
@@ -31,6 +32,7 @@ import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
+import UploadIcon from '@mui/icons-material/Upload';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // css
@@ -43,29 +45,12 @@ export type SideMenuUpdater = {
     addSubarea: (sub: SubAreaSummary) => void;
 };
 
-// definition of types for the props for MenuBar
-interface SideMenuProps {
-    onAddArea?: () => void;                                // triggers when the user clicks the "add area" button
-    onSelectSubarea?: (subareaId: number) => void;         // triggers when the user selects a subarea
-    refreshTrigger?: number;                               // increment to re-fetch the AOI list
-    isDrawingAOI?: boolean;                                // true while the user is drawing an AOI on the map
-    onAoiHover?: (id: number | null) => void;              // called with AOI id on hover, null on leave
-    onAoiClick?: (id: number) => void;                     // called when an AOI card is clicked — opens edit/delete dialog
-    onAoiEnter?: (aoi: AOISummary) => void;                // called when the arrow button is clicked — zooms map to AOI
-    onAoiBack?: () => void;                                // called when the user navigates back from an AOI detail view
-    onAddSubarea?: (type: SubAreaType) => void;            // called when + in any segment section is clicked
-    isDrawingSubarea?: SubAreaType | false;                // which sub-area type is currently being drawn
-    onSubareaHover?: (id: number | null) => void;          // called with sub-area id on hover, null on leave
-    onSubareaClick?: (id: number, name: string) => void;   // called when a road segment card body is clicked — opens edit/delete dialog
-    onMount?: (updater: SideMenuUpdater) => void;          // provides direct update fns to avoid full refetch on edit/delete
-}
-
 // displays a single AOI card
 function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: () => void; onEditClick?: () => void }) {
    const details = convertObjectToAreaSummary(aoi);
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+        <Box>
             <LocationCard
                 type="area"
                 locationDetails={details}
@@ -125,6 +110,19 @@ function cameraListItem({ camera, onNavigateCamera, onCameraHover, onCameraClick
     )
 }
 
+// puts out a percentage as a string value
+const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
+
+// displays the back button for a menu
+function BackButton({onBack, label} : {onBack: () => void, label: string}) {
+    return <div className="backButtonContainer">
+        <IconButton onClick={onBack}> <ChevronLeftIcon /> </IconButton>
+        Back to {label}
+    </div>
+}
+
+
+
 
 
 // displays the sidebar for all AOIs
@@ -176,9 +174,6 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, onAoiHover, onAoiClick, h
     )
 }
 
-// puts out a percentage as a string value
-const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
-
 
 
 // displays the sidebar for a selected AOI (name, loc, stats, subareas)
@@ -198,13 +193,9 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
     const junctions = aoi.subareas?.filter((s) => s.sub_area_type === "junction") ?? [];
 
     return (
-        <Box sx={{ width: "100%", display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-
+        <Box className="menuContainer main">
             {/* back button */}
-            <div className="backButtonContainer">
-                <IconButton onClick={onBack}> <ChevronLeftIcon /> </IconButton>
-                Back to all AOIs
-            </div>
+            <BackButton onBack={onBack} label="all areas"/>
 
             { /* title, with edit name functions */ }
             <LandingSection type="title" labelHeader={ aoi.name } labelSubheader={ aoi.location } icon={ <EditIcon /> } onClickIcon={ () => { alert("[TODO: Edit this section]") } } />
@@ -305,7 +296,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
 }
 
 // displays the sidebar for a certain subarea
-function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, onCameraHover, onCameraClick } : {
+function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, onCameraHover, onCameraClick, parentName } : {
     subarea: SubAreaSummary,
     detailLoading?: boolean,
     onBack: () => void;
@@ -313,14 +304,13 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
     onNavigateCamera?: (camera: CameraSummary) => void;
     onCameraHover?: (id: number | null) => void;
     onCameraClick?: (id: number, name: string) => void;
+
+    parentName: string,
 }) {
     return (
-        <Box sx={{ width: "100%", display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+        <Box className="menuContainer main">
             {/* back button */}
-            <div className="backButtonContainer">
-                <IconButton onClick={onBack}> <ChevronLeftIcon /> </IconButton>
-                Back to all AOIs
-            </div>
+            <BackButton onBack={onBack} label={parentName}/>
             
             { /* title, with edit name functions */ }
             <LandingSection
@@ -332,7 +322,6 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
 
             { /* overview – basic statistics */ }
             <LandingSection type="header" labelHeader="Overview" canHide startHidden>
-                {/*
                 <LandingSection type="subheader" labelHeader="Total vehicle count">
                     {detailLoading ? (
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
@@ -347,8 +336,6 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
                         />
                     )}
                 </LandingSection>
-                */}
-
 
                 <LandingSection type="subheader" labelHeader="ADB statistics">
                     { detailLoading ? (
@@ -372,6 +359,7 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
                 type="header"
                 labelHeader="Cameras"
                 chipCount={subarea.camera_count}
+                labelSubheader={ subarea.location }
                 canHide
 
                 canAdd
@@ -389,13 +377,160 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
     )
 }
 
+function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo} : {
+    camera: CameraSummary,              // summary objecet for this camera
+    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
+    videosLoading?: boolean,            // whether videos are still being loaded
+    videosError?: boolean,              // whether video loading have posted an error
+    thumbnail?: string;                 // the thumbnail to display
+    onClickUploadVideo?: () => void,    // event to trigger when user clicks on Upload Video button
+}) {
+    return (
+        <div className="menuContainer">
+            { /* thumbnail */ }
+            <div className="thumbnail">
+                { videosError && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
+                { !videosError && videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
+                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail == undefined || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
+                { !videosError && !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
+                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail != undefined && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
+            </div>
+
+            <LandingSection type="header"
+                labelHeader="Videos"
+                chipCount={ !videosLoading && !videosError ? ( loadedVideos.length ) : (0) }
+                canHide
+
+                icon={ <UploadIcon /> }
+                onClickIcon={ onClickUploadVideo }
+            >
+                { /* TODO video table */ }
+            </LandingSection>
+        </div>
+    )
+}
+
+function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading} : {
+    camera: CameraSummary,              // summary objecet for this camera
+    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
+    videosLoading?: boolean,            // whether videos are still being loaded
+    videosError?: boolean,              // whether video loading have posted an error
+}) {
+    return (
+        <div className="menuContainer">
+            Statistics
+        </div>
+    )
+}
+
+// displays the sidebar for a certain camera
+function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo} : {
+    camera: CameraSummary,
+    detailLoading?: boolean,
+    onBack: () => void;
+
+    parentName: string;
+    onClickUploadVideo?: () => void
+}) {
+    const [videosLoading, setVideosLoading] = useState<boolean>(true);
+    const [videosError, setVideosError] = useState<boolean>(false);
+    const [loadedVideos, setLoadedVideos] = useState<VideoSummary[]>()
+    const [thumbnail, setThumbnail] = useState<string | undefined>(undefined)
+    const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
+    
+    // get a video from the api
+    useEffect(() => {
+        const fetchVideos = async () => {
+            try {
+                const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camera.id}/videos/`);
+                if (!response.ok) { setVideosLoading(false); setVideosError(true); } // quickfail
+                const data = await response.json();
+
+                // convert everything to a VideoSummary
+                const allVideos: VideoSummary[] = data.videos
+                    .map((v) => ( convertObjectToVideoSummary(v) ))
+                    .sort((a: VideoSummary, b: VideoSummary) => { a.uploaded_at < b.uploaded_at ? 1 : a.uploaded_at > b.uploaded_at ? -1 : 0  });
+
+                // set our data
+                setLoadedVideos(allVideos);
+                setThumbnail(allVideos.length > 0 ? allVideos[0].thumbnail : "");
+                setVideosLoading(false);
+            } catch(e) {
+                // error handler — notify immediately and clean up
+                setVideosLoading(false);
+                setVideosError(true);
+            }
+        }
+
+        fetchVideos();
+    }, [camera])
+
+    // display page here
+    return (
+        <Box className="menuContainer main">
+            {/* back button */}
+            <BackButton onBack={onBack} label={parentName}/>
+
+            { /* title, with edit name functions */ }
+            <LandingSection
+                type="title"
+                labelHeader={ camera.name }
+                labelSubheader={ camera.location }
+                icon={ <EditIcon /> }
+                onClickIcon={ () => { alert("[TODO: Edit this section]") } }
+            />
+
+            {activeTab == "feed" && (<CameraFeedMenu
+                camera={camera} loadedVideos={loadedVideos}
+                videosLoading={videosLoading} videosError={videosError} thumbnail={thumbnail}
+                onClickUploadVideo={onClickUploadVideo}
+            />)}
+
+            {activeTab == "statistics" && (<CameraStatisticsMenu
+                camera={camera} loadedVideos={loadedVideos}
+                videosLoading={videosLoading} videosError={videosError}
+            />)}
+        </Box>
+    )
+}
 
 
 
 
+
+
+// definition of types for the props for MenuBar
+interface SideMenuProps {
+    refreshTrigger?: number;                                // increment to re-fetch the AOI list
+    onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
+
+    onAoiHover?: (id: number | null) => void;               // called with AOI id on hover, null on leave
+    onAoiClick?: (id: number) => void;                      // called when an AOI card is clicked — opens edit/delete dialog
+    onAoiEnter?: (aoi: AOISummary) => void;                 // called when the arrow button is clicked — zooms map to AOI
+    onAoiBack?: () => void;                                 // called when the user navigates back from an AOI detail view
+    onAddArea?: () => void;                                 // triggers when the user clicks the "add area" button
+    isDrawingAOI?: boolean;                                 // true while the user is drawing an AOI on the map
+
+    onSelectSubarea?: (subareaId: number) => void;          // triggers when the user selects a subarea
+    onSubareaHover?: (id: number | null) => void;           // called with sub-area id on hover, null on leave
+    onSubareaClick?: (id: number, name: string) => void;    // called when a road segment card body is clicked — opens edit/delete dialog
+    onAddSubarea?: (type: SubAreaType) => void;             // called when + in any segment section is clicked
+    isDrawingSubarea?: SubAreaType | false;                 // which sub-area type is currently being drawn
+
+    onCameraClick?: (id: number) => void;                   // called when a camera card is clicked — opens edit/delete dialog
+    onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
+    onAddCamera?: () => void;                               // called when + in the camera section is clicked
+    isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
+}
 
 // handles a general function for the side menu
-export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount }: SideMenuProps) {
+export default function SideMenu({
+    onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, isDrawingAOI = false,
+    onSelectSubarea, onSubareaHover, onSubareaClick, onAddSubarea, isDrawingSubarea = false,
+    onCameraClick, onCameraEnter, onAddCamera, isDrawingCamera,
+    onMount, refreshTrigger, 
+    // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
+}: SideMenuProps) {
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
     // list of all AOIs; ontaining a list of all subareas and cameras by parent
@@ -551,6 +686,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
     const handleSelectCard = ( item: AOISummary | SubAreaSummary | CameraSummary ) => {
         if (isCameraSummary(item)) {
             // for cameras
+            setSelectedCamera(item);
         } else if (isSubareaSummary(item)) {
             // for subareas
             onSelectSubarea?.(item.id);
@@ -568,7 +704,11 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
 
     // triggers when user presses a back button
     const handleBack = () => {
-        if (selectedSubarea !== null) {
+        if (selectedCamera !== null) {
+            onAoiBack?.();
+            setSelectedCamera(null);
+        }
+        else if (selectedSubarea !== null) {
             onAoiBack?.();
             setSelectedSubarea(null)
         } else if (selectedAOI !== null) {
@@ -622,16 +762,26 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                     "&::-webkit-scrollbar-thumb": { bgcolor: "#c5c7d8", borderRadius: 4 },
                 }}
             >
+                {selectedCamera && (
+                    <CameraDetailMenu
+                        camera={selectedCamera}
+                        detailLoading={detailLoading}
+                        onBack={handleBack}
+                        parentName={selectedSubarea.name}
+                    />
+                )}
                 
-                { selectedSubarea && (
+                { !selectedCamera && selectedSubarea && (
                     <SubareaDetailMenu
                         subarea={selectedSubarea}
                         detailLoading={detailLoading}
                         onBack={handleBack}
+                        onNavigateCamera={handleSelectCard}
+                        parentName={selectedAOI.name}
                     />
                 )}
 
-                { !selectedSubarea && selectedAOI && (
+                { !selectedCamera && !selectedSubarea && selectedAOI && (
                     // AOI detail – if an AOI is currently selected
                     <AoiDetailMenu
                         aoi={selectedAOI}
@@ -645,7 +795,7 @@ export default function SideMenu({ onAddArea, onSelectSubarea, refreshTrigger, i
                     />
                 )}
 
-                { !selectedSubarea && !selectedAOI && (
+                { !selectedCamera && !selectedSubarea && !selectedAOI && (
                     // main menu – list of all AOIs
                     // Panel 1: AOI list
                     <AllAoiMenu

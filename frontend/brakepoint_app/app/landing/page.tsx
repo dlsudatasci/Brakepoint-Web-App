@@ -304,7 +304,8 @@ export default function LandingPage() {
     }
   };
 
-  const handleAoiEnter = useCallback(async (aoi: { id: number }) => {    const aoiData = aoiItems.find((a) => a.id === aoi.id);
+  const handleAoiEnter = useCallback(async (aoi: { id: number }) => {
+    const aoiData = aoiItems.find((a) => a.id === aoi.id);
     if (!aoiData || aoiData.ring.length < 3) return;
 
     const lngs = aoiData.ring.map((p) => p[0]);
@@ -435,18 +436,25 @@ export default function LandingPage() {
       {/* SideMenu */}
       <Box sx={{ position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 10, overflowY: "auto" }}>
         <SideMenu
-          onAddArea={() => setIsDrawing((d) => !d)}
-          isDrawingAOI={isDrawing}
+          refreshTrigger={sideMenuTrigger}
+          onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
+
           onAoiHover={(id) => setHoveredAoiId(id)}
           onAoiClick={handleAoiClick}
-          refreshTrigger={sideMenuTrigger}
           onAoiEnter={handleAoiEnter}
           onAoiBack={handleAoiBack}
-          onAddSubarea={handleAddSubarea}
-          isDrawingSubarea={isDrawingSubarea}
+          onAddArea={() => setIsDrawing((d) => !d)}
+          isDrawingAOI={isDrawing}
+
           onSubareaHover={(id) => setHoveredSubAreaId(id)}
           onSubareaClick={handleSubareaClick}
-          onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
+          onAddSubarea={handleAddSubarea}
+          isDrawingSubarea={isDrawingSubarea}
+
+          onCameraClick={() => {}}
+          onCameraEnter={() => {}}
+          onAddCamera={() => {}}
+          isDrawingCamera={false}
         />
       </Box>
 
