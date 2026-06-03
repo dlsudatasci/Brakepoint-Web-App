@@ -18,7 +18,8 @@ import {
     isAreaSummary, isSubareaSummary, isCameraSummary,
     convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
     VideoSummary, convertObjectToVideoSummary,
-} from "@/components/landing/summaryTypes"
+} from "@/components/landing/summaryTypes";
+import CameraTags from "@/components/ui/cameraTags";
 
 // icons
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -396,6 +397,8 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 { !videosError && !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
                 { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail != undefined && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
             </div>
+
+            <CameraTags cameraId={camera.id} />
 
             <LandingSection type="header"
                 labelHeader="Videos"
