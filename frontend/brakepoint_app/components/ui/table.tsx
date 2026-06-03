@@ -1,14 +1,26 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DataGrid, GridColDef, Toolbar, ToolbarButton } from '@mui/x-data-grid';
 import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, Snackbar, Alert } from '@mui/material';
 
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import TuneIcon from '@mui/icons-material/Tune';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
+import SwapCallsIcon from '@mui/icons-material/SwapCalls';
+import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
+
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs, { Dayjs } from 'dayjs';
 
 import './table.css';
 import { authFetch } from '@/lib/authFetch';
@@ -71,15 +83,6 @@ function transformPoint(H: number[][], p: {x:number,y:number}): {x:number,y:numb
   };
 }
 
-interface ToolbarProps {
-  title? : string;
-  onAdd: () => void;
-  onEdit: () => void;
-  onEditCalibration: () => void;
-  onDelete: () => void;
-  hasSelection: boolean;
-}
-
 interface TableProps {
   onVideoFileSelect: (url: string, thumbnail?: string) => void;
   hideUpload?: boolean;
@@ -92,6 +95,7 @@ interface TableProps {
   onVideoSelect?: (videoData: any) => void;
   onMultipleVideoSelect?: (videoDataArray: any[]) => void;
 }
+
 interface AddModalProps {
   open: boolean;
   onClose: () => void;
@@ -113,6 +117,16 @@ interface AddModalProps {
   editVideoId?: number | null;
   initialThumbnail?: string | null;
 }
+
+interface EditModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (videoId: number, newName: string) => void;
+  videoId: number | null;
+  currentName: string;
+}
+
+// ─── AddModal (unchanged from original) ──────────────────────────────────────
 
 function AddModal({ open, onClose, onSubmit, onVideoFileSelect, cameraId, onUploadComplete, onUploadStart, onProcessingStart, onProcessingComplete, initialCalibrationPoints, initialReferencePoints, initialReferenceDistance, editVideoId, initialThumbnail }: AddModalProps) {
   const [video_name, setVideoName] = React.useState('');
@@ -162,49 +176,42 @@ function AddModal({ open, onClose, onSubmit, onVideoFileSelect, cameraId, onUplo
   }, [open]);
 
   // Load thumbnail when editing (but start with empty points for fresh calibration)
-React.useEffect(() => {
-  if (!open) return;
-
-  // In edit mode, show calibration UI but start with empty points
-  if (isEditMode) {
-    setShowCalibration(true);
-  }
-}, [open, isEditMode]);
-
-// Load thumbnail as frame when editing calibration
-React.useEffect(() => {
-  if (!open) return;
-  if (!editVideoId) return;
-  if (!initialThumbnail) return;
-
-  setShowCalibration(true);
-  setVideoUrl(initialThumbnail);
-
-  // draw thumbnail onto canvas once loaded
-  const img = new Image();
-  img.src = initialThumbnail;
-  img.onload = () => {
-    thumbnailImageRef.current = img;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    canvas.width = img.width;
-    canvas.height = img.height;
-
-    setVideoDimensions({ width: img.width, height: img.height });
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(img, 0, 0);
+  React.useEffect(() => {
+    if (!open) return;
+    if (isEditMode) {
+      setShowCalibration(true);
     }
-  };
-}, [open, editVideoId, initialThumbnail]);
+  }, [open, isEditMode]);
+
+  // Load thumbnail as frame when editing calibration
+  React.useEffect(() => {
+    if (!open) return;
+    if (!editVideoId) return;
+    if (!initialThumbnail) return;
+
+    setShowCalibration(true);
+    setVideoUrl(initialThumbnail);
+
+    const img = new Image();
+    img.src = initialThumbnail;
+    img.onload = () => {
+      thumbnailImageRef.current = img;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      setVideoDimensions({ width: img.width, height: img.height });
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+      }
+    };
+  }, [open, editVideoId, initialThumbnail]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
-
       if (selected.type.startsWith('video/')) {
         const url = URL.createObjectURL(selected);
         setVideoUrl(url);
@@ -223,12 +230,9 @@ React.useEffect(() => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      
       setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
-      
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      
       video.currentTime = 0.1;
     }
   };
@@ -238,16 +242,11 @@ React.useEffect(() => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
-      
       if (ctx && video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // In upload mode, capture this frame as thumbnail for later use
         if (!isEditMode) {
           const thumbnailDataUrl = canvas.toDataURL('image/png');
           setUploadThumbnail(thumbnailDataUrl);
-          
-          // Load into thumbnailImageRef for calibration display
           const img = new Image();
           img.src = thumbnailDataUrl;
           img.onload = () => {
@@ -258,13 +257,11 @@ React.useEffect(() => {
     }
   };
 
-  // Compute perspective warp of video frame using 4 calibration points
   const computeWarp = (srcPoints: {x:number,y:number}[]) => {
     let sourceImage: HTMLImageElement | HTMLVideoElement | null = null;
     let sourceWidth = 0;
     let sourceHeight = 0;
 
-    // In edit mode, use thumbnail; in upload mode, use video
     if (isEditMode && thumbnailImageRef.current) {
       sourceImage = thumbnailImageRef.current;
       sourceWidth = thumbnailImageRef.current.width;
@@ -277,7 +274,6 @@ React.useEffect(() => {
       sourceHeight = video.videoHeight;
     }
 
-    // Compute destination rectangle (same math as backend)
     const w = Math.max(
       Math.hypot(srcPoints[1].x - srcPoints[0].x, srcPoints[1].y - srcPoints[0].y),
       Math.hypot(srcPoints[2].x - srcPoints[3].x, srcPoints[2].y - srcPoints[3].y)
@@ -297,7 +293,6 @@ React.useEffect(() => {
     const H = computeHomography(srcPoints, dstPoints);
     const H_inv = invertMatrix3x3(H);
 
-    // Get source pixels from image/video frame
     const srcCanvas = document.createElement('canvas');
     srcCanvas.width = sourceWidth;
     srcCanvas.height = sourceHeight;
@@ -308,7 +303,6 @@ React.useEffect(() => {
     const srcW = srcImg.width;
     const srcH = srcImg.height;
 
-    // Create warped image via inverse mapping
     const warpCanvas = document.createElement('canvas');
     warpCanvas.width = dstW;
     warpCanvas.height = dstH;
@@ -343,7 +337,6 @@ React.useEffect(() => {
     setPan({x: 0, y: 0});
   };
 
-  // Redraw warped frame when entering reference step
   React.useEffect(() => {
     if (showReferenceStep && warpedCanvasRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -371,7 +364,6 @@ React.useEffect(() => {
     const x = (canvasX - pan.x) / zoom;
     const y = (canvasY - pan.y) / zoom;
 
-    // Step 1: Select 4 calibration points for perspective transform
     if (!showReferenceStep && calibrationPoints.length < 4) {
       const maxExtrapolation = Math.max(canvas.width, canvas.height) * 0.5;
       const isExtremePoint = 
@@ -390,14 +382,12 @@ React.useEffect(() => {
       setCalibrationPoints(newPoints);
       drawPoints(newPoints, referencePoints);
       
-      // Move to reference point selection — show bird's-eye view
       if (newPoints.length === 4) {
         computeWarp(newPoints);
       }
       return;
     }
 
-    // Step 2: Select 2 reference points for scale calculation
     if (showReferenceStep && referencePoints.length < 2) {
       const newPoints = [...referencePoints, { x, y }];
       setReferencePoints(newPoints);
@@ -411,7 +401,6 @@ React.useEffect(() => {
       setCalibrationPoints(newPoints);
       drawPoints(newPoints, referencePoints);
       setPendingPoint(null);
-      // Move to reference point selection if 4th point was extreme
       if (newPoints.length === 4) {
         computeWarp(newPoints);
       }
@@ -445,7 +434,6 @@ React.useEffect(() => {
       return;
     }
 
-    // Show crosshairs when adding points
     const needsMorePoints = (!showReferenceStep && calibrationPoints.length < 4) || 
                             (showReferenceStep && referencePoints.length < 2);
     
@@ -458,7 +446,7 @@ React.useEffect(() => {
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button === 2 || e.shiftKey) { // Right click or Shift + Left click
+    if (e.button === 2 || e.shiftKey) {
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -528,27 +516,22 @@ React.useEffect(() => {
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
     
-    // Draw warped bird's-eye view in reference step, original frame otherwise
     if (showReferenceStep && warpedCanvasRef.current) {
       ctx.drawImage(warpedCanvasRef.current, 0, 0, canvas.width, canvas.height);
     } else if (thumbnailImageRef.current) {
-      // Use cached thumbnail (both edit and upload modes)
       ctx.drawImage(thumbnailImageRef.current, 0, 0, canvas.width, canvas.height);
     } else {
-      // Fallback to video frame if thumbnail not yet loaded
       const video = videoRef.current;
       if (video) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
     }
 
-    // Draw guide lines and preview connections
     if (cursorPos) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.lineWidth = 3 / zoom;
       ctx.setLineDash([5 / zoom, 5 / zoom]);
       
-      // Crosshair lines
       ctx.beginPath();
       ctx.moveTo(cursorPos.x, 0);
       ctx.lineTo(cursorPos.x, canvas.height);
@@ -559,19 +542,16 @@ React.useEffect(() => {
       ctx.lineTo(canvas.width, cursorPos.y);
       ctx.stroke();
       
-      // Preview connection to previous point(s)
       if (!showReferenceStep && fourPoints.length > 0 && fourPoints.length < 4) {
         ctx.strokeStyle = 'rgba(22, 27, 76, 0.6)';
         ctx.lineWidth = 3 / zoom;
         ctx.setLineDash([10 / zoom, 5 / zoom]);
         
-        // Draw line from last point to cursor
         ctx.beginPath();
         ctx.moveTo(fourPoints[fourPoints.length - 1].x, fourPoints[fourPoints.length - 1].y);
         ctx.lineTo(cursorPos.x, cursorPos.y);
         ctx.stroke();
         
-        // If 3 points exist, show preview of closing line
         if (fourPoints.length === 3) {
           ctx.strokeStyle = 'rgba(22, 27, 76, 0.3)';
           ctx.setLineDash([5 / zoom, 10 / zoom]);
@@ -582,7 +562,6 @@ React.useEffect(() => {
         }
       }
       
-      // Preview reference line
       if (showReferenceStep && twoPoints.length === 1) {
         ctx.strokeStyle = 'rgba(76, 175, 80, 0.6)';
         ctx.lineWidth = 4 / zoom;
@@ -596,7 +575,6 @@ React.useEffect(() => {
       ctx.setLineDash([]);
     }
 
-    // Draw 4-point calibration polygon (only in step 1 — original frame)
     if (!showReferenceStep && fourPoints.length > 0) {
       if (fourPoints.length === 4) {
         ctx.fillStyle = 'rgba(22, 27, 76, 0.3)';
@@ -610,19 +588,16 @@ React.useEffect(() => {
       }
 
       fourPoints.forEach((point, index) => {
-        // Outer ring
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 3 / zoom;
         ctx.beginPath();
         ctx.arc(point.x, point.y, 14 / zoom, 0, 2 * Math.PI);
         ctx.stroke();
-        // Inner filled circle
         ctx.fillStyle = '#161b4cff';
         ctx.beginPath();
         ctx.arc(point.x, point.y, 12 / zoom, 0, 2 * Math.PI);
         ctx.fill();
         
-        // Label with background
         const label = `${index + 1}`;
         ctx.font = `bold ${22 / zoom}px Arial`;
         const tw = ctx.measureText(label).width;
@@ -653,22 +628,18 @@ React.useEffect(() => {
       }
     }
 
-    // Draw 2-point reference line (on top of polygon)
     if (twoPoints.length > 0) {
       twoPoints.forEach((point, index) => {
-        // Outer ring
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 3 / zoom;
         ctx.beginPath();
         ctx.arc(point.x, point.y, 16 / zoom, 0, 2 * Math.PI);
         ctx.stroke();
-        // Inner filled circle
         ctx.fillStyle = '#4CAF50';
         ctx.beginPath();
         ctx.arc(point.x, point.y, 14 / zoom, 0, 2 * Math.PI);
         ctx.fill();
         
-        // Label with background
         const refLabel = `R${index + 1}`;
         ctx.font = `bold ${22 / zoom}px Arial`;
         const rtw = ctx.measureText(refLabel).width;
@@ -721,8 +692,6 @@ React.useEffect(() => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // In edit mode, redraw thumbnail
         if (isEditMode && thumbnailImageRef.current) {
           ctx.drawImage(thumbnailImageRef.current, 0, 0, canvas.width, canvas.height);
         } else if (videoRef.current && videoRef.current.readyState >= 2) {
@@ -800,9 +769,7 @@ React.useEffect(() => {
         console.log('[calibration-edit] Updating calibration for video', editVideoId);
         const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${editVideoId}/`, {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             calibration_points: calibrationPoints,
             reference_points: originalReferencePoints,
@@ -968,12 +935,7 @@ React.useEffect(() => {
 
             <Button variant="contained" component="label">
               Upload File
-              <input
-                type="file"
-                accept="video/*"
-                hidden
-                onChange={handleFileChange}
-              />
+              <input type="file" accept="video/*" hidden onChange={handleFileChange} />
             </Button>
           </>
         ) : (
@@ -1095,13 +1057,9 @@ React.useEffect(() => {
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} color="secondary">
-          Cancel
-        </Button>
+        <Button onClick={onClose} color="secondary">Cancel</Button>
         {showCalibration && (
-          <Button onClick={handleBackToUpload} color="secondary">
-            Back
-          </Button>
+          <Button onClick={handleBackToUpload} color="secondary">Back</Button>
         )}
         <Button 
           onClick={showCalibration ? handleSubmit : undefined} 
@@ -1136,9 +1094,7 @@ React.useEffect(() => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelExtremePoint} color="secondary">
-            Cancel
-          </Button>
+          <Button onClick={handleCancelExtremePoint} color="secondary">Cancel</Button>
           <Button onClick={handleConfirmExtremePoint} variant="contained" color="warning">
             Add Point Anyway
           </Button>
@@ -1148,13 +1104,7 @@ React.useEffect(() => {
   );
 }
 
-interface EditModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (videoId: number, newName: string) => void;
-  videoId: number | null;
-  currentName: string;
-}
+// ------ EditModal -------
 
 function EditModal({ open, onClose, onSubmit, videoId, currentName }: EditModalProps) {
   const [videoName, setVideoName] = React.useState(currentName);
@@ -1188,44 +1138,149 @@ function EditModal({ open, onClose, onSubmit, videoId, currentName }: EditModalP
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} color="secondary">
-          Cancel
-        </Button>
-        <Button onClick={handleSubmit} variant="contained" color="primary">
-          Save
-        </Button>
+        <Button onClick={onClose} color="secondary">Cancel</Button>
+        <Button onClick={handleSubmit} variant="contained" color="primary">Save</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-function CustomToolbar({ title, onAdd, onEdit, onEditCalibration, onDelete, hasSelection } : ToolbarProps) {
-  const [addModalOpen, setAddModalOpen] = useState(false);
+// ------ Calendar Helpers -------
+
+const HOUR_START = 1;
+const HOUR_END = 24;
+const HOUR_HEIGHT = 56; // px per hour
+
+function toDateKey(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+function addDays(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+
+function formatHourLabel(hour: number): string {
+  if (hour === 12) return '12:00n';
+  const suffix = hour < 12 ? 'a' : 'p';
+  const h = hour > 12 ? hour - 12 : hour;
+  return `${h}:00${suffix}`;
+}
+
+// Parse video row's uploaded_time into { dateKey, startHour }
+// uploaded_time is stored as new Date(video.uploaded_at).toLocaleString()
+// We re-parse via new Date() which handles locale strings reliably in the same browser
+function parseVideoTime(row: any): { dateKey: string; startHour: number } | null {
+  try {
+    const d = new Date(row.uploaded_time);
+    if (isNaN(d.getTime())) return null;
+    return {
+      dateKey: toDateKey(d),
+      startHour: d.getHours() + d.getMinutes() / 60,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseDurationSeconds(duration: string): number {
+  if (!duration || duration === 'N/A') return 0;
+  return parseInt(duration.replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+function formatBlockTimeRange(startHour: number, durationSeconds: number): string {
+  const fmt = (h: number) => {
+    const totalMinutes = Math.round(h * 60);
+    const hrs = Math.floor(totalMinutes / 60) % 24;
+    const mins = totalMinutes % 60;
+    const suffix = hrs < 12 ? 'am' : 'pm';
+    const displayH = hrs === 0 ? 12 : hrs > 12 ? hrs - 12 : hrs;
+    return `${String(displayH).padStart(2, '0')}:${String(mins).padStart(2, '0')}${suffix}`;
+  };
+  const endHour = startHour + durationSeconds / 3600;
+  return `${fmt(startHour)} – ${fmt(endHour)}`;
+}
+
+// --------- Calendar Card --------------
+
+function SessionBlock({
+  row,
+  startHour,
+  selected,
+  onClick,
+  onPlay,
+}: {
+  row: any;
+  startHour: number;
+  selected: boolean;
+  onClick: () => void;
+  onPlay: (e: React.MouseEvent) => void;
+}) {
+  const durationSecs = parseDurationSeconds(row.duration);
+  // minimum 45-min visual height so tiny clips are still readable
+  const durationHours = Math.max(durationSecs / 3600, 0.75);
+  const top = (startHour - HOUR_START) * HOUR_HEIGHT;
+  const height = durationHours * HOUR_HEIGHT;
+  const timeLabel = formatBlockTimeRange(startHour, durationSecs);
+
+  const statusColor =
+    row.status === 'completed'  ? '#4CAF50' :
+    row.status === 'failed'     ? '#f44336' :
+    row.status === 'processing' ? '#ff9800' : '#888';
 
   return (
-      <Toolbar>
-        <Typography fontWeight="medium" sx={{ flex: 1, mx: 0.5 }}>
-          {title}
-        </Typography>
-      
-        <ToolbarButton onClick={onAdd}>
-          <FileUploadIcon fontSize="small"/>
-        </ToolbarButton>
-        
-        <ToolbarButton onClick={onEditCalibration} disabled={!hasSelection} title="Edit Calibration">
-          <TuneIcon fontSize="small"/>
-        </ToolbarButton>
-        
-        <ToolbarButton onClick={onDelete} disabled={!hasSelection}>
-          <DeleteIcon fontSize="small"/>
-        </ToolbarButton>
+    <div
+      className={`cal-block${selected ? ' cal-block--selected' : ''}`}
+      style={{ top: `${top}px`, height: `${height}px` }}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+    >
+      <div className="cal-block__header">
+        <span className="cal-block__time">{timeLabel}</span>
+        <button className="cal-block__play" aria-label="Play video" onClick={onPlay}>
+          <PlayArrowIcon sx={{ fontSize: 13 }} />
+        </button>
+      </div>
 
-        <ToolbarButton onClick={onEdit} disabled={!hasSelection}>
-          <EditIcon fontSize="small"/>
-        </ToolbarButton>
-      </Toolbar>
-  )
+      <div className="cal-block__stats">
+        <div className="cal-block__col">
+          <span className="cal-stat">
+            <DirectionsCarIcon sx={{ fontSize: 12 }} />
+            <b>{row.vehicles}</b>&nbsp;vehicles
+          </span>
+          <span className="cal-stat cal-stat--adb">
+            <ReportProblemOutlinedIcon sx={{ fontSize: 12 }} />
+            <b>{row.speeding + row.swerving + row.abrupt_stop}</b>&nbsp;ADB
+          </span>
+        </div>
+        <div className="cal-block__col">
+          <span className="cal-stat cal-stat--adb">
+            <SpeedOutlinedIcon sx={{ fontSize: 12 }} />
+            <b>{row.speeding}</b>&nbsp;speeding
+          </span>
+          <span className="cal-stat cal-stat--adb">
+            <SwapCallsIcon sx={{ fontSize: 12 }} />
+            <b>{row.swerving}</b>&nbsp;swerving
+          </span>
+          <span className="cal-stat cal-stat--adb">
+            <PanToolOutlinedIcon sx={{ fontSize: 12 }} />
+            <b>{row.abrupt_stop}</b>&nbsp;abrupt stopping
+          </span>
+        </div>
+      </div>
+
+      <span className="cal-block__status" style={{ color: statusColor }}>
+        ● {row.status}
+      </span>
+    </div>
+  );
 }
+
+// ------- Main Table -------- 
 
 export default function Table({ onVideoFileSelect, hideUpload = false, cameraId, onUploadComplete, visibleCameraIds = [], onUploadStart, onProcessingStart, onProcessingComplete, onVideoSelect, onMultipleVideoSelect }: TableProps) {
   const [handleOpenAddModal, setAddModalOpen] = useState(false);
@@ -1241,50 +1296,17 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
   }>({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' }>({
-    open: false,
-    message: '',
-    severity: 'success'
+    open: false, message: '', severity: 'success'
   });
 
-  const showCameraColumn = cameraId === null && visibleCameraIds.length > 0;
-
-  const columns: GridColDef[] = [
-      { field: 'id', headerName: 'ID', width: 60 },
-      ...(showCameraColumn ? [{ field: 'camera_id', headerName: 'Camera', width: 80, align: 'center' as const, headerAlign: 'center' as const }] : []),
-      { field: 'video_name', headerName: 'Video Name', flex: 1, minWidth: 150 },
-      { field: 'uploaded_time', headerName: 'Uploaded', width: 160 },
-      { field: 'vehicles', headerName: 'Vehicles', width: 80, align: 'center', headerAlign: 'center' },
-      { field: 'speeding', headerName: 'Speeding', width: 85, align: 'center', headerAlign: 'center' },
-      { field: 'swerving', headerName: 'Swerving', width: 85, align: 'center', headerAlign: 'center' },
-      { field: 'abrupt_stop', headerName: 'Abrupt Stop', width: 100, align: 'center', headerAlign: 'center' },
-      { field: 'jeepney_hotspot', headerName: 'Jeepney Hotspot', width: 130, align: 'center', headerAlign: 'center',
-        renderCell: (params) => (
-          <Box sx={{ 
-            color: params.value ? '#4CAF50' : '#666',
-            fontWeight: params.value ? 'bold' : 'normal'
-          }}>
-            {params.value ? 'Yes' : 'No'}
-          </Box>
-        )
-      },
-      { field: 'duration', headerName: 'Duration', width: 90, align: 'center', headerAlign: 'center' },
-      { field: 'status', headerName: 'Status', width: 100,
-        renderCell: (params) => (
-          <Box sx={{ 
-            color: params.value === 'completed' ? '#4CAF50' : 
-                   params.value === 'failed' ? '#f44336' : 
-                   params.value === 'processing' ? '#ff9800' : '#666',
-            textTransform: 'capitalize'
-          }}>
-            {params.value}
-          </Box>
-        )
-      },
-  ]
-  
-  const [rows, setRows] = useState<any>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
+  // The single selected video (calendar supports one at a time)
+  const selectedRow = selectedRows.length === 1 ? selectedRows[0] : null;
+
+  // Fetch videos for the selected camera or visible cameras on calendar view
   const fetchVideos = async () => {
     setLoading(true);
     try {
@@ -1378,6 +1400,17 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
     fetchVideos();
   }, [cameraId, visibleCameraIdsKey]);
 
+  // Auto-jump to the date of the most recent video on first load
+  useEffect(() => {
+    if (rows.length === 0) return;
+    const parsed = rows.map(r => parseVideoTime(r)).filter(Boolean) as { dateKey: string; startHour: number }[];
+    if (parsed.length === 0) return;
+    const latestKey = parsed.map(p => p.dateKey).sort().at(-1)!;
+    setCurrentDate(new Date(latestKey + 'T12:00:00'));
+  }, [rows]);
+
+  // ----------------- Handlers for Add/Edit/Delete actions -----------------
+
   const handleAdd = (data: { video_name: string; file_name: File | null; calibration_points: { x: number; y: number }[] }) => {
     fetchVideos();
   };
@@ -1394,18 +1427,14 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
     try {
       const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: newName }),
       });
 
       if (response.ok) {
         setSnackbar({ open: true, message: 'Video name updated successfully', severity: 'success' });
         fetchVideos();
-        if (onUploadComplete) {
-          onUploadComplete();
-        }
+        if (onUploadComplete) onUploadComplete();
       } else {
         const errorData = await response.json();
         setSnackbar({ open: true, message: errorData.message || 'Failed to update video', severity: 'error' });
@@ -1443,11 +1472,7 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
 
   const handleEditCalibrationSubmit = async (data: Record<string, unknown>) => {
     if (!editCalibrationVideoId) {
-      setSnackbar({
-        open: true,
-        message: 'Error: No video selected for calibration edit',
-        severity: 'error',
-      });
+      setSnackbar({ open: true, message: 'Error: No video selected for calibration edit', severity: 'error' });
       return;
     }
 
@@ -1462,71 +1487,44 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
         `${process.env.NEXT_PUBLIC_API_URL}/api/videos/${editCalibrationVideoId}/`,
         {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(patchData),
         }
       );
 
       if (response.ok) {
-        setSnackbar({
-          open: true,
-          message: 'Calibration updated successfully',
-          severity: 'success',
-        });
+        setSnackbar({ open: true, message: 'Calibration updated successfully', severity: 'success' });
         setEditCalibrationModalOpen(false);
-        // Refresh the video list
         fetchVideos();
       } else {
         const errorData = await response.json();
-        setSnackbar({
-          open: true,
-          message: `Failed to update calibration: ${errorData.detail || 'Unknown error'}`,
-          severity: 'error',
-        });
+        setSnackbar({ open: true, message: `Failed to update calibration: ${errorData.detail || 'Unknown error'}`, severity: 'error' });
       }
     } catch (error) {
       console.error('Error updating calibration:', error);
-      setSnackbar({
-        open: true,
-        message: `Error updating calibration: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        severity: 'error',
-      });
+      setSnackbar({ open: true, message: `Error updating calibration: ${error instanceof Error ? error.message : 'Unknown error'}`, severity: 'error' });
     }
   };
 
   const handleDeleteConfirm = async () => {
     try {
       const deletePromises = selectedRows.map(row =>
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${row.id}/`, {
-          method: 'DELETE',
-        })
+        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${row.id}/`, { method: 'DELETE' })
       );
 
       const results = await Promise.all(deletePromises);
       const successCount = results.filter(r => r.ok).length;
 
       if (successCount === selectedRows.length) {
-        setSnackbar({ 
-          open: true, 
-          message: `Successfully deleted ${successCount} video${successCount > 1 ? 's' : ''}`, 
-          severity: 'success' 
-        });
+        setSnackbar({ open: true, message: `Successfully deleted ${successCount} video${successCount > 1 ? 's' : ''}`, severity: 'success' });
       } else {
-        setSnackbar({ 
-          open: true, 
-          message: `Deleted ${successCount} of ${selectedRows.length} videos`, 
-          severity: 'warning' 
-        });
+        setSnackbar({ open: true, message: `Deleted ${successCount} of ${selectedRows.length} videos`, severity: 'warning' });
       }
 
       setDeleteDialogOpen(false);
       setSelectedRows([]);
       fetchVideos();
-      if (onUploadComplete) {
-        onUploadComplete();
-      }
+      if (onUploadComplete) onUploadComplete();
     } catch (error) {
       console.error('Error deleting videos:', error);
       setSnackbar({ open: true, message: 'Error deleting videos', severity: 'error' });
@@ -1534,47 +1532,129 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
     }
   };
 
+  // ----------- Calendar Render ----------------
+
+  const dateKey = toDateKey(currentDate);
+  const hours = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
+  const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
+
+  const todayBlocks = rows
+    .map(row => { const t = parseVideoTime(row); return t ? { row, ...t } : null; })
+    .filter((b): b is { row: any; dateKey: string; startHour: number } => b !== null && b.dateKey === dateKey);
+
   return (
     <Box>
       <div className="table-container">
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          pageSizeOptions={[5, 10, 25]}
-          initialState={{
-            pagination: { paginationModel: { pageSize:  5} },
-          }}
-          slots={{
-            toolbar: hideUpload ? undefined : () => <CustomToolbar 
-              onAdd={() => setAddModalOpen(true)} 
-              onEdit={handleEdit}
-              onEditCalibration={handleEditCalibration}
-              onDelete={handleDelete}
-              hasSelection={selectedRows.length > 0}
-            />,
-          }}
-          slotProps={{toolbar:
-            {title: "Videos"}
-          }}
-          showToolbar={!hideUpload}
-          checkboxSelection
-          onRowSelectionModelChange={(newSelection) => {
-            const selection: any = newSelection;
-            const selectionIds = selection.ids ? Array.from(selection.ids) : [];
-            const selectedVideos = rows.filter(row => selectionIds.includes(row.id));
-            setSelectedRows(selectedVideos);
-            
-            if (onMultipleVideoSelect && selectedVideos.length > 1) {
-              onMultipleVideoSelect(selectedVideos);
-            } else if (onVideoSelect && selectedVideos.length === 1) {
-              onVideoSelect(selectedVideos[0]);
-            } else if (selectedVideos.length === 0 && onVideoSelect) {
-              onVideoSelect(null);
-            }
-          }}
-        />
+
+        {/* ----------- Calendar header --------------- */}
+        <div className="cal-header">
+          <div className="cal-header__nav">
+            <button className="cal-nav-btn" onClick={() => setCurrentDate(d => addDays(d, -1))} aria-label="Previous day">
+              <ChevronLeftIcon sx={{ fontSize: 18 }} />
+            </button>
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DatePicker
+                value={dayjs(currentDate)}
+                onChange={(val: Dayjs | null) => { if (val && val.isValid()) setCurrentDate(val.toDate()); }}
+                slotProps={{
+                  textField: {
+                    size: 'small',
+                    inputProps: { readOnly: true },
+                    sx: {
+                      width: 147,
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '10px',
+                        fontSize: '13px',
+                        fontFamily: "'Roboto Mono', 'DM Mono', monospace",
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        '& fieldset': { borderColor: '#e0e0e0' },
+                        '&:hover fieldset': { borderColor: '#bdbdbd' },
+                      },
+                      '& .MuiInputBase-input': { padding: '5px 4px 5px 10px', cursor: 'pointer' },
+                      '& .MuiInputAdornment-root .MuiIconButton-root': { padding: '4px' },
+                    },
+                  },
+                }}
+              />
+            </LocalizationProvider>
+            <button className="cal-nav-btn" onClick={() => setCurrentDate(d => addDays(d, 1))} aria-label="Next day">
+              <ChevronRightIcon sx={{ fontSize: 18 }} />
+            </button>
+          </div>
+
+          {!hideUpload && (
+            <div className="cal-header__actions">
+              <button className="cal-icon-btn" title="Upload video" aria-label="Upload video" onClick={() => setAddModalOpen(true)}>
+                <FileUploadIcon sx={{ fontSize: 17 }} />
+              </button>
+              {/* <button className="cal-icon-btn" title="Edit calibration" aria-label="Edit calibration" disabled={!selectedRow} onClick={handleEditCalibration}>
+                <TuneIcon sx={{ fontSize: 17 }} />
+              </button>
+              <button className="cal-icon-btn" title="Rename video" aria-label="Rename video" disabled={!selectedRow} onClick={handleEdit}>
+                <EditIcon sx={{ fontSize: 17 }} />
+              </button> */}
+              <button className="cal-icon-btn cal-icon-btn--danger" title="Delete video" aria-label="Delete video" disabled={!selectedRow} onClick={handleDelete}>
+                <DeleteIcon sx={{ fontSize: 17 }} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Calendar grid ── */}
+        <div className="cal-grid-scroll">
+          {loading ? (
+            <div className="cal-empty">Loading videos…</div>
+          ) : (
+            <div className="cal-grid">
+              {/* Time labels */}
+              <div className="cal-times">
+                {hours.map(h => (
+                  <div key={h} className="cal-time-slot" style={{ height: `${HOUR_HEIGHT}px` }}>
+                    <span className="cal-time-label">{formatHourLabel(h)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Events column */}
+              <div className="cal-events" style={{ height: `${gridHeight}px` }}>
+                {hours.map(h => (
+                  <div
+                    key={h}
+                    className="cal-hour-line"
+                    style={{ top: `${(h - HOUR_START) * HOUR_HEIGHT}px` }}
+                  />
+                ))}
+
+                {todayBlocks.length === 0 && (
+                  <div className="cal-empty cal-empty--inline">No videos recorded for this day</div>
+                )}
+
+                {todayBlocks.map(({ row, startHour }) => (
+                  <SessionBlock
+                    key={row.id}
+                    row={row}
+                    startHour={startHour}
+                    selected={selectedRow?.id === row.id}
+                    onClick={() => {
+                      const newSelection = selectedRow?.id === row.id ? [] : [row];
+                      setSelectedRows(newSelection);
+                      if (onVideoSelect) onVideoSelect(newSelection.length ? row : null);
+                    }}
+                    onPlay={(e) => {
+                      e.stopPropagation();
+                      if (row.thumbnail) onVideoFileSelect(row.thumbnail, row.thumbnail);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
+
+      {/* ----------- Modals ------- */}
       {!hideUpload && (
         <>
           <AddModal 
@@ -1607,10 +1687,7 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
             initialReferenceDistance={editCalibrationData.reference_distance_meters}
             initialThumbnail={editCalibrationData.thumbnail}
           />
-          <Dialog
-            open={deleteDialogOpen}
-            onClose={() => setDeleteDialogOpen(false)}
-          >
+          <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
             <DialogTitle>Confirm Delete</DialogTitle>
             <DialogContent>
               <DialogContentText>
@@ -1619,16 +1696,13 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
               </DialogContentText>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setDeleteDialogOpen(false)} color="secondary">
-                Cancel
-              </Button>
-              <Button onClick={handleDeleteConfirm} variant="contained" color="error">
-                Delete
-              </Button>
+              <Button onClick={() => setDeleteDialogOpen(false)} color="secondary">Cancel</Button>
+              <Button onClick={handleDeleteConfirm} variant="contained" color="error">Delete</Button>
             </DialogActions>
           </Dialog>
         </>
       )}
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
