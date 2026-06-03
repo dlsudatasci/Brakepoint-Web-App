@@ -33,11 +33,9 @@ import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import UploadIcon from '@mui/icons-material/Upload';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // css
 import "./sideMenu.css";
-
 
 export type SideMenuUpdater = {
     renameSubarea: (id: number, name: string) => void;
@@ -198,7 +196,14 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
             <BackButton onBack={onBack} label="all areas"/>
 
             { /* title, with edit name functions */ }
-            <LandingSection type="title" labelHeader={ aoi.name } labelSubheader={ aoi.location } icon={ <EditIcon /> } onClickIcon={ () => { alert("[TODO: Edit this section]") } } />
+            <LandingSection 
+                type="title"
+                labelHeader={ aoi.name }
+                labelSubheader={ aoi.location }
+                hasContextMenu
+                onClickEditName={() => {}}
+                onClickDeleteObject={() => {}}
+            />
 
             { /* overview – basic statistics */ }
             <LandingSection type="header" labelHeader="Overview" canHide startHidden>
@@ -316,8 +321,10 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
             <LandingSection
                 type="title"
                 labelHeader={ subarea.name }
-                icon={ <EditIcon /> }
-                onClickIcon={ () => { alert("[TODO: Edit this section]") } }
+                
+                hasContextMenu
+                onClickEditName={() => {}}
+                onClickDeleteObject={() => {}}
             />
 
             { /* overview – basic statistics */ }
@@ -370,7 +377,7 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
                 {subarea.cameras.length > 0 ? (
                     subarea.cameras.map((c) => { return cameraListItem({ camera: c, onNavigateCamera, onCameraClick, onCameraHover }) })
                 ) : (
-                    <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type}. Press the + icon to get started.</span>
+                    <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type.replaceAll("_", " ")}. Press the + icon to get started.</span>
                 )}
             </LandingSection>
         </Box>
@@ -405,7 +412,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 icon={ <UploadIcon /> }
                 onClickIcon={ onClickUploadVideo }
             >
-                { /* TODO video table */ }
+                { /* TODO video table */ }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          aaaA            
             </LandingSection>
         </div>
     )
@@ -486,8 +493,11 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
                 type="title"
                 labelHeader={ camera.name }
                 labelSubheader={ camera.location }
-                icon={ <EditIcon /> }
-                onClickIcon={ () => { alert("[TODO: Edit this section]") } }
+                
+                hasContextMenu
+                onClickEditName={() => {}}
+                onClickRecalibratePolygons={() => {}}
+                onClickDeleteObject={() => {}}
             />
 
             { /* mode toggle between feed and statistics */ }
