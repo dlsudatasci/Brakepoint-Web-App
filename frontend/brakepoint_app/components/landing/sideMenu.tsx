@@ -419,7 +419,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 icon={ <UploadIcon /> }
                 onClickIcon={ onClickUploadVideo }
             >
-                { /* TODO video table */ }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          aaaA            
+                { /* TODO video table */ }            
             </LandingSection>
         </div>
     )
