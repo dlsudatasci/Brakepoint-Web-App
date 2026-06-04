@@ -202,7 +202,7 @@ export default function CameraTags({ cameraId, compact = false }: CameraTagsProp
         }}
       >
         <LocalOfferIcon sx={{ fontSize: 18, color: '#455a64' }} />
-        <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600, fontSize: '0.85rem' }}>
+        <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600, fontSize: '1.3rem' }}>
           Road Features
           {tags.length > 0 && (
             <Typography component="span" variant="caption" sx={{ ml: 0.5, color: 'text.secondary' }}>
