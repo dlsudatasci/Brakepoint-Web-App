@@ -78,6 +78,9 @@ export default function LandingPage() {
   // Loading state
   const [isMapLoading, setIsMapLoading] = useState(true);
 
+  // Feed tab active state
+  const [isFeedTabActive, setIsFeedTabActive] = useState(false);
+
   // Initial fetch
   useEffect(() => {
     let cancelled = false;
@@ -391,6 +394,7 @@ export default function LandingPage() {
   const handleCameraBack = useCallback(() => {
     setAtCameraDetailLevel(false);
     setSelectedCameraMapId(null);
+    setIsFeedTabActive(false);
   }, []);
 
   const handleAddCamera = useCallback(() => setIsPlacingCamera((d) => !d), []);
@@ -475,7 +479,7 @@ export default function LandingPage() {
         <Map
           mode="map"
           refreshTrigger={sideMenuTrigger}
-          hideEditControls
+          hideEditControls={!isFeedTabActive}
           cleanMap={selectedSubareaId == null}
           showGeocoder
           isDrawingAOI={isDrawing || isDrawingSubarea !== false}
@@ -507,7 +511,12 @@ export default function LandingPage() {
           selectedCameraId={selectedCameraMapId}
           visibleCameraIds={selectedSubareaId != null ? (subareaCameraIds ?? []) : []}
           hideCameraPolygons={!atCameraDetailLevel}
-          onCameraClick={(id) => sideMenuUpdaterRef.current?.selectCamera(id)}
+          onCameraClick={(id) => {
+            const cameraId = typeof id === "number" ? id : parseInt(id, 10);
+            if (!Number.isNaN(cameraId)) {
+              sideMenuUpdaterRef.current?.selectCamera(cameraId);
+            }
+          }}
           onCameraAdd={handleCameraAdded}
           onCameraPlacedOutside={handleCameraPlacedOutside}
         />
@@ -538,6 +547,8 @@ export default function LandingPage() {
           onCameraBack={handleCameraBack}
           onAddCamera={handleAddCamera}
           isDrawingCamera={isPlacingCamera}
+
+          onFeedTabActive={setIsFeedTabActive}
         />
       </Box>
 

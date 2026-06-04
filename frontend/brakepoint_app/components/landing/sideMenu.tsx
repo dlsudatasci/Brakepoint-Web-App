@@ -433,13 +433,15 @@ function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading}
 }
 
 // displays the sidebar for a certain camera
-function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo} : {
+function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo, onFeedTabActive} : {
     camera: CameraSummary,
     detailLoading?: boolean,
     onBack: () => void;
 
     parentName: string;
     onClickUploadVideo?: () => void
+
+    onFeedTabActive?: (active: boolean) => void;
 }) {
     const [videosLoading, setVideosLoading] = useState<boolean>(true);
     const [videosError, setVideosError] = useState<boolean>(false);
@@ -480,6 +482,7 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     // toggles the tab
     const handleToggleTab = (newMode: "feed" | "statistics") => {
         setActiveTab(newMode);
+        onFeedTabActive?.(newMode === "feed");
     }
 
     // display page here
@@ -544,6 +547,8 @@ interface SideMenuProps {
     onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
     onAddCamera?: () => void;                               // called when + in the camera section is clicked
     isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
+
+    onFeedTabActive?: (active: boolean) => void;              // called when the feed tab of a camera is active
 }
 
 // handles a general function for the side menu
@@ -551,6 +556,7 @@ export default function SideMenu({
     onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, isDrawingAOI = false,
     onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, isDrawingSubarea = false,
     onCameraClick, onCameraEnter, onCameraBack, onAddCamera, isDrawingCamera,
+    onFeedTabActive,
     onMount, refreshTrigger, 
     // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
 }: SideMenuProps) {
@@ -747,6 +753,7 @@ export default function SideMenu({
         if (isCameraSummary(item)) {
             // for cameras
             onCameraEnter?.(item);
+            onFeedTabActive?.(true);
             setSelectedCamera(item);
         } else if (isSubareaSummary(item)) {
             // for subareas
@@ -767,6 +774,7 @@ export default function SideMenu({
     const handleBack = () => {
         if (selectedCamera !== null) {
             onCameraBack?.();
+            onFeedTabActive?.(false);
             setSelectedCamera(null);
         } else if (selectedSubarea !== null) {
             onSubareaBack?.();
@@ -828,6 +836,7 @@ export default function SideMenu({
                         detailLoading={detailLoading}
                         onBack={handleBack}
                         parentName={selectedSubarea.name}
+                        onFeedTabActive={onFeedTabActive}
                     />
                 )}
                 
