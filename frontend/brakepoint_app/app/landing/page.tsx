@@ -372,6 +372,7 @@ export default function LandingPage() {
       });
       if (!res.ok) throw new Error(await res.text());
       setSideMenuTrigger((n) => n + 1);
+      console.log(sideMenuTrigger)
     } catch (err) {
       console.error("Failed to rename AOI:", err);
       setAoiItems((prev) => prev.map((a) => a.id === target.id ? { ...a, name: target.name } : a)); // revert
@@ -444,10 +445,14 @@ export default function LandingPage() {
           onAoiEnter={handleAoiEnter}
           onAoiBack={handleAoiBack}
           onAddArea={() => setIsDrawing((d) => !d)}
+          onRenameAoi = {handleAoiEdit}
+          onDeleteAoi = {handleAoiDelete}
           isDrawingAOI={isDrawing}
 
           onSubareaHover={(id) => setHoveredSubAreaId(id)}
           onSubareaClick={handleSubareaClick}
+          onRenameSubarea = {handleSubAreaEdit}
+          onDeleteSubarea = {handleSubAreaDelete}
           onAddSubarea={handleAddSubarea}
           isDrawingSubarea={isDrawingSubarea}
 
