@@ -44,6 +44,8 @@ export type SideMenuUpdater = {
     renameSubarea: (id: number, name: string) => void;
     deleteSubarea: (id: number) => void;
     addSubarea: (sub: SubAreaSummary) => void;
+    addCamera: (camera: CameraSummary, subareaId: number) => void;
+    selectCamera: (cameraId: number) => void;
 };
 
 // displays a single AOI card
@@ -104,7 +106,7 @@ function cameraListItem({ camera, onNavigateCamera, onCameraHover, onCameraClick
             <LocationCard
                 type="subarea"
                 locationDetails={cameraDetails}
-                onClickCard={() => onCameraClick?.(camera.id, camera.name)}
+                onClickCard={() => {}}
                 onClickSideButton={() => onNavigateCamera?.(camera)}
             />
         </Box>
@@ -297,7 +299,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
 }
 
 // displays the sidebar for a certain subarea
-function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, onCameraHover, onCameraClick, parentName } : {
+function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, onCameraHover, onCameraClick, parentName, onAddCamera, isAddingCamera } : {
     subarea: SubAreaSummary,
     detailLoading?: boolean,
     onBack: () => void;
@@ -307,6 +309,8 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
     onCameraClick?: (id: number, name: string) => void;
 
     parentName: string,
+    onAddCamera?: () => void;
+    isAddingCamera?: boolean;
 }) {
     return (
         <Box className="menuContainer main">
@@ -364,12 +368,12 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onNavigateCamera, o
                 canHide
 
                 canAdd
-                isAddButtonActive={ false }
-                onActivateAdd={ () => {} }
-                onDeactivateAdd={ () => {} }
+                isAddButtonActive={ isAddingCamera ?? false }
+                onActivateAdd={ () => onAddCamera?.() }
+                onDeactivateAdd={ () => onAddCamera?.() }
             >
-                {subarea.cameras.length > 0 ? (
-                    subarea.cameras.map((c) => { return cameraListItem({ camera: c, onNavigateCamera, onCameraClick, onCameraHover }) })
+                {(subarea.cameras?.length ?? 0) > 0 ? (
+                    (subarea.cameras ?? []).map((c) => { return cameraListItem({ camera: c, onNavigateCamera, onCameraClick, onCameraHover }) })
                 ) : (
                     <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type}. Press the + icon to get started.</span>
                 )}
@@ -527,14 +531,17 @@ interface SideMenuProps {
     onAddArea?: () => void;                                 // triggers when the user clicks the "add area" button
     isDrawingAOI?: boolean;                                 // true while the user is drawing an AOI on the map
 
-    onSelectSubarea?: (subareaId: number) => void;          // triggers when the user selects a subarea
+    onSelectSubarea?: (subareaId: number, cameraIds: number[]) => void;          // triggers when the user selects a subarea
     onSubareaHover?: (id: number | null) => void;           // called with sub-area id on hover, null on leave
     onSubareaClick?: (id: number, name: string) => void;    // called when a road segment card body is clicked — opens edit/delete dialog
     onAddSubarea?: (type: SubAreaType) => void;             // called when + in any segment section is clicked
     isDrawingSubarea?: SubAreaType | false;                 // which sub-area type is currently being drawn
 
+    onSubareaBack?: () => void;                             // called when the user navigates back from a subarea detail view
+
     onCameraClick?: (id: number) => void;                   // called when a camera card is clicked — opens edit/delete dialog
     onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
+    onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
     onAddCamera?: () => void;                               // called when + in the camera section is clicked
     isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
 }
@@ -542,8 +549,8 @@ interface SideMenuProps {
 // handles a general function for the side menu
 export default function SideMenu({
     onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, isDrawingAOI = false,
-    onSelectSubarea, onSubareaHover, onSubareaClick, onAddSubarea, isDrawingSubarea = false,
-    onCameraClick, onCameraEnter, onAddCamera, isDrawingCamera,
+    onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, isDrawingSubarea = false,
+    onCameraClick, onCameraEnter, onCameraBack, onAddCamera, isDrawingCamera,
     onMount, refreshTrigger, 
     // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
 }: SideMenuProps) {
@@ -564,6 +571,9 @@ export default function SideMenu({
     const [selectedCamera, setSelectedCamera] = useState<CameraSummary | null>(null);
     const selectedCameraRef = useRef<CameraSummary | null>(null);
     selectedCameraRef.current = selectedCamera;
+
+    const onCameraEnterRef = useRef(onCameraEnter);
+    onCameraEnterRef.current = onCameraEnter;
 
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
@@ -617,6 +627,31 @@ export default function SideMenu({
                         subarea_count: a.subarea_count + 1,
                     }));
                 }
+            },
+            addCamera: (camera, subareaId) => {
+                setSelectedSubarea((prev) => {
+                    if (!prev || prev.id !== subareaId) return prev;
+                    return {
+                        ...prev,
+                        cameras: [...(prev.cameras ?? []), camera],
+                        camera_count: prev.camera_count + 1,
+                    };
+                });
+                setAois((prev) => prev.map((a) => ({
+                    ...a,
+                    subareas: a.subareas?.map((s) => s.id !== subareaId ? s : {
+                        ...s,
+                        cameras: [...(s.cameras ?? []), camera],
+                        camera_count: s.camera_count + 1,
+                    }),
+                })));
+            },
+            selectCamera: (cameraId) => {
+                const numId = Number(cameraId);
+                const camera = selectedSubareaRef.current?.cameras?.find((c) => c.id === numId);
+                if (!camera) return;
+                setSelectedCamera(camera);
+                onCameraEnterRef.current?.(camera);
             },
         });
     }, []);
@@ -691,6 +726,15 @@ export default function SideMenu({
                     if (!prev) return null;
                     return built.find((a) => a.id === prev.id) ?? prev;
                 });
+                setSelectedSubarea((prev) => {
+                    if (!prev) return null;
+                    // Find the matching subarea in the freshly-built data
+                    for (const a of built) {
+                        const found = a.subareas?.find((s) => s.id === prev.id);
+                        if (found) return found;
+                    }
+                    return prev;
+                });
             })
             .catch(() => {})
             .finally(() => { if (!cancelled) setListLoading(false); });
@@ -702,10 +746,11 @@ export default function SideMenu({
     const handleSelectCard = ( item: AOISummary | SubAreaSummary | CameraSummary ) => {
         if (isCameraSummary(item)) {
             // for cameras
+            onCameraEnter?.(item);
             setSelectedCamera(item);
         } else if (isSubareaSummary(item)) {
             // for subareas
-            onSelectSubarea?.(item.id);
+            onSelectSubarea?.(item.id, (item.cameras ?? []).map((c) => c.id));
             setSelectedSubarea(item);
         } else if (isAreaSummary(item)) {
             // for areas
@@ -721,11 +766,11 @@ export default function SideMenu({
     // triggers when user presses a back button
     const handleBack = () => {
         if (selectedCamera !== null) {
-            // onAoiBack?.();
+            onCameraBack?.();
             setSelectedCamera(null);
         } else if (selectedSubarea !== null) {
-            // onAoiBack?.();
-            setSelectedSubarea(null)
+            onSubareaBack?.();
+            setSelectedSubarea(null);
         } else if (selectedAOI !== null) {
             onAoiBack?.();
             setSelectedAOI(null);
@@ -793,6 +838,8 @@ export default function SideMenu({
                         onBack={handleBack}
                         onNavigateCamera={handleSelectCard}
                         parentName={selectedAOI.name}
+                        onAddCamera={onAddCamera}
+                        isAddingCamera={isDrawingCamera}
                     />
                 )}
 

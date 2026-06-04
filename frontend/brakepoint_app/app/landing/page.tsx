@@ -43,6 +43,15 @@ export default function LandingPage() {
   const [aoiBounds, setAoiBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [subAreaItems, setSubAreaItems] = useState<AoiItem[]>([]);
   const [activeSubAreaId, setActiveSubAreaId] = useState<number | null>(null);
+  const [selectedSubareaId, setSelectedSubareaId] = useState<number | null>(null);
+  const selectedSubareaIdRef = useRef<number | null>(null);
+  selectedSubareaIdRef.current = selectedSubareaId;
+  const [subareaBounds, setSubareaBounds] = useState<[[number, number], [number, number]] | null>(null);
+  const [atCameraLevel, setAtCameraLevel] = useState(false);
+  const [atCameraDetailLevel, setAtCameraDetailLevel] = useState(false);
+  const [selectedCameraMapId, setSelectedCameraMapId] = useState<number | null>(null);
+  const [subareaCameraIds, setSubareaCameraIds] = useState<number[] | null>(null);
+  const [isPlacingCamera, setIsPlacingCamera] = useState(false);
   const [drawError, setDrawError] = useState<string | null>(null);
 
   // Edit-dialog state
@@ -337,10 +346,66 @@ export default function LandingPage() {
 
   const handleAoiBack = useCallback(() => {
     setSelectedAoiId(null);
+    setSelectedSubareaId(null);
     setAoiBounds(null);
+    setSubareaBounds(null);
     setSubAreaItems([]);
     setIsDrawingSubarea(false);
     setActiveSubAreaId(null);
+  }, []);
+
+  const handleSelectSubarea = useCallback((id: number, cameraIds: number[]) => {
+    setSelectedSubareaId(id);
+    setAtCameraLevel(true);
+    setAtCameraDetailLevel(false);
+    setSelectedCameraMapId(null);
+    setIsPlacingCamera(false);
+    setSubareaCameraIds(cameraIds);
+    setSubAreaItems((prev) => {
+      const sub = prev.find((s) => s.id === id);
+      if (sub && sub.ring.length >= 3) {
+        const lngs = sub.ring.map((p) => p[0]);
+        const lats = sub.ring.map((p) => p[1]);
+        setSubareaBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]]);
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleSubareaBack = useCallback(() => {
+    setSelectedSubareaId(null);
+    setAtCameraLevel(false);
+    setAtCameraDetailLevel(false);
+    setSelectedCameraMapId(null);
+    setSubareaCameraIds(null);
+    setIsPlacingCamera(false);
+    setSubareaBounds(null);
+    setAoiBounds((prev) => prev ? [[prev[0][0], prev[0][1]], [prev[1][0], prev[1][1]]] : null);
+  }, []);
+
+  const handleCameraEnter = useCallback((camera: CameraSummary) => {
+    setAtCameraDetailLevel(true);
+    setSelectedCameraMapId(camera.id);
+    setIsPlacingCamera(false);
+  }, []);
+  const handleCameraBack = useCallback(() => {
+    setAtCameraDetailLevel(false);
+    setSelectedCameraMapId(null);
+  }, []);
+
+  const handleAddCamera = useCallback(() => setIsPlacingCamera((d) => !d), []);
+  const handleCameraAdded = useCallback((_id: number, _lat: number, _lng: number, camera: Record<string, any>) => {
+    setIsPlacingCamera(false);
+    setSubareaCameraIds((prev) => [...(prev ?? []), _id]);
+    if (selectedSubareaIdRef.current != null) {
+      sideMenuUpdaterRef.current?.addCamera(
+        convertObjectToCameraSummary(camera),
+        selectedSubareaIdRef.current,
+      );
+    }
+  }, []);
+  const handleCameraPlacedOutside = useCallback(() => {
+    setDrawError("Camera must be placed within the sub-area boundaries.");
   }, []);
 
   const handleAddSubarea = useCallback((type: SubAreaType) => {
@@ -409,27 +474,42 @@ export default function LandingPage() {
       <Box sx={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0 }}>
         <Map
           mode="map"
-          refreshTrigger={0}
+          refreshTrigger={sideMenuTrigger}
           hideEditControls
-          cleanMap
+          cleanMap={selectedSubareaId == null}
           showGeocoder
           isDrawingAOI={isDrawing || isDrawingSubarea !== false}
           onAoiDrawn={handleAoiDrawn}
-          aoiItems={selectedAoiId != null ? aoiItems.filter((a) => a.id === selectedAoiId) : aoiItems}
+          aoiItems={selectedSubareaId != null ? ([] as AoiItem[]) : selectedAoiId != null ? aoiItems.filter((a) => a.id === selectedAoiId) : aoiItems}
           hoveredAoiId={hoveredAoiId}
           activeAoiId={activeAoiId}
           onAoiClick={handleAoiClick}
           onAoiEdit={handleAoiEdit}
           onAoiDelete={handleAoiDelete}
-          goToBounds={aoiBounds}
+          goToBounds={subareaBounds ?? aoiBounds}
+          goToBoundsPadding={{ top: 60, right: 60, bottom: 60, left: 410 }}
           hideAoiMarkers={selectedAoiId != null}
-          subAreaItems={subAreaItems.length > 0 ? subAreaItems : null}
+          subAreaItems={
+            selectedSubareaId != null
+              ? subAreaItems.filter((s) => s.id === selectedSubareaId)
+              : subAreaItems.length > 0 ? subAreaItems : null
+          }
+          hideSubAreaMarkers={atCameraLevel}
+          disableSubAreaInteraction={atCameraLevel}
           hoveredSubAreaId={hoveredSubAreaId}
           activeSubAreaId={activeSubAreaId}
           onSubAreaClick={handleSubAreaClick}
           onSubAreaEdit={handleSubAreaEdit}
           onSubAreaDelete={handleSubAreaDelete}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}
+          isPlacingCamera={isPlacingCamera}
+          cameraParentLocationId={selectedSubareaId}
+          selectedCameraId={selectedCameraMapId}
+          visibleCameraIds={selectedSubareaId != null ? (subareaCameraIds ?? []) : []}
+          hideCameraPolygons={!atCameraDetailLevel}
+          onCameraClick={(id) => sideMenuUpdaterRef.current?.selectCamera(id)}
+          onCameraAdd={handleCameraAdded}
+          onCameraPlacedOutside={handleCameraPlacedOutside}
         />
       </Box>
 
@@ -446,15 +526,18 @@ export default function LandingPage() {
           onAddArea={() => setIsDrawing((d) => !d)}
           isDrawingAOI={isDrawing}
 
+          onSelectSubarea={handleSelectSubarea}
           onSubareaHover={(id) => setHoveredSubAreaId(id)}
           onSubareaClick={handleSubareaClick}
+          onSubareaBack={handleSubareaBack}
           onAddSubarea={handleAddSubarea}
           isDrawingSubarea={isDrawingSubarea}
 
-          onCameraClick={() => {}}
-          onCameraEnter={() => {}}
-          onAddCamera={() => {}}
-          isDrawingCamera={false}
+          onCameraClick={(id) => sideMenuUpdaterRef.current?.selectCamera(id)}
+          onCameraEnter={handleCameraEnter}
+          onCameraBack={handleCameraBack}
+          onAddCamera={handleAddCamera}
+          isDrawingCamera={isPlacingCamera}
         />
       </Box>
 

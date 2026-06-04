@@ -132,6 +132,7 @@ type MapProps = {
   onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
   onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
   selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
+  visibleCameraIds?: number[] | null;                                                       // when set, only show markers for cameras with these ids (level 3+)
 
   refreshTrigger: number;                                                                   // periodically incremented to refresh this Map object
   goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
@@ -159,7 +160,14 @@ type MapProps = {
   onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
   onSubAreaEdit?: (id: number) => void;                                                     // fired when user clicks pencil icon in sub-area marker
   onSubAreaDelete?: (id: number) => void;                                                   // fired when user clicks trash icon in sub-area marker
+  hideSubAreaMarkers?: boolean;                                                             // suppress sub-area centroid label markers (e.g. at camera level)
+  disableSubAreaInteraction?: boolean;                                                      // disable click and hover cursor on sub-area polygons (e.g. at camera level)
+  goToBoundsPadding?: { top: number; right: number; bottom: number; left: number };         // custom padding for fitBounds (accounts for sidebars)
   showGeocoder?: boolean;                                                                   // show the search bar (landing page)
+  isPlacingCamera?: boolean;                                                                // when true, activates the "click map to place camera" tool mode externally
+  cameraParentLocationId?: number | null;                                                   // saved_location id to assign to newly created cameras
+  onCameraPlacedOutside?: () => void;                                                       // called when user clicks outside the current subarea polygon while placing a camera
+  hideCameraPolygons?: boolean;                                                             // when true, hide camera-associated road polygons (level 3)
 };
 
 // a MapLibre marker for each subarea (mode = "dashboard")
@@ -507,9 +515,17 @@ export default function MapView({
   onSubAreaHover,
   onSubAreaEdit,
   onSubAreaDelete,
+  hideSubAreaMarkers = false,
+  disableSubAreaInteraction = false,
+  goToBoundsPadding,
   showGeocoder = false,
   mapMaxBounds,
   subAreaItems,
+  isPlacingCamera = false,
+  cameraParentLocationId = null,
+  onCameraPlacedOutside,
+  visibleCameraIds = null,
+  hideCameraPolygons = false,
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -517,6 +533,15 @@ export default function MapView({
   const [open, setOpen] = useState(true);
   const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
+  const cameraParentLocationIdRef = useRef(cameraParentLocationId);
+  cameraParentLocationIdRef.current = cameraParentLocationId;
+  const visibleCameraIdsRef = useRef(visibleCameraIds);
+  visibleCameraIdsRef.current = visibleCameraIds;
+  const hideCameraPolygonsRef = useRef(hideCameraPolygons);
+  hideCameraPolygonsRef.current = hideCameraPolygons;
+  const selectedCameraIdRef = useRef(selectedCameraId);
+  selectedCameraIdRef.current = selectedCameraId;
+  const onCameraClickRef = useLatestRef(onCameraClick);
   const [showPolygonModal, setShowPolygonModal] = useState(false);
   const [cameras, setCameras] = useState<CameraMarkerEntry[]>([]);
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
@@ -609,6 +634,8 @@ export default function MapView({
   const onSubAreaHoverRef  = useLatestRef(onSubAreaHover  ?? null);
   const onSubAreaEditRef   = useLatestRef(onSubAreaEdit   ?? null);
   const onSubAreaDeleteRef = useLatestRef(onSubAreaDelete ?? null);
+  const disableSubAreaInteractionRef = useRef(disableSubAreaInteraction);
+  disableSubAreaInteractionRef.current = disableSubAreaInteraction;
   const latestActiveSubAreaIdRef = useRef(activeSubAreaId ?? null);
   latestActiveSubAreaIdRef.current = activeSubAreaId ?? null;
   const isDrawingAOIRef = useRef(isDrawingAOI);
@@ -1740,6 +1767,13 @@ export default function MapView({
       source: "polygon-points",
       paint: { "circle-radius": 12, "circle-opacity": 0 },
     });
+
+    if (hideCameraPolygonsRef.current) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
+      map.setPaintProperty("polygon-line", "line-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+    }
   }, [completedPolygonsRef, polygonPointsRef]);
 
   const clearGuideline = useCallback(() => {
@@ -2046,6 +2080,8 @@ export default function MapView({
   const subAreaLayersReadyRef   = useRef(false);
   const subAreaCleanupRef       = useRef<(() => void) | null>(null);
   const subAreaPendingSetupRef  = useRef(false);
+  const subAreaClickHandlerRef  = useRef<((e: any) => void) | null>(null);
+  const subAreaEnterHandlerRef  = useRef<((e: any) => void) | null>(null);
   const aoiMarkersRef           = useRef<Map<number, maplibregl.Marker>>(new Map());
   const subAreaMarkersRef       = useRef<Map<number, maplibregl.Marker>>(new Map());
 
@@ -2104,11 +2140,13 @@ export default function MapView({
 
       const clickHandler = (e: any) => {
         if (isDrawingAOIRef.current) return;
-        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; 
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return;
+        if (disableSubAreaInteractionRef.current) return;
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaClickRef.current?.(Number(id));
       };
       const enterHandler = (e: any) => {
+        if (disableSubAreaInteractionRef.current) return;
         map.getCanvas().style.cursor = "pointer";
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaHoverRef.current?.(Number(id));
@@ -2118,8 +2156,14 @@ export default function MapView({
         onSubAreaHoverRef.current?.(null);
       };
 
-      map.on("click",      FILL, clickHandler);
-      map.on("mouseenter", FILL, enterHandler);
+      subAreaClickHandlerRef.current = clickHandler;
+      subAreaEnterHandlerRef.current = enterHandler;
+
+      // Only register click/enter if interaction is currently enabled
+      if (!disableSubAreaInteractionRef.current) {
+        map.on("click",      FILL, clickHandler);
+        map.on("mouseenter", FILL, enterHandler);
+      }
       map.on("mouseleave", FILL, leaveHandler);
 
       subAreaLayersReadyRef.current  = true;
@@ -2145,6 +2189,30 @@ export default function MapView({
     }
   }, [subAreaItems, activeSubAreaId, polygonReloadKey]);
 
+  // Directly toggle MapLibre click/hover handlers when disableSubAreaInteraction changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const FILL = "sub-area-fill";
+    if (!subAreaLayersReadyRef.current || !map.getLayer(FILL)) return;
+    if (disableSubAreaInteraction) {
+      if (subAreaClickHandlerRef.current) map.off("click", FILL, subAreaClickHandlerRef.current);
+      if (subAreaEnterHandlerRef.current) map.off("mouseenter", FILL, subAreaEnterHandlerRef.current);
+      map.getCanvas().style.cursor = "";
+      onSubAreaHoverRef.current?.(null);
+    } else {
+      // Re-add (remove first to prevent double-registration)
+      if (subAreaClickHandlerRef.current) {
+        map.off("click", FILL, subAreaClickHandlerRef.current);
+        map.on("click", FILL, subAreaClickHandlerRef.current);
+      }
+      if (subAreaEnterHandlerRef.current) {
+        map.off("mouseenter", FILL, subAreaEnterHandlerRef.current);
+        map.on("mouseenter", FILL, subAreaEnterHandlerRef.current);
+      }
+    }
+  }, [disableSubAreaInteraction]);
+
   useEffect(() => {
     return () => { subAreaCleanupRef.current?.(); subAreaCleanupRef.current = null; };
   }, []);
@@ -2165,7 +2233,7 @@ export default function MapView({
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
-  // ── AOI polygon centroid label markers ───────────────────────────────────
+  // AOI polygon centroid label markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -2249,12 +2317,27 @@ export default function MapView({
     };
   }, []);
 
-  // ── Sub-area polygon centroid label markers ──────────────────────────────
+  // Toggle CSS class on map container for sub-area label visibility
+  useEffect(() => {
+    const el = mapContainer.current;
+    if (!el) return;
+    el.classList.toggle("hide-subarea-labels", hideSubAreaMarkers);
+  }, [hideSubAreaMarkers]);
+
+  // Sub-area polygon centroid label markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const items    = subAreaItems ?? [];
     const registry = subAreaMarkersRef.current;
+
+    // When markers are hidden, remove all and bail
+    if (hideSubAreaMarkers) {
+      for (const marker of registry.values()) marker.remove();
+      registry.clear();
+      return;
+    }
+
+    const items = subAreaItems ?? [];
 
     // Remove stale markers
     for (const [id, marker] of registry) {
@@ -2306,7 +2389,7 @@ export default function MapView({
         registry.set(item.id, marker);
       }
     }
-  }, [subAreaItems]);
+  }, [subAreaItems, hideSubAreaMarkers]);
 
   // Update selected class on sub-area markers when activeSubAreaId changes
   useEffect(() => {
@@ -2431,7 +2514,7 @@ export default function MapView({
       el.className = "camera-marker";
       el.style.cursor = "pointer";
       el.innerHTML = `
-        <svg width="32" height="32" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <svg width="48" height="48" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"
                 fill="currentColor"
                 stroke="#fff"
@@ -2441,8 +2524,11 @@ export default function MapView({
       el.style.color = "#999";
       el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.3))";
 
-      const isSelected = selectedCameraId != null && String(id) === String(selectedCameraId);
+      const isSelected = selectedCameraIdRef.current != null && String(id) === String(selectedCameraIdRef.current);
       el.style.color = isSelected ? "#161b4c" : "#999";
+      if (visibleCameraIdsRef.current != null && !visibleCameraIdsRef.current.includes(Number(id))) {
+        el.style.display = "none";
+      }
 
       const marker = new maplibregl.Marker({
         element: el,
@@ -2486,13 +2572,13 @@ export default function MapView({
           return;
         }
 
-        onCameraClick?.(id);
+        onCameraClickRef.current?.(id);
       });
 
       camerasRef.current = [...camerasRef.current, cameraObj];
       setCameras((prev) => [...prev, cameraObj]);
     },
-    [completedPolygonsRef, onCameraClick, removeCamera, savePolygonToCamera, selectedPolygonIndexRef, toolModeRef, selectedCameraId],
+    [completedPolygonsRef, removeCamera, savePolygonToCamera, selectedPolygonIndexRef, toolModeRef],
   );
 
   const CAMERAS_CACHE_KEY = "bp_cameras_v1";
@@ -2559,13 +2645,37 @@ export default function MapView({
     }
   }, [addCameraFromData, onCamerasLoaded]);
 
+  const onCameraPlacedOutsideRef = useLatestRef(onCameraPlacedOutside);
+
+  useEffect(() => {
+    setToolMode(isPlacingCamera ? "addCamera" : "none");
+  }, [isPlacingCamera]);
+
   const addCamera = useCallback(
     async (cameraLat: number, cameraLng: number) => {
       try {
+        const body: Record<string, any> = { lat: cameraLat, lng: cameraLng };
+        if (cameraParentLocationIdRef.current != null) {
+          body.saved_location = cameraParentLocationIdRef.current;
+          // Validate point is within the subarea bounding box
+          const parentSubArea = latestSubAreaItemsRef.current.find(
+            (s) => s.id === cameraParentLocationIdRef.current,
+          );
+          if (parentSubArea && parentSubArea.ring.length >= 3) {
+            const lngs = parentSubArea.ring.map((p) => p[0]);
+            const lats = parentSubArea.ring.map((p) => p[1]);
+            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            if (cameraLng < minLng || cameraLng > maxLng || cameraLat < minLat || cameraLat > maxLat) {
+              onCameraPlacedOutsideRef.current?.();
+              return;
+            }
+          }
+        }
         const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat: cameraLat, lng: cameraLng }),
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) return;
@@ -2573,6 +2683,10 @@ export default function MapView({
         const data = await response.json();
         if (!data?.success || !data?.camera) return;
 
+        // ensure the new camera is immediately visible regardless of visibleCameraIds timing
+        if (visibleCameraIdsRef.current != null) {
+          visibleCameraIdsRef.current = [...visibleCameraIdsRef.current, data.camera.id];
+        }
         addCameraFromData(data.camera.lat, data.camera.lng, data.camera.id);
         onCameraAdd?.(data.camera.id, data.camera.lat, data.camera.lng, data.camera);
       } catch {}
@@ -2856,7 +2970,7 @@ export default function MapView({
     if (goToBounds) {
       isFirstGoToRef.current = false;
       map.fitBounds(goToBounds, {
-        padding: 60,
+        padding: goToBoundsPadding ?? 60,
         duration: isFirst ? 0 : 500,
         essential: true,
       });
@@ -2985,15 +3099,26 @@ export default function MapView({
 
     const selected = selectedCameraId != null ? String(selectedCameraId) : null;
 
-    if (selected == null) {
+    if (hideCameraPolygons) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
+      map.setPaintProperty("polygon-line", "line-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+    } else if (selected == null) {
       map.setPaintProperty("polygon-fill", "fill-opacity", 0.08);
       map.setPaintProperty("polygon-line", "line-opacity", 0.25);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
     } else {
-      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 0.35, 0.05]);
-
-      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 1, 0.15]);
+      // only show the polygon belonging to the selected camera; hide all others
+      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 0.35, 0]);
+      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 1, 0]);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     }
-  }, [completedPolygons, selectedCameraId]);
+  }, [completedPolygons, selectedCameraId, hideCameraPolygons]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3002,7 +3127,7 @@ export default function MapView({
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
 
-      if (activeTool === "none" && isEditMode && mode === "map") {
+      if (activeTool === "none" && isEditMode && mode === "map" && !hideCameraPolygonsRef.current) {
         const features = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-fill"],
         });
@@ -3100,6 +3225,13 @@ export default function MapView({
       }
     }
   }, [selectedCameraId]);
+
+  useEffect(() => {
+    for (const c of camerasRef.current) {
+      const visible = visibleCameraIds == null || visibleCameraIds.includes(Number(c.id));
+      c.element.style.display = visible ? "" : "none";
+    }
+  }, [visibleCameraIds]);
 
   useEffect(() => {
     const map = mapRef.current;

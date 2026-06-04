@@ -152,6 +152,10 @@ input[type="search"]::-webkit-search-cancel-button {
   transform: translateX(-50%);
 }
 
+.hide-subarea-labels .sub-area-label-pin {
+  display: none !important;
+}
+
 .aoi-label-pin::after {
   border-top: 10px solid #06b6d4;
   border-right: 7px solid transparent;
