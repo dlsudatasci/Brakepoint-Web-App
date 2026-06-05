@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip } from "@mui/material";
+import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip, CircularProgress } from "@mui/material";
 import { SubAreaSummary, LocationSummary, isAreaSummary, isSubareaSummary, isCameraSummary } from "@components/landing/summaryTypes"
 
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
@@ -15,41 +15,29 @@ import PanToolOutlinedIcon from "@mui/icons-material/PanToolOutlined";          
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';                        // rightwards icon
 import { ReportProblem } from "@mui/icons-material";
 
-export type SubAreaSummaryLegacy = {
-  id: number;
-  name: string;
-  lat: number;
-  lng: number;
-  geometry: [number, number][] | null;
-  bounds: [[number, number], [number, number]] | null;
-  camera_count: number;
-  vehicles: number;
-  speeding: number;
-  swerving: number;
-  abrupt_stopping: number;
-  adb: number;
-  tags: string[];
-  thumbnail?: string | null;
-  location?: string;
-};
-
 // definition of types for the props for LocationCard
 type LCProps = {
   type: "area" | "subarea" | "camera";          // whether this card is an area or a subarea (road segment) card
   // details of the location to incorporate into this card
   locationDetails?: LocationSummary;            
+  canClickThrough?: boolean;                    // whether the card right button is active or displays loading
   onClickCard?: () => void;                     // what happens when the user clicks on the main card itself?
   onClickSideButton?: () => void;               // what happens when the user clicks on the highlighted side button?
   isAlert?: undefined | true | false;           // force alert status. by default, triggers if camera_count == 0
 };
 
 // LocationCard - displays an information card for a subarea (if applicable)
-export default function LocationCard({ type, locationDetails, onClickCard, onClickSideButton, isAlert }: LCProps) {
+export default function LocationCard({ type, locationDetails, canClickThrough = true, onClickCard, onClickSideButton, isAlert }: LCProps) {
 
   // if isAlert is not set, set it automatically based on how the locationDetails are set up
   if (isAlert === undefined && isSubareaSummary(locationDetails)) {
     if (locationDetails.camera_count < 1) { isAlert = true }
     else { isAlert = false; }
+  }
+
+  // handles click on card events
+  function handleClickCard() {
+    if (canClickThrough) { onClickSideButton() }; 
   }
 
   return (
@@ -116,8 +104,9 @@ export default function LocationCard({ type, locationDetails, onClickCard, onCli
       </Box>
       
       {/* button - click here to go to the detailed menu */}
-      <Box className="lc-button" onClick={onClickSideButton} >
-        <KeyboardArrowRightIcon />
+      <Box className="lc-button" onClick={handleClickCard} >
+        { !canClickThrough && <CircularProgress size={20} sx={{ color: "#dddddd" }} /> }
+        { canClickThrough && <KeyboardArrowRightIcon /> }
       </Box>
     </Box>
   );

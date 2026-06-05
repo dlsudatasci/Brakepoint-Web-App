@@ -39,7 +39,12 @@ import UploadIcon from '@mui/icons-material/Upload';
 import "./sideMenu.css";
 
 // displays a single AOI card
-function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: () => void; onEditClick?: () => void }) {
+function AOIListItem({ aoi, canClickThrough, onClick, onEditClick }: {
+    aoi: AOISummary;
+    canClickThrough?: boolean;
+    onClick: () => void;
+    onEditClick?: () => void
+}) {
    const details = convertObjectToAreaSummary(aoi);
 
     return (
@@ -49,14 +54,16 @@ function AOIListItem({ aoi, onClick, onEditClick }: { aoi: AOISummary; onClick: 
                 locationDetails={details}
                 onClickCard={onEditClick ?? (() => {})}
                 onClickSideButton={onClick}
+                canClickThrough={canClickThrough}
             />
         </Box>
     );
 }
 
 // displays a single subarea card
-function subareaListItem({ subarea, onNavigateSubarea, onSubareaHover, onSubareaClick } : {
+function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onSubareaHover, onSubareaClick } : {
     subarea : SubAreaSummary
+    canClickThrough?: boolean;
     onNavigateSubarea?: (sub: SubAreaSummary) => void;
     onSubareaHover?: (id: number | null) => void;
     onSubareaClick?: (id: number, name: string) => void;
@@ -74,14 +81,16 @@ function subareaListItem({ subarea, onNavigateSubarea, onSubareaHover, onSubarea
                 locationDetails={subDetails}
                 onClickCard={() => onSubareaClick?.(subarea.id, subarea.name)}
                 onClickSideButton={() => onNavigateSubarea?.(subarea)}
+                canClickThrough={canClickThrough}
             />
         </Box>
     )
 }
 
 // displays a single camera card
-function cameraListItem({ camera, onNavigateCamera, onCameraHover, onCameraClick } : {
+function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCameraHover, onCameraClick } : {
     camera: CameraSummary
+    canClickThrough?: boolean;
     onNavigateCamera?: (sub: CameraSummary) => void;
     onCameraHover?: (id: number | null) => void;
     onCameraClick?: (id: number, name: string) => void;
@@ -98,6 +107,7 @@ function cameraListItem({ camera, onNavigateCamera, onCameraHover, onCameraClick
                 locationDetails={cameraDetails}
                 onClickCard={() => {}}
                 onClickSideButton={() => onNavigateCamera?.(camera)}
+                canClickThrough={canClickThrough}
             />
         </Box>
     )
@@ -119,10 +129,11 @@ function BackButton({onBack, label} : {onBack: () => void, label: string}) {
 
 
 // displays the sidebar for all AOIs
-function AllAoiMenu({ aois, listLoading, isDrawingAOI, onAoiHover, onAoiClick, handleAddArea, handleSelectAOI } : {
+function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onAoiHover, onAoiClick, handleAddArea, handleSelectAOI } : {
     aois: AOISummary[];
     listLoading: boolean;
     isDrawingAOI?: boolean;
+    canClickThrough?: boolean;
     onAoiHover?: (id: number | null) => void;
     onAoiClick?: (id: number) => void;
     handleAddArea?: () => void;
@@ -156,7 +167,7 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, onAoiHover, onAoiClick, h
                                 onMouseEnter={() => onAoiHover?.(aoi.id)}
                                 onMouseLeave={() => onAoiHover?.(null)}
                             >
-                                <AOIListItem aoi={aoi} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
+                                <AOIListItem aoi={aoi} canClickThrough={canClickThrough} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
                             </Box>
                         ))}
                     </Box>
@@ -170,12 +181,13 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, onAoiHover, onAoiClick, h
 
 
 // displays the sidebar for a selected AOI (name, loc, stats, subareas)
-function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSubarea, onNavigateSubarea, onRenameArea, onDeleteArea, onSubareaHover, onSubareaClick, } : {
+function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSubarea, canClickThrough, onNavigateSubarea, onRenameArea, onDeleteArea, onSubareaHover, onSubareaClick, } : {
     aoi: AOISummary;
     detailLoading?: boolean;
     onBack: () => void;
     onAddSubarea?: (type: SubAreaType) => void;
     isDrawingSubarea?: SubAreaType | false;
+    canClickThrough?: boolean;
     onNavigateSubarea?: (sub: SubAreaSummary) => void;
     onRenameArea?: (id: number) => void;
     onDeleteArea?: (id: number) => void;
@@ -249,7 +261,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 onDeactivateAdd={ () => onAddSubarea?.("intersection")}
             >
                 {intersections.length > 0 ? (
-                    intersections.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    intersections.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any intersections yet. Press the + icon to get started.</span>
                 )}
@@ -268,7 +280,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 onDeactivateAdd={ () => onAddSubarea?.("junction")}
             >
                 {junctions.length > 0 ? (
-                    junctions.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    junctions.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any junctions yet. Press the + icon to get started.</span>
                 )}
@@ -287,7 +299,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 onDeactivateAdd={ () => {onAddSubarea?.("road_segment")}}
             >
                 {roadSegments.length > 0 ? (
-                    roadSegments.map((sub) => { return subareaListItem({ subarea: sub, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    roadSegments.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any road segments yet. Press the + icon to get started.</span>
                 )}
@@ -298,7 +310,7 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
 }
 
 // displays the sidebar for a certain subarea
-function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, onDeleteSubarea, onNavigateCamera, onCameraHover, onCameraClick, parentName, onAddCamera, isAddingCamera } : {
+function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, onDeleteSubarea, onNavigateCamera, canClickThrough, onCameraHover, onCameraClick, parentName, onAddCamera, isAddingCamera } : {
     subarea: SubAreaSummary,
     detailLoading?: boolean,
     onBack: () => void;
@@ -306,6 +318,7 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, on
     onRenameSubarea?: (id: number) => void;
     onDeleteSubarea?: (id: number) => void;
     onNavigateCamera?: (camera: CameraSummary) => void;
+    canClickThrough?: boolean;
     onCameraHover?: (id: number | null) => void;
     onCameraClick?: (id: number, name: string) => void;
 
@@ -377,7 +390,7 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, on
                 onDeactivateAdd={ () => onAddCamera?.() }
             >
                 {(subarea.cameras?.length ?? 0) > 0 ? (
-                    (subarea.cameras ?? []).map((c) => { return cameraListItem({ camera: c, onNavigateCamera, onCameraClick, onCameraHover }) })
+                    (subarea.cameras ?? []).map((c) => { return cameraListItem({ camera: c, canClickThrough, onNavigateCamera, onCameraClick, onCameraHover }) })
                 ) : (
                     <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type.replaceAll("_", " ")}. Press the + icon to get started.</span>
                 )}
@@ -545,6 +558,7 @@ interface SideMenuProps {
     refreshTrigger?: number;                                // increment to re-fetch the AOI list
     onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
 
+    canClickToAreas?: boolean;                              // whether the user can click to areas or not (area cards will have loading icons if not)
     onAoiHover?: (id: number | null) => void;               // called with AOI id on hover, null on leave
     onAoiClick?: (id: number) => void;                      // called when an AOI card is clicked — opens edit/delete dialog
     onAoiEnter?: (aoi: AOISummary) => void;                 // called when the arrow button is clicked — zooms map to AOI
@@ -554,6 +568,7 @@ interface SideMenuProps {
     onAddArea?: () => void;                                 // triggers when the user clicks the "add area" button
     isDrawingAOI?: boolean;                                 // true while the user is drawing an AOI on the map
 
+    canClickToSubareas?: boolean;                              // whether the user can click to areas or not (area cards will have loading icons if not)
     onSelectSubarea?: (subareaId: number, cameraIds: number[]) => void;          // triggers when the user selects a subarea
     onSubareaHover?: (id: number | null) => void;           // called with sub-area id on hover, null on leave
     onSubareaClick?: (id: number, name: string) => void;    // called when a road segment card body is clicked — opens edit/delete dialog
@@ -564,6 +579,7 @@ interface SideMenuProps {
 
     onSubareaBack?: () => void;                             // called when the user navigates back from a subarea detail view
 
+    canClickToCameras?: boolean;                            // whether the user can click to cameras or not (area cards will have loading icons if not)
     onCameraClick?: (id: number) => void;                   // called when a camera card is clicked — opens edit/delete dialog
     onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
     onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
@@ -579,9 +595,9 @@ interface SideMenuProps {
 
 // creates a Landing Page side menu gui and handles its data operations
 export default function SideMenu({
-    onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, onRenameAoi, onDeleteAoi, isDrawingAOI = false,
-    onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, onRenameSubarea, onDeleteSubarea, isDrawingSubarea = false,
-    onCameraClick, onCameraEnter, onCameraBack, onAddCamera, onCameraUpload, onRenameCamera, onRecalibrateCamera, onDeleteCamera, isDrawingCamera,
+    canClickToAreas = true, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, onRenameAoi, onDeleteAoi, isDrawingAOI = false,
+    canClickToSubareas = true, onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, onRenameSubarea, onDeleteSubarea, isDrawingSubarea = false,
+    canClickToCameras = true, onCameraClick, onCameraEnter, onCameraBack, onAddCamera, onCameraUpload, onRenameCamera, onRecalibrateCamera, onDeleteCamera, isDrawingCamera,
     onFeedTabActive,
     onMount, refreshTrigger, 
     // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
@@ -867,7 +883,7 @@ export default function SideMenu({
                 console.log("hi")
                 updateSelections();
                 setListLoading(false);
-            }
+            },
         });
     }, [onMount, setAois, selectedAOI, selectedSubarea, selectedCamera, setSelectedAOI, setSelectedSubarea, setSelectedCamera, listLoading, setListLoading]);
 
@@ -1068,6 +1084,7 @@ export default function SideMenu({
                             onBack={handleBack}
                             onRenameSubarea={onRenameSubarea}
                             onDeleteSubarea={onDeleteSubarea}
+                            canClickThrough={canClickToCameras}
                             onNavigateCamera={handleSelectCard}
                             onCameraClick={onCameraClick}
                             parentName={selectedAOI.name}
@@ -1084,6 +1101,7 @@ export default function SideMenu({
                             onBack={handleBack}
                             onAddSubarea={onAddSubarea}
                             isDrawingSubarea={isDrawingSubarea}
+                            canClickThrough={canClickToSubareas}
                             onSubareaHover={onSubareaHover}
                             onSubareaClick={onSubareaClick}
                             onRenameArea={onRenameAoi}
@@ -1099,6 +1117,7 @@ export default function SideMenu({
                             aois = {aois}
                             listLoading = {listLoading}
                             isDrawingAOI = {isDrawingAOI}
+                            canClickThrough={canClickToAreas}
                             onAoiHover = {onAoiHover}
                             onAoiClick = {onAoiClick}
                             handleAddArea = {handleAddArea} 

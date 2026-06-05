@@ -84,8 +84,6 @@ export default function LandingPage() {
   // function to force update the side menu from anywhere
   const updateSideMenu = () => { setSideMenuTrigger(sideMenuTrigger + 1); }
 
-  // loading syncer
-
 
   // Initial fetch
   useEffect(() => {
@@ -569,6 +567,7 @@ export default function LandingPage() {
           onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
 
           onAoiHover={(id) => setHoveredAoiId(id)}
+          canClickToAreas={aoiItems && aoiItems.length > 0}
           onAoiClick={handleAoiClick}
           onAoiEnter={handleAoiEnter}
           onAoiBack={handleAoiBack}
@@ -579,6 +578,7 @@ export default function LandingPage() {
 
           onSelectSubarea={handleSelectSubarea}
           onSubareaHover={(id) => setHoveredSubAreaId(id)}
+          canClickToSubareas={subAreaItems && subAreaItems.length > 0}
           onSubareaClick={handleSubareaClick}
           onSubareaBack={handleSubareaBack}
           onRenameSubarea = {handleSubAreaEdit}

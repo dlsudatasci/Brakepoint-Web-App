@@ -141,13 +141,13 @@ type MapProps = {
   subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;          // sub-area polygons rendered when an AOI is selected
 
   showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
-  onMapReady?: (map: maplibregl.Map) => void;                                               // triggers when map has been loaded
+  onMapReady?: () => void;                                                                  // triggers when map has been loaded
   onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
   hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
   cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
   isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
-  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;               // called when user finishes drawing a rectangle
-  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                     // AOI geometry rings to render as blue overlays
+  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a rectangle
+  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
   hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
   activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
   onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
@@ -525,6 +525,7 @@ export default function MapView({
   visibleCameraIds = null,
   hideCameraPolygons = false,
 }: MapProps) {
+
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapLoadedRef = useRef(false);
@@ -882,6 +883,16 @@ export default function MapView({
     if (map.getLayer("earthquakes-heat")) map.removeLayer("earthquakes-heat");
     if (map.getSource("earthquakes")) map.removeSource("earthquakes");
   }, []);
+
+  /*
+  // cy debugs a thing
+  useEffect(() => {
+    console.log("new load: aois");
+  }, [aoiItems])
+  useEffect(() => {
+    console.log("new load: subareas");
+  }, [subAreaItems])
+  */
 
   // DASHBOARD MODE
 
@@ -2722,7 +2733,6 @@ export default function MapView({
     const map = createMap();
     mapRef.current = map;
     isFirstGoToRef.current = true;
-    onMapReady?.(map);
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
@@ -2779,7 +2789,7 @@ export default function MapView({
       geocoderControlRef.current = null;
       aoiDrawControlRef.current = null;
     };
-  }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
+  }, [add3DBuildingsLayer, createMap, restoreDefaultExploreCamera]);
 
   useEffect(() => {
     const map = mapRef.current;
