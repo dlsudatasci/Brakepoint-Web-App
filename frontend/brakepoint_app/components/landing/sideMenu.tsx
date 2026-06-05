@@ -535,7 +535,7 @@ export type SideMenuUpdater = {
     setLoading: (newSetting: boolean) => void;                              // sets whether listLoading is active to denote that the system is busy loading currently
     renameObject: (type: SummaryType, id: number, newName: string) => void; // renames an object (area/subarea/camera) to a new name
     deleteObject: (type: SummaryType, id: number) => void;                  // deletes an object (area/subarea/camera)
-    createObject: (obj: LocationSummary, parentId: number) => void;         // creates a new object (area/subarea/camera) from the given data
+    createObject: (obj: LocationSummary, parentId?: number) => void;        // creates a new object (area/subarea/camera) from the given data
     addCamera: (camera: CameraSummary, subareaId: number) => void;          // adds a camera to a subarea in local state
     selectCamera: (cameraId: number | string) => void;                      // navigates to a camera detail view by id
 };

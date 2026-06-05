@@ -84,6 +84,9 @@ export default function LandingPage() {
   // function to force update the side menu from anywhere
   const updateSideMenu = () => { setSideMenuTrigger(sideMenuTrigger + 1); }
 
+  // loading syncer
+
+
   // Initial fetch
   useEffect(() => {
     let cancelled = false;
@@ -187,7 +190,7 @@ export default function LandingPage() {
         ));
         sideMenuUpdaterRef.current?.createObject(convertObjectToSubareaSummary({
           id: realId,
-          name: "New Segment",
+          name: defaultName,
           lat: centroid.lat,
           lng: centroid.lng,
           camera_count: 0,
@@ -235,7 +238,14 @@ export default function LandingPage() {
         setAoiItems((prev) => prev.map((a) =>
           a.id === tempId ? { id: realId, name: "New Area", ring } : a
         ));
-        updateSideMenu()
+        sideMenuUpdaterRef.current?.createObject(convertObjectToAreaSummary({
+          id: realId,
+          name: "New Area",
+          lat: centroid.lat,
+          lng: centroid.lng,
+          subarea_count: 0,
+          subareas: [],
+        }))
       } catch (err) {
         console.error("Failed to save AOI:", err);
         sideMenuUpdaterRef.current?.setLoading(false); // side menu begins loading

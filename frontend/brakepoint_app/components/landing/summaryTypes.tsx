@@ -15,8 +15,10 @@ export function isVehicleBreakdown(obj: any): obj is VehicleBreakdown {
 }
 
 // convert both of the vehicle breakdown formats outputted by the AOI to this unified format
-function convertBreakdownToUnifiedFormat(breakdown: any) {
+function convertBreakdownToUnifiedFormat(breakdown?: any) {
 	const res: VehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0};
+	if (breakdown === undefined) { return res; }
+
 	// AOI api format
 	if (breakdown.length && breakdown.length == 5) {
 		for (const item of breakdown) {
@@ -116,16 +118,16 @@ const default_values = {
 	behaviors: [],
 }
 
-export function convertObjectToCameraSummary(obj: any, additional?: any) {
+export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 	return {
 		summary_type: "camera",
-		...default_values,
-		...obj, ...additional,
 		adb: obj.adb ?? obj.occurrences ?? additional.adb ?? 0,
+		...obj, ...additional,
+		...default_values,
 	} as CameraSummary
 }
 
-export function convertObjectToSubareaSummary(obj: any, additional?: any) {
+export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 	return {
 		summary_type: "subarea",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
@@ -135,7 +137,7 @@ export function convertObjectToSubareaSummary(obj: any, additional?: any) {
 	} as SubAreaSummary
 }
 
-export function convertObjectToAreaSummary(obj: any, additional?: any) {
+export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
 	return {
 		summary_type: "area",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
