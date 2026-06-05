@@ -111,7 +111,6 @@ export default function LandingPage() {
 
   // called once user finished drawing an AoI on the map
   const handleAoiDrawn = useCallback(async (ring: [number, number][], clearDrawing: () => void) => {
-    sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
     const centroid = {
@@ -159,6 +158,8 @@ export default function LandingPage() {
         case "junction":      defaultName = "New junction";     break;
         case "road_segment":  defaultName = "New segment";      break;
       }
+
+      sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
 
       try {
         // POST to api to create this subarea
@@ -212,6 +213,7 @@ export default function LandingPage() {
       setAoiItems((prev) => [...prev, { id: tempId, name: "New Area", ring }]);
       clearDrawing();
       setIsDrawing(false);
+      sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
 
       try {
         const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
