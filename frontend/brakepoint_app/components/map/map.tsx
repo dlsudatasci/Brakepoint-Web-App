@@ -887,7 +887,7 @@ export default function MapView({
     if (map.getLayer("earthquakes-heat")) map.removeLayer("earthquakes-heat");
     if (map.getSource("earthquakes")) map.removeSource("earthquakes");
   }, []);
-  
+
   // DASHBOARD MODE
 
   const cleanupDashEntry = (entry: DashMarkerEntry) => {
@@ -2025,20 +2025,14 @@ export default function MapView({
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onAoiClickRef.current?.(Number(id));
       };
-      const enterHandler = () => { map.getCanvas().style.cursor = "pointer"; };
-      const leaveHandler = () => { map.getCanvas().style.cursor = ""; };
 
       map.on("click", FILL, clickHandler);
-      map.on("mouseenter", FILL, enterHandler);
-      map.on("mouseleave", FILL, leaveHandler);
 
       aoiLayersReadyRef.current = true;
       aoiPendingSetupRef.current = false;
       aoiCleanupRef.current = () => {
         try {
           map.off("click", FILL, clickHandler);
-          map.off("mouseenter", FILL, enterHandler);
-          map.off("mouseleave", FILL, leaveHandler);
           if (map.getLayer(FILL)) map.removeLayer(FILL);
           if (map.getLayer(LINE)) map.removeLayer(LINE);
           if (map.getSource(SOURCE)) map.removeSource(SOURCE);
@@ -3249,6 +3243,24 @@ export default function MapView({
     canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
+    // events for the custom cursor for mapillary street icons
+    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+
+    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.remove("map-pointer")
+    })
+
+    // events for the custom cursor for mapillary street icons
+    map.on('mouseenter', "aoi-fill", (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+
+    map.on('mouseleave', "aoi-fill", (e: any) => {
+      canvas.classList.remove("map-pointer")
+    })
+
     if (!isEditMode) return;
 
     if (toolMode === "addCamera") {
@@ -3264,8 +3276,10 @@ export default function MapView({
     }
 
     if (toolMode === "assignCamera") {
-      canvas.style.cursor = "pointer";
+      // canvas.style.cursor = "pointer";
+      canvas.classList.add("map-pointer")
     }
+
   }, [isEditMode, toolMode]);
 
   useEffect(() => {
