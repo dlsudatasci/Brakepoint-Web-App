@@ -13,6 +13,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
 
 import ModeEditIcon from "@mui/icons-material/ModeEdit";
+import EditOffIcon from "@mui/icons-material/EditOff";
+import UndoIcon from "@mui/icons-material/Undo";
+import LayersClearOutlinedIcon from '@mui/icons-material/LayersClearOutlined';
+
 
 import { authFetch } from "@/lib/authFetch";
 import {
@@ -407,7 +411,7 @@ class createToggleButtons implements maplibregl.IControl {
     // ReactDOM.createRoot(this.allBtns.addCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
     // ReactDOM.createRoot(this.allBtns.removeCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
     ReactDOM.createRoot(this.allBtns.addPoint).render(<ModeEditIcon sx={{ width: 16 }} />);
-    ReactDOM.createRoot(this.allBtns.removePoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removePoint).render(<EditOffIcon sx={{ width: 16 }} />);
 
     // on-click triggers
     // this.allBtns.addCamera.onclick = () => { this.onButtonClick("addCamera") };
@@ -458,8 +462,8 @@ class createPolygonEditButtons implements maplibregl.IControl {
     this.allBtns.discard.title = "Discard current polygon";
 
     // render icon for the toolbar
-    ReactDOM.createRoot(this.allBtns.undo).render(<ModeEditIcon sx={{ width: 16 }} />);
-    ReactDOM.createRoot(this.allBtns.discard).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.undo).render(<UndoIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.discard).render(<LayersClearOutlinedIcon sx={{ width: 16 }} />);
 
     // on-click triggers
     this.allBtns.undo.onclick = () => { this.onToggle("undo") };
@@ -3242,12 +3246,16 @@ export default function MapView({
     if (!map) return;
 
     const canvas = map.getCanvas();
-    canvas.classList.remove("map-crosshair", "map-remove");
+    canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
     if (!isEditMode) return;
 
-    if (toolMode === "addCamera" || toolMode === "addPoint") {
+    if (toolMode === "addCamera") {
+      canvas.classList.add("map-cam-crosshair");
+    }
+
+    if (toolMode === "addPoint") {
       canvas.classList.add("map-crosshair");
     }
 
