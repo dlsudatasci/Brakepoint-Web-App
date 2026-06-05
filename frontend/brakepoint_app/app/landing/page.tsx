@@ -81,6 +81,9 @@ export default function LandingPage() {
   // Feed tab active state
   const [isFeedTabActive, setIsFeedTabActive] = useState(false);
 
+  // function to force update the side menu from anywhere
+  const updateSideMenu = () => { setSideMenuTrigger(sideMenuTrigger + 1); }
+
   // Initial fetch
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +109,9 @@ export default function LandingPage() {
     return () => clearTimeout(t);
   }, [drawError]);
 
+  // called once user finished drawing an AoI on the map
   const handleAoiDrawn = useCallback(async (ring: [number, number][], clearDrawing: () => void) => {
+    sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
     const centroid = {
@@ -120,6 +125,7 @@ export default function LandingPage() {
 
     const parentId = selectedAoiIdRef.current;
 
+    // shunt this way if we're drawing a subarea (if there is a parent attached to this creation)
     if (parentId != null) {
       // Validate that the drawn polygon is within the AOI's bounding box
       const parentAoiData = aoiItemsRef.current.find((a) => a.id === parentId);
@@ -146,12 +152,21 @@ export default function LandingPage() {
       clearDrawing();
       setIsDrawingSubarea(false);
 
+      // default name depends on subarea type
+      let defaultName = "New subarea";
+      switch(subAreaType) {
+        case "intersection":  defaultName = "New intersection"; break;
+        case "junction":      defaultName = "New junction";     break;
+        case "road_segment":  defaultName = "New segment";      break;
+      }
+
       try {
+        // POST to api to create this subarea
         const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: "New Segment",
+            name: defaultName,
             lat: centroid.lat,
             lng: centroid.lng,
             geometry: ring,
@@ -161,13 +176,15 @@ export default function LandingPage() {
             parent_id: parentId,
           }),
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error(await res.text()); // quickfail
         const saved = await res.json();
         const realId: number = saved?.saved_location?.id ?? tempId;
+        
+        // update local variables
         setSubAreaItems((prev) => prev.map((s) =>
           s.id === tempId ? { id: realId, name: "New Segment", ring } : s
         ));
-        sideMenuUpdaterRef.current?.addSubarea(convertObjectToSubareaSummary({
+        sideMenuUpdaterRef.current?.createObject(convertObjectToSubareaSummary({
           id: realId,
           name: "New Segment",
           lat: centroid.lat,
@@ -182,9 +199,11 @@ export default function LandingPage() {
           tags: [],
           vehicle_breakdown: {},
           sub_area_type: subAreaType,
-        }))
+        }), parentId)
+
       } catch (err) {
         console.error("Failed to save sub-area:", err);
+      sideMenuUpdaterRef.current?.setLoading(false); // side menu stops loading
         setSubAreaItems((prev) => prev.filter((s) => s.id !== tempId));
       }
     } else {
@@ -214,9 +233,10 @@ export default function LandingPage() {
         setAoiItems((prev) => prev.map((a) =>
           a.id === tempId ? { id: realId, name: "New Area", ring } : a
         ));
-        setSideMenuTrigger((n) => n + 1);
+        updateSideMenu()
       } catch (err) {
         console.error("Failed to save AOI:", err);
+        sideMenuUpdaterRef.current?.setLoading(false); // side menu begins loading
         setAoiItems((prev) => prev.filter((a) => a.id !== tempId));
       }
     }
@@ -268,9 +288,10 @@ export default function LandingPage() {
     if (!editSubarea) return;
     const target = editSubarea;
     const newName = editSubareaName.trim() || target.name;
+    sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
 
     setSubAreaItems((prev) => prev.map((s) => s.id === target.id ? { ...s, name: newName } : s));
-    sideMenuUpdaterRef.current?.renameSubarea(target.id, newName);
+    // sideMenuUpdaterRef.current?.renameObject("subarea", target.id, target.name);
     setEditSubarea(null);
     setActiveSubAreaId(null);
 
@@ -281,11 +302,14 @@ export default function LandingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await res.text()); // quickfail shunt
+      sideMenuUpdaterRef.current?.renameObject("subarea", target.id, newName);
+
     } catch (err) {
       console.error("Failed to rename road segment:", err);
+      sideMenuUpdaterRef.current?.setLoading(false); // side menu stops loading
       setSubAreaItems((prev) => prev.map((s) => s.id === target.id ? { ...s, name: target.name } : s));
-      sideMenuUpdaterRef.current?.renameSubarea(target.id, target.name);
+    // sideMenuUpdaterRef.current?.renameObject("subarea", target.id, target.name);
     } finally {
       setSavingSubarea(false);
     }
@@ -294,9 +318,10 @@ export default function LandingPage() {
   const handleDeleteSubarea = async () => {
     if (!deleteConfirmSubArea) return;
     const target = deleteConfirmSubArea;
+    sideMenuUpdaterRef.current?.setLoading(true); // side menu begins loading; will be cleared by sideMenu functions
 
     setSubAreaItems((prev) => prev.filter((s) => s.id !== target.id));
-    sideMenuUpdaterRef.current?.deleteSubarea(target.id);
+    // sideMenuUpdaterRef.current?.deleteSubarea(target.id);
     setDeleteConfirmSubArea(null);
     setActiveSubAreaId(null);
 
@@ -305,12 +330,15 @@ export default function LandingPage() {
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${target.id}/`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await res.text()); // throw error and shunt out
+      sideMenuUpdaterRef.current?.deleteObject("subarea", target.id)
+
     } catch (err) {
-      console.error("Failed to delete road segment:", err);
+      console.error("Failed to delete subarea:", err);
       setSubAreaItems((prev) => [...prev, { id: target.id, name: target.name, ring: target.ring }]);
-      sideMenuUpdaterRef.current?.renameSubarea(target.id, target.name);
-      setSideMenuTrigger((n) => n + 1); 
+      // sideMenuUpdaterRef.current?.deleteSubarea(target.id, target.name);
+      sideMenuUpdaterRef.current?.setLoading(false); // side menu stops loading
+      updateSideMenu()
     } finally {
       setDeletingSubarea(false);
     }
@@ -440,7 +468,7 @@ export default function LandingPage() {
         body: JSON.stringify({ name: newName }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setSideMenuTrigger((n) => n + 1);
+      updateSideMenu()
     } catch (err) {
       console.error("Failed to rename AOI:", err);
       setAoiItems((prev) => prev.map((a) => a.id === target.id ? { ...a, name: target.name } : a)); // revert
@@ -463,7 +491,7 @@ export default function LandingPage() {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(await res.text());
-      setSideMenuTrigger((n) => n + 1);
+      updateSideMenu()
     } catch (err) {
       console.error("Failed to delete AOI:", err);
       setAoiItems((prev) => [...prev, { id: target.id, name: target.name, ring: target.ring }]); // revert
@@ -533,12 +561,16 @@ export default function LandingPage() {
           onAoiEnter={handleAoiEnter}
           onAoiBack={handleAoiBack}
           onAddArea={() => setIsDrawing((d) => !d)}
+          onRenameAoi = {handleAoiEdit}
+          onDeleteAoi = {handleAoiDelete}
           isDrawingAOI={isDrawing}
 
           onSelectSubarea={handleSelectSubarea}
           onSubareaHover={(id) => setHoveredSubAreaId(id)}
           onSubareaClick={handleSubareaClick}
           onSubareaBack={handleSubareaBack}
+          onRenameSubarea = {handleSubAreaEdit}
+          onDeleteSubarea = {handleSubAreaDelete}
           onAddSubarea={handleAddSubarea}
           isDrawingSubarea={isDrawingSubarea}
 
