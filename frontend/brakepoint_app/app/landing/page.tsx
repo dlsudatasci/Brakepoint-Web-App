@@ -586,6 +586,7 @@ export default function LandingPage() {
           onAddSubarea={handleAddSubarea}
           isDrawingSubarea={isDrawingSubarea}
 
+          canClickToCameras={selectedSubareaId && subareaCameraIds && subareaCameraIds.length > 0}
           onCameraClick={(id) => sideMenuUpdaterRef.current?.selectCamera(id)}
           onCameraEnter={handleCameraEnter}
           onCameraBack={handleCameraBack}

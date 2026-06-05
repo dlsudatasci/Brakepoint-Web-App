@@ -887,17 +887,7 @@ export default function MapView({
     if (map.getLayer("earthquakes-heat")) map.removeLayer("earthquakes-heat");
     if (map.getSource("earthquakes")) map.removeSource("earthquakes");
   }, []);
-
-  /*
-  // cy debugs a thing
-  useEffect(() => {
-    console.log("new load: aois");
-  }, [aoiItems])
-  useEffect(() => {
-    console.log("new load: subareas");
-  }, [subAreaItems])
-  */
-
+  
   // DASHBOARD MODE
 
   const cleanupDashEntry = (entry: DashMarkerEntry) => {
