@@ -20,6 +20,7 @@ import {
     VideoSummary, convertObjectToVideoSummary,
 } from "@/components/landing/summaryTypes";
 import CameraTags from "@/components/ui/cameraTags";
+import VideoTable from "@/components/ui/table";
 
 // icons
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -37,6 +38,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 
 // css
 import "./sideMenu.css";
+import Table from "@/components/ui/table";
 
 // displays a single AOI card
 function AOIListItem({ aoi, canClickThrough, onClick, onEditClick }: {
@@ -408,6 +410,13 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
     thumbnail?: string;                 // the thumbnail to display
     onClickUploadVideo?: () => void,    // event to trigger when user clicks on Upload Video button
 }) {
+    const [openUploadModal, setOpenUploadModal] = useState(false);
+
+    const handleUploadClick = () => {
+        setOpenUploadModal(true);
+        onClickUploadVideo?.();  // still notify parent if needed
+    };
+
     return (
         <div className="menuContainer">
             { /* thumbnail */ }
@@ -427,9 +436,17 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 canHide
 
                 icon={ <UploadIcon /> }
-                onClickIcon={ onClickUploadVideo }
+                onClickIcon={onClickUploadVideo}
             >
-                { /* TODO video table */ }            
+                <Table
+                    cameraId={camera.id}
+                    onVideoFileSelect={(url, thumb) => {
+                        // update the thumbnail of the camera to the newly uploaded video
+                    }}
+                    hideUpload={false}
+                    externalModalOpen={openUploadModal}
+                    onExternalModalClose={() => setOpenUploadModal(false)}
+                />     
             </LandingSection>
         </div>
     )
@@ -623,6 +640,9 @@ export default function SideMenu({
     const onCameraEnterRef = useRef(onCameraEnter);
     onCameraEnterRef.current = onCameraEnter;
 
+    const onFeedTabActiveRef = useRef(onFeedTabActive);
+    onFeedTabActiveRef.current = onFeedTabActive;
+
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
     const [listLoading, setListLoading] = useState(true);
@@ -797,6 +817,7 @@ export default function SideMenu({
                 if (!camera) return;
                 setSelectedCamera(camera);
                 onCameraEnterRef.current?.(camera);
+                onFeedTabActiveRef?.current?.(true);
             },
 
             deleteObject: (type: SummaryType, id: number) => {
