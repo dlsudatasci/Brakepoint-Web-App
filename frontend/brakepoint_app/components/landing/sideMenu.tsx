@@ -436,7 +436,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 canHide
 
                 icon={ <UploadIcon /> }
-                onClickIcon={onClickUploadVideo}
+                onClickIcon={handleUploadClick}
             >
                 <Table
                     cameraId={camera.id}
