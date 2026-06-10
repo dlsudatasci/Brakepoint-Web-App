@@ -72,6 +72,15 @@ export default function LandingPage() {
   // Sub-area delete confirmation state
   const [deleteConfirmSubArea, setDeleteConfirmSubArea] = useState<AoiItem | null>(null);
 
+  // Camera edit-dialog state
+  const [editCamera, setEditCamera] = useState<AoiItem | null>(null);
+  const [editCameraName, setEditCameraName] = useState("");
+  const [savingCamera, setSavingCamera] = useState(false);
+  const [deletingCamera, setDeletingCamera] = useState(false);
+
+  // Camera delete confirmation state
+  const [deleteConfirmCamera, setDeleteConfirmCamera] = useState<AoiItem | null>(null);
+
   // Direct updater for SideMenu sub-area list
   const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
 
@@ -435,7 +444,10 @@ export default function LandingPage() {
     setIsFeedTabActive(false);
   }, []);
 
-  const handleAddCamera = useCallback(() => setIsPlacingCamera((d) => !d), []);
+  const handleAddCamera = useCallback(() => {
+    setIsFeedTabActive(false);
+    setIsPlacingCamera((d) => !d);
+  }, []);
   const handleCameraAdded = useCallback((_id: number, _lat: number, _lng: number, camera: Record<string, any>) => {
     setIsPlacingCamera(false);
     setSubareaCameraIds((prev) => [...(prev ?? []), _id]);
@@ -449,6 +461,75 @@ export default function LandingPage() {
   const handleCameraPlacedOutside = useCallback(() => {
     setDrawError("Camera must be placed within the sub-area boundaries.");
   }, []);
+
+  const handleCameraEdit = useCallback((id: number, name: string) => {
+    setEditCamera({ id, name, ring: [] });
+    setEditCameraName(name);
+  }, []);
+
+  const handleSaveCameraName = async () => {
+    if (!editCamera) return;
+    const target = editCamera;
+    const newName = editCameraName.trim() || target.name;
+
+    sideMenuUpdaterRef.current?.setLoading(true);
+    setEditCamera(null);
+
+    setSavingCamera(true);
+    try {
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${target.id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      sideMenuUpdaterRef.current?.renameObject("camera", target.id, newName);
+    } catch (err) {
+      console.error("Failed to rename camera:", err);
+      sideMenuUpdaterRef.current?.setLoading(false);
+      setEditCamera(target);
+      setEditCameraName(target.name);
+    } finally {
+      setSavingCamera(false);
+    }
+  };
+
+  const handleCameraDelete = useCallback((id: number, name: string) => {
+    setDeleteConfirmCamera({ id, name, ring: [] });
+  }, []);
+
+  const handleDeleteCamera = async () => {
+    if (!deleteConfirmCamera) return;
+    const target = deleteConfirmCamera;
+
+    sideMenuUpdaterRef.current?.setLoading(true);
+    setSubareaCameraIds((prev) => (prev ?? []).filter((cameraId) => cameraId !== target.id));
+    setDeleteConfirmCamera(null);
+
+    if (selectedCameraMapId === target.id) {
+      handleCameraBack();
+    }
+
+    setDeletingCamera(true);
+    try {
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${target.id}/`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(await res.text());
+
+      sideMenuUpdaterRef.current?.deleteObject("camera", target.id);
+    } catch (err) {
+      console.error("Failed to delete camera:", err);
+      setSubareaCameraIds((prev) => {
+        const current = prev ?? [];
+        return current.includes(target.id) ? current : [...current, target.id];
+      });
+      sideMenuUpdaterRef.current?.setLoading(false);
+      updateSideMenu();
+    } finally {
+      setDeletingCamera(false);
+    }
+  };
 
   const handleAddSubarea = useCallback((type: SubAreaType) => {
     setIsDrawingSubarea((d) => {
@@ -588,9 +669,11 @@ export default function LandingPage() {
 
           canClickToCameras={selectedSubareaId && subareaCameraIds && subareaCameraIds.length > 0}
           onCameraClick={(id) => sideMenuUpdaterRef.current?.selectCamera(id)}
+          onRenameCamera={handleCameraEdit}
           onCameraEnter={handleCameraEnter}
           onCameraBack={handleCameraBack}
           onAddCamera={handleAddCamera}
+          onDeleteCamera={handleCameraDelete}
           isDrawingCamera={isPlacingCamera}
 
           onFeedTabActive={setIsFeedTabActive}
@@ -798,6 +881,79 @@ export default function LandingPage() {
             sx={{ bgcolor: "#d32f2f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#b71c1c" } }}
           >
             {deletingSubarea ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Camera rename dialog */}
+      <Dialog
+        open={editCamera !== null}
+        onClose={() => setEditCamera(null)}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 340, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Rename Camera</Typography>
+          <IconButton size="small" onClick={() => setEditCamera(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <TextField
+            label="Name"
+            value={editCameraName}
+            onChange={(e) => setEditCameraName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSaveCameraName(); }}
+            fullWidth
+            size="small"
+            autoFocus
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: "8px" } }}
+          />
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={() => setEditCamera(null)} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveCameraName}
+            disabled={savingCamera}
+            variant="contained"
+            sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
+          >
+            {savingCamera ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Camera delete confirmation dialog */}
+      <Dialog
+        open={deleteConfirmCamera !== null}
+        onClose={() => setDeleteConfirmCamera(null)}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 300, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Delete Camera</Typography>
+          <IconButton size="small" onClick={() => setDeleteConfirmCamera(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <Typography sx={{ color: "#444" }}>
+            Delete &ldquo;{deleteConfirmCamera?.name}&rdquo;? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={() => setDeleteConfirmCamera(null)} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteCamera}
+            disabled={deletingCamera}
+            variant="contained"
+            sx={{ bgcolor: "#d32f2f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#b71c1c" } }}
+          >
+            {deletingCamera ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>

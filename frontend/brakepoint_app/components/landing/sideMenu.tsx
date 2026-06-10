@@ -474,9 +474,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     parentName: string;
     onClickUploadVideo?: (id: number) => void;
     onFeedTabActive?: (active: boolean) => void;
-    onRenameCamera?: (id: number) => void;
+    onRenameCamera?: (id: number, name: string) => void;
     onRecalibrateCamera?: (id: number) => void;
-    onDeleteCamera?: (id: number) => void;
+    onDeleteCamera?: (id: number, name: string) => void;
 }) {
     const [videosLoading, setVideosLoading] = useState<boolean>(true);
     const [videosError, setVideosError] = useState<boolean>(false);
@@ -533,9 +533,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
                 labelSubheader={ camera.location }
                 
                 hasContextMenu
-                onClickEditName={() => {onRenameCamera(camera.id)}}
+                onClickEditName={() => {onRenameCamera(camera.id, camera.name)}}
                 onClickRecalibratePolygons={() => {onRecalibrateCamera(camera.id)}}
-                onClickDeleteObject={() => {onDeleteCamera(camera.id)}}
+                onClickDeleteObject={() => {onDeleteCamera(camera.id, camera.name)}}
             />
 
             { /* mode toggle between feed and statistics */ }
@@ -601,9 +601,9 @@ interface SideMenuProps {
     onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
     onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
     onCameraUpload?: (id: number) => void;                  // triggers when user clicks to upload a new video for a camera
-    onRenameCamera?: (id: number) => void;                  // triggers when user clicks to rename a camera
+    onRenameCamera?: (id: number, name: string) => void;    // triggers when user clicks to rename a camera
     onRecalibrateCamera?: (id: number) => void;             // triggers when user clicks to recalibrate a camera
-    onDeleteCamera?: (id: number) => void;                  // triggers when user clicks to delete a camera
+    onDeleteCamera?: (id: number, name: string) => void;    // triggers when user clicks to delete a camera
     onAddCamera?: () => void;                               // called when + in the camera section is clicked
     isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
 
@@ -858,7 +858,7 @@ export default function SideMenu({
                             ))
                         } : a
                     )))
-                    if (selectedCamera.id = id) { handleBack() } // back if currently selected subarea
+                    if (selectedCamera?.id === id) { handleBack() } // back if currently selected camera
                 }
 
                 updateSelections();
