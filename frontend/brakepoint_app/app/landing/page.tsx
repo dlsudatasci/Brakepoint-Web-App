@@ -938,9 +938,11 @@ export default function LandingPage() {
             <CloseIcon fontSize="small" />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ pt: "8px !important" }}>
+        <DialogContent sx={{ pt: "8px !important"}}>
           <Typography sx={{ color: "#444" }}>
-            Delete &ldquo;{deleteConfirmCamera?.name}&rdquo;? This action cannot be undone.
+            Delete <strong>&ldquo;{deleteConfirmCamera?.name}&rdquo;</strong>?
+            <br />
+            This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
