@@ -70,6 +70,8 @@ export type CameraSummary = LocationSummary & {
 	videoCount?: number;
     latest_upload?: Date;
     behaviors: string[];
+
+	vehicle_breakdown?: VehicleBreakdown;
 }
 
 // contains subarea-specific information
@@ -121,6 +123,7 @@ const default_values = {
 export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 	return {
 		summary_type: "camera",
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
 		adb: obj.adb ?? obj.occurrences ?? additional.adb ?? 0,
 		...obj, ...additional,
 		...default_values,
