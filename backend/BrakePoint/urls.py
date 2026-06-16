@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/saved-locations/<int:saved_location_id>/", views.saved_location_detail, name="saved_location_detail"),
     path("api/cameras/<int:camera_id>/assign-saved-location/", views.assign_camera_to_saved_location, name="assign_camera_to_saved_location"),
     path("api/dashboard-summary/", views.dashboard_summary, name="dashboard_summary"),
+	path("api/landing-objects/", views.get_landing_objects, name="landing-objects"),
     
     # Camera endpoints
     path('api/cameras/', views.cameras_api, name='cameras_api'),
@@ -30,6 +31,7 @@ urlpatterns = [
     path('api/behavior-timeline/', views.behavior_timeline_api, name='behavior_timeline_api'),
 
     # Video endpoints
+	path('api/videos/', views.video_list_api, name='video_list_api'),
     path('api/videos/<int:pk>/', views.video_detail_api, name='video_detail_api'),
     path('api/videos/<int:pk>/progress/', views.video_progress_api, name='video_progress_api'),
 ]

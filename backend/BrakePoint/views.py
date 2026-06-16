@@ -1112,6 +1112,19 @@ def detect_road_features_latest(request, pk: int):
         traceback.print_exc()
         return Response({"success": False, "error": str(e)}, status=500)
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+# gets a list of all videos in cameras that the user has
+def video_list_api(request):
+    user = request.user
+
+    try:
+        videos = Video.objects.filter(camera__user = user)
+        ser = VideoSerializer(videos, many=True)
+        return Response({ "success": True, "videos": ser.data })
+    except:
+        return Response({ "success": False, "error": "Unable to fetch videos" })
+
 
 @api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1462,3 +1475,79 @@ def dashboard_summary(request):
         "vehicle_breakdown": vehicle_breakdown,
         "sub_areas": sub_areas,
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landing_objects(request):
+    try:
+        qs = SavedLocation.objects.filter(user=request.user)
+        
+        res_areas = []
+        res_subareas = []
+        for loc in qs:
+            if (loc.location_type == "aoi"):
+                res_areas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+            elif (loc.location_type == "sub_area"):
+                res_subareas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+
+            res_cameras = Camera.objects.filter(user=request.user)
+        res_videos = Video.objects.filter(camera__user=request.user)
+        ser_cameras = CameraSerializer(res_cameras, many=True)
+        ser_videos = VideoSerializer(res_videos, many=True)
+
+        return Response({
+            "success": True,
+            "aois": res_areas,
+            "subareas": res_subareas,
+            "cameras": ser_cameras.data,
+            "videos": ser_videos.data,
+        })
+
+        pass
+
+    except Exception as e:
+        print(e)
+        return Response({"success": False, "error": e})
+        pass

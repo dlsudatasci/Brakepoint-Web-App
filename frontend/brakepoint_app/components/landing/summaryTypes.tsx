@@ -53,6 +53,8 @@ export type LocationSummary = {
     speeding: number;
     swerving: number;
     abrupt_stopping: number;
+
+	parent?: number;
 }
 
 // contains camera-specific information
@@ -67,7 +69,8 @@ export type CameraSummary = LocationSummary & {
 
     tags: string[];
 
-	videoCount?: number;
+	video_count?: number;
+	video_ids: number[];
     latest_upload?: Date;
     behaviors: string[];
 }
@@ -75,21 +78,24 @@ export type CameraSummary = LocationSummary & {
 // contains subarea-specific information
 export type SubAreaSummary = LocationSummary & {
     camera_count: number;
-    cameras?: CameraSummary[];
+    cameras?: CameraSummary[]; // deprecated — please use camera_ids
+	camera_ids?: number[]
     subarea_count: number;
     tags: string[];
     // vehicle_breakdown: Record<string, number>;
 	vehicle_breakdown?: VehicleBreakdown;
     sub_area_type: SubAreaType | null;
+	geometry?: [number, number][]
 };
 
 // contains area-specific information
 export type AOISummary = LocationSummary & {
-    subarea_count: number;
-    camera_count: number;
     // vehicle_breakdown?: { label: string; value: number }[];
 	vehicle_breakdown?: VehicleBreakdown;
-    subareas?: SubAreaSummary[];
+    subarea_count: number;
+    subareas?: SubAreaSummary[]; // deprecated — please use subarea_ids
+	subarea_ids?: number[];
+	geometry?: [number, number][]
 };
 export type AreaSummary = AOISummary;
 
@@ -116,34 +122,38 @@ const default_values = {
 	abrupt_stopping: 0,
 	video_count: 0,
 	behaviors: [],
+	parent: -1,
 }
 
 export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 	return {
+		...default_values,
+		...obj, ...additional,
 		summary_type: "camera",
 		adb: obj.adb ?? obj.occurrences ?? additional.adb ?? 0,
-		...obj, ...additional,
-		...default_values,
+		parent: (obj.parent ?? additional.parent ?? obj.saved_location ?? additional.saved_location),
 	} as CameraSummary
 }
 
 export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 	return {
-		summary_type: "subarea",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
 		...default_values,
 		...obj, ...additional,
+		summary_type: "subarea",
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
 		sub_area_type: obj.sub_area_type as SubAreaType | null,
+		parent: (obj.parent ?? additional.parent ?? obj.parent_id ?? additional.parent_id),
 	} as SubAreaSummary
 }
 
 export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
 	return {
-		summary_type: "area",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
+		location: undefined,
 		...default_values,
 		...obj, ...additional,
-		location: undefined,
+		summary_type: "area",
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
+		parent: -1,
 	} as AOISummary
 }
 
@@ -180,4 +190,18 @@ export function convertObjectToVideoSummary(obj: any, additional?: any) {
 		...obj, ...additional,
 		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 	} as VideoSummary
+}
+
+export type AOIRecord = Record<number, AOISummary>;
+export type SubareaRecord = Record<number, SubAreaSummary>;
+export type CameraRecord = Record<number, CameraSummary>;
+export type VideoRecord = Record<number, VideoSummary>;
+
+// returns an array with all the values of a record
+export function convertRecordToArray(record: Record<any, any>) {
+	return Object.values(record)
+}
+
+export function getLengthOfRecord(record: Record<any, any>) {
+	return Object.keys(record).length
 }

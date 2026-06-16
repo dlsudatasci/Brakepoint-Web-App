@@ -139,7 +139,7 @@ type MapProps = {
   selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
   visibleCameraIds?: number[] | null;                                                       // when set, only show markers for cameras with these ids (level 3+)
 
-  refreshTrigger: boolean;                                                                  // invert to force a refresh
+  refreshTrigger: number;                                                                   // periodically incremented to refresh this Map object
   goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
   goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
   mapMaxBounds?: [[number, number], [number, number]] | null;                               // when set, restricts panning to this padded bounding box
@@ -147,12 +147,9 @@ type MapProps = {
   aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
   subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;           // sub-area polygons rendered when an AOI is selected
   cameraItems?: Camera[] | null;                                                            // camera 
-  currentSelectionMode?: "all" | SummaryType;                                               // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
-
 
   onObjectClick?: (type: SummaryType, id: number) => void;                                  // fires when user clicks a polygon of an AOI or subarea
-  onRequestRename?: (type: SummaryType, id: number) => void;                                // fires when user requests to rename an object
-  onRequestDelete?: (type: SummaryType, id: number) => void;                                // fires when user requests to delete an object  
+  
 
   showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
   onMapReady?: () => void;                                                                  // triggers when map has been loaded
@@ -540,9 +537,6 @@ export default function MapView({
   hideCameraPolygons = false,
 
   cameraItems,
-  currentSelectionMode,
-  onRequestDelete,
-  onRequestRename,
 }: MapProps) {
 
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -626,7 +620,7 @@ export default function MapView({
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const rectIdRef = useRef<string | null>(null);
   const lockAfterFitRef = useRef(false);
-  const isFirstGoToRef = useRef(false);
+  const isFirstGoToRef = useRef(true);
   const enforcingRef = useRef(false);
   const defaultMinZoomRef = useRef(0);
   const defaultMaxZoomRef = useRef(22);
@@ -646,9 +640,11 @@ export default function MapView({
   const onAoiSavedRef = useLatestRef(onAoiSaved ?? null);
   const onAoiDrawnRef = useLatestRef(onAoiDrawn ?? null);
   const onObjectClickRef = useLatestRef(onObjectClick ?? null);
-  const onRequestRenameRef = useLatestRef(onRequestRename ?? null);
-  const onRequestDeleteRef = useLatestRef(onRequestDelete ?? null);
+  const onAoiEditRef = useLatestRef(onAoiEdit ?? null);
+  const onAoiDeleteRef = useLatestRef(onAoiDelete ?? null);
   const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
+  const onSubAreaEditRef = useLatestRef(onSubAreaEdit ?? null);
+  const onSubAreaDeleteRef = useLatestRef(onSubAreaDelete ?? null);
   const disableSubAreaInteractionRef = useRef(disableSubAreaInteraction);
   disableSubAreaInteractionRef.current = disableSubAreaInteraction;
   const latestActiveSubAreaIdRef = useRef(activeSubAreaId ?? null);
@@ -2033,7 +2029,6 @@ export default function MapView({
 
       const clickHandler = (e: any) => {
         if (isDrawingAOIRef.current) return; // ignore clicks while drawing a new AOI
-        if ((latestSubAreaItemsRef.current ?? []).length > 0) return;
         if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; // ignore clicks immediately after finishing a draw
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onObjectClickRef.current?.("area", Number(id));
@@ -2288,14 +2283,14 @@ export default function MapView({
         editBtn.className = "aoi-pin-btn aoi-pin-btn--edit";
         editBtn.title = "Rename";
         editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("area", item.id); });
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onAoiEditRef.current?.(item.id); });
         pill.appendChild(editBtn);
 
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "aoi-pin-btn aoi-pin-btn--delete";
         deleteBtn.title = "Delete";
         deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
-        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("area", item.id); });
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onAoiDeleteRef.current?.(item.id); });
         pill.appendChild(deleteBtn);
 
         wrap.appendChild(pill);
@@ -2378,14 +2373,14 @@ export default function MapView({
         editBtn.className = "sub-area-pin-btn sub-area-pin-btn--edit";
         editBtn.title = "Rename";
         editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("subarea", item.id); });
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onSubAreaEditRef.current?.(item.id); });
         pill.appendChild(editBtn);
 
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "sub-area-pin-btn sub-area-pin-btn--delete";
         deleteBtn.title = "Delete";
         deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
-        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("subarea", item.id); });
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onSubAreaDeleteRef.current?.(item.id); });
         pill.appendChild(deleteBtn);
 
         wrap.appendChild(pill);
@@ -2518,6 +2513,7 @@ export default function MapView({
   const addCameraFromData = useCallback(
     (cameraLat: number, cameraLng: number, id: number | string) => {
       const map = mapRef.current;
+      console.log(map)
       if (!map) return;
 
       const el = document.createElement("div");
@@ -2536,9 +2532,9 @@ export default function MapView({
 
       const isSelected = selectedCameraIdRef.current != null && String(id) === String(selectedCameraIdRef.current);
       el.style.color = isSelected ? "#161b4c" : "#999";
-      if (visibleCameraIdsRef.current != null && !visibleCameraIdsRef.current.includes(Number(id))) {
-         el.style.display = "none";
-      }
+      // if (visibleCameraIdsRef.current != null && !visibleCameraIdsRef.current.includes(Number(id))) {
+      //   el.style.display = "none";
+      // }
 
       const marker = new maplibregl.Marker({
         element: el,
@@ -2658,6 +2654,7 @@ export default function MapView({
     */
 
     // clear any existing
+    console.log(camerasRef.current)
     camerasRef.current.forEach((c) => c.marker?.remove());
     camerasRef.current = [];
     setCameras([]);
@@ -2673,7 +2670,6 @@ export default function MapView({
       })
     );
     setCompletedPolygons(polygons);
-    renderPolygonLayers();
     onCamerasLoaded?.(cameraItems)
 
   }, [cameraItems]);
@@ -2717,9 +2713,9 @@ export default function MapView({
         if (!data?.success || !data?.camera) return;
 
         // ensure the new camera is immediately visible regardless of visibleCameraIds timing
-        if (visibleCameraIdsRef.current != null) {
-           visibleCameraIdsRef.current = [...visibleCameraIdsRef.current, data.camera.id];
-        }
+        // if (visibleCameraIdsRef.current != null) {
+        //  visibleCameraIdsRef.current = [...visibleCameraIdsRef.current, data.camera.id];
+        //}
         addCameraFromData(data.camera.lat, data.camera.lng, data.camera.id);
         onCameraAdd?.(data.camera.id, data.camera.lat, data.camera.lng, data.camera);
       } catch { }
@@ -3004,7 +3000,6 @@ export default function MapView({
     if (!map) return;
 
     const isFirst = isFirstGoToRef.current;
-    if (goToRef.current === null && isFirstGoToRef.current) { isFirstGoToRef.current = false; }
 
     if (goToBounds) {
       isFirstGoToRef.current = false;
@@ -3020,9 +3015,9 @@ export default function MapView({
 
     isFirstGoToRef.current = false;
     if (isFirst) {
-      map.jumpTo({ center: goTo, zoom: 15, });
+      map.jumpTo({ center: goTo, zoom: 18 });
     } else {
-      map.flyTo({ center: goTo, duration: 500, essential: true });
+      map.flyTo({ center: goTo, zoom: 18, duration: 500, essential: true });
     }
   }, [goTo, goToBounds]);
 
@@ -3097,7 +3092,7 @@ export default function MapView({
   useEffect(() => {
     if (cleanMap) return;
     if (mode !== "map") return;
-    if (refreshTrigger != false && mapRef.current) loadCamerasFromDatabase();
+    if (refreshTrigger > 0 && mapRef.current) loadCamerasFromDatabase();
   }, [cleanMap, loadCamerasFromDatabase, mode, refreshTrigger]);
 
   useEffect(() => {
@@ -3135,23 +3130,29 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
     if (!map.getLayer("polygon-fill")) return;
-    
 
-    if (hideCameraPolygonsRef.current || selectedCameraIdRef.current == null) {
+    const selected = selectedCameraId != null ? String(selectedCameraId) : null;
+
+    if (hideCameraPolygons) {
       map.setPaintProperty("polygon-fill", "fill-opacity", 0);
       map.setPaintProperty("polygon-line", "line-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+    } else if (selected == null) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0.08);
+      map.setPaintProperty("polygon-line", "line-opacity", 0.25);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
     } else {
       // only show the polygon belonging to the selected camera; hide all others
-      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraIdRef.current)], 0.35, 0]);
-      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraIdRef.current)], 1, 0]);
+      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 0.35, 0]);
+      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 1, 0]);
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     }
-  }, [completedPolygons, selectedCameraIdRef, hideCameraPolygonsRef]);
+  }, [completedPolygons, selectedCameraId, hideCameraPolygons]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3259,13 +3260,12 @@ export default function MapView({
     }
   }, [selectedCameraId]);
 
-  // when the array of all visible cameras is changed, adjust the markers accordingly
-  useEffect(() => {
-    for (const c of camerasRef.current) {
-      const visible = visibleCameraIds == null || visibleCameraIds.includes(Number(c.id));
-      c.element.style.display = visible ? "" : "none";
-    }
-  }, [visibleCameraIds]);
+//  useEffect(() => {
+    // for (const c of camerasRef.current) {
+    //  const visible = visibleCameraIds == null || visibleCameraIds.includes(Number(c.id));
+    //   c.element.style.display = visible ? "" : "none";
+    // }
+//  }, [visibleCameraIds]);
 
   useEffect(() => {
     const map = mapRef.current;
