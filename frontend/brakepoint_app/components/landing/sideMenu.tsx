@@ -18,6 +18,7 @@ import {
     isAreaSummary, isSubareaSummary, isCameraSummary,
     convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
     VideoSummary, convertObjectToVideoSummary,
+    AOIRecord, SubareaRecord, CameraRecord, VideoRecord, convertRecordToArray,
 } from "@/components/landing/summaryTypes";
 import CameraTags from "@/components/ui/cameraTags";
 import VideoTable from "@/components/ui/table";
@@ -38,24 +39,29 @@ import UploadIcon from '@mui/icons-material/Upload';
 
 // css
 import "./sideMenu.css";
-import Table from "@/components/ui/table";
+import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
 
 // displays a single AOI card
-function AOIListItem({ aoi, canClickThrough, onClick, onEditClick }: {
+function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardClick }: {
     aoi: AOISummary;
     canClickThrough?: boolean;
-    onClick: () => void;
-    onEditClick?: () => void
+    onNavigateAOI?: (type: SummaryType, id: number) => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void
 }) {
    const details = convertObjectToAreaSummary(aoi);
 
     return (
-        <Box>
+        <Box
+            key={aoi.id}
+            onMouseEnter={() => onCardHover?.("subarea", aoi.id)}
+            onMouseLeave={() => onCardHover?.("subarea", null)}
+        >
             <LocationCard
                 type="area"
                 locationDetails={details}
-                onClickCard={onEditClick ?? (() => {})}
-                onClickSideButton={onClick}
+                onClickCard={() => {onCardClick("area", aoi.id)}}
+                onClickSideButton={() => {onNavigateAOI("area", aoi.id)}}
                 canClickThrough={canClickThrough}
             />
         </Box>
@@ -63,26 +69,26 @@ function AOIListItem({ aoi, canClickThrough, onClick, onEditClick }: {
 }
 
 // displays a single subarea card
-function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onSubareaHover, onSubareaClick } : {
+function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onCardHover, onCardClick } : {
     subarea : SubAreaSummary
     canClickThrough?: boolean;
-    onNavigateSubarea?: (sub: SubAreaSummary) => void;
-    onSubareaHover?: (id: number | null) => void;
-    onSubareaClick?: (id: number, name: string) => void;
+    onNavigateSubarea?: (type: SummaryType, id: number) => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void;
 }) {
    
    const subDetails: SubAreaSummary = convertObjectToSubareaSummary(subarea);
     return (
         <Box
             key={subarea.id}
-            onMouseEnter={() => onSubareaHover?.(subarea.id)}
-            onMouseLeave={() => onSubareaHover?.(null)}
+            onMouseEnter={() => onCardHover?.("subarea", subarea.id)}
+            onMouseLeave={() => onCardHover?.("subarea", null)}
         >
             <LocationCard
                 type="subarea"
                 locationDetails={subDetails}
-                onClickCard={() => onSubareaClick?.(subarea.id, subarea.name)}
-                onClickSideButton={() => onNavigateSubarea?.(subarea)}
+                onClickCard={() => onCardClick?.("subarea", subarea.id)}
+                onClickSideButton={() => onNavigateSubarea?.("subarea", subarea.id)}
                 canClickThrough={canClickThrough}
             />
         </Box>
@@ -90,25 +96,25 @@ function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onSubare
 }
 
 // displays a single camera card
-function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCameraHover, onCameraClick } : {
+function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover, onCardClick } : {
     camera: CameraSummary
     canClickThrough?: boolean;
-    onNavigateCamera?: (sub: CameraSummary) => void;
-    onCameraHover?: (id: number | null) => void;
-    onCameraClick?: (id: number, name: string) => void;
+    onNavigateCamera?: (type: SummaryType, id: number) => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void;
 }) {
     const cameraDetails: CameraSummary = convertObjectToCameraSummary(camera);
     return (
         <Box
             key={camera.id}
-            onMouseEnter={() => onCameraHover?.(camera.id)}
-            onMouseLeave={() => onCameraHover?.(null)}
+            onMouseEnter={() => onCardHover?.("camera", camera.id)}
+            onMouseLeave={() => onCardHover?.("camera", null)}
         >
             <LocationCard
                 type="subarea"
                 locationDetails={cameraDetails}
-                onClickCard={() => {}}
-                onClickSideButton={() => onNavigateCamera?.(camera)}
+                onClickCard={() => {onCardClick?.("camera", camera.id)}}
+                onClickSideButton={() => onNavigateCamera?.("camera", camera.id)}
                 canClickThrough={canClickThrough}
             />
         </Box>
@@ -131,15 +137,16 @@ function BackButton({onBack, label} : {onBack: () => void, label: string}) {
 
 
 // displays the sidebar for all AOIs
-function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onAoiHover, onAoiClick, handleAddArea, handleSelectAOI } : {
+function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onCardHover, onCardClick, canStartDrawing, onStartDrawing, onNavigateAOI } : {
     aois: AOISummary[];
     listLoading: boolean;
     isDrawingAOI?: boolean;
     canClickThrough?: boolean;
-    onAoiHover?: (id: number | null) => void;
-    onAoiClick?: (id: number) => void;
-    handleAddArea?: () => void;
-    handleSelectAOI?: (aoi: AOISummary) => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void;
+    canStartDrawing?: boolean;
+    onStartDrawing?: (type: SummaryType, subareaType?: SubAreaType, parentId?: number) => void
+    onNavigateAOI?: (type: SummaryType, id: number) => void;
 }) {
 
     return (
@@ -150,9 +157,9 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onAoiHov
                 chipCount={aois.length}
 
                 canAdd
+                canStartDrawing={canStartDrawing}
                 isAddButtonActive={ isDrawingAOI }
-                onActivateAdd={() => { handleAddArea(); }}
-                onDeactivateAdd={() => { handleAddArea(); }}
+                onClickAdd={() => { onStartDrawing("area"); }}
             >
             
                 {listLoading ? (
@@ -164,13 +171,14 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onAoiHov
                 ) : (
                     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
                         {aois.map((aoi) => (
-                            <Box
-                                key={aoi.id}
-                                onMouseEnter={() => onAoiHover?.(aoi.id)}
-                                onMouseLeave={() => onAoiHover?.(null)}
-                            >
-                                <AOIListItem aoi={aoi} canClickThrough={canClickThrough} onClick={() => handleSelectAOI(aoi)} onEditClick={() => onAoiClick?.(aoi.id)} />
-                            </Box>
+                            <AOIListItem
+                                key={`aoi-${aoi.id}`}
+                                aoi={aoi}
+                                canClickThrough={canClickThrough}
+                                onNavigateAOI={onNavigateAOI}
+                                onCardHover={onCardHover}
+                                onCardClick={onCardClick}
+                            />
                         ))}
                     </Box>
                 )}
@@ -183,28 +191,28 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onAoiHov
 
 
 // displays the sidebar for a selected AOI (name, loc, stats, subareas)
-function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSubarea, canClickThrough, onNavigateSubarea, onRenameArea, onDeleteArea, onSubareaHover, onSubareaClick, } : {
+function AoiDetailMenu({ aoi, subareas, detailLoading, onBack, canStartDrawing, onStartDrawing, isDrawingSubarea, canClickThrough, onNavigateSubarea, onRenameArea, onDeleteArea, onCardHover, onCardClick, } : {
     aoi: AOISummary;
+    subareas: SubAreaSummary[];
     detailLoading?: boolean;
     onBack: () => void;
-    onAddSubarea?: (type: SubAreaType) => void;
     isDrawingSubarea?: SubAreaType | false;
     canClickThrough?: boolean;
-    onNavigateSubarea?: (sub: SubAreaSummary) => void;
-    onRenameArea?: (id: number) => void;
-    onDeleteArea?: (id: number) => void;
-    onSubareaHover?: (id: number | null) => void;
-    onSubareaClick?: (id: number, name: string) => void;
+    onNavigateSubarea?: (type: SummaryType, id: number) => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void;
+    canStartDrawing?: boolean;
+    onStartDrawing?: (type: SummaryType, subareaType?: SubAreaType, parentId?: number) => void
+    onRenameArea?: (type: SummaryType, id: number) => void;
+    onDeleteArea?: (type: SummaryType, id: number) => void;
 }) {
 
-    const roadSegments = aoi.subareas?.filter((s) => s.sub_area_type === "road_segment") ?? [];
-    const intersections = aoi.subareas?.filter((s) => s.sub_area_type === "intersection") ?? [];
-    const junctions = aoi.subareas?.filter((s) => s.sub_area_type === "junction") ?? [];
+    const roadSegments = subareas?.filter((s) => s.sub_area_type === "road_segment") ?? [];
+    const intersections = subareas?.filter((s) => s.sub_area_type === "intersection") ?? [];
+    const junctions = subareas?.filter((s) => s.sub_area_type === "junction") ?? [];
 
     return (
         <Box className="menuContainer main">
-            {/* back button */}
-            <BackButton onBack={onBack} label="all areas"/>
 
             { /* title, with edit name functions */ }
             <LandingSection 
@@ -212,8 +220,8 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 labelHeader={ aoi.name }
                 labelSubheader={ aoi.location }
                 hasContextMenu
-                onClickEditName={() => { onRenameArea(aoi.id) }}
-                onClickDeleteObject={() => { onDeleteArea(aoi.id) }}
+                onClickEditName={() => { onRenameArea("area", aoi.id) }}
+                onClickDeleteObject={() => { onDeleteArea("area", aoi.id) }}
             />
 
             { /* overview – basic statistics */ }
@@ -258,12 +266,12 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 canHide startHidden
 
                 canAdd
+                canStartDrawing={canStartDrawing}
                 isAddButtonActive={ isDrawingSubarea === "intersection" }
-                onActivateAdd={ () => onAddSubarea?.("intersection")}
-                onDeactivateAdd={ () => onAddSubarea?.("intersection")}
+                onClickAdd={ () => onStartDrawing?.("subarea", "intersection", aoi.id)}
             >
                 {intersections.length > 0 ? (
-                    intersections.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    intersections.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onCardHover, onCardClick }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any intersections yet. Press the + icon to get started.</span>
                 )}
@@ -277,12 +285,12 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 canHide startHidden
 
                 canAdd
+                canStartDrawing={canStartDrawing}
                 isAddButtonActive={ isDrawingSubarea === "junction" }
-                onActivateAdd={ () => onAddSubarea?.("junction")}
-                onDeactivateAdd={ () => onAddSubarea?.("junction")}
+                onClickAdd={ () => onStartDrawing?.("subarea", "junction", aoi.id)}
             >
                 {junctions.length > 0 ? (
-                    junctions.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    junctions.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onCardHover, onCardClick }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any junctions yet. Press the + icon to get started.</span>
                 )}
@@ -296,12 +304,12 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
                 canHide startHidden
 
                 canAdd
+                canStartDrawing={canStartDrawing}
                 isAddButtonActive={ isDrawingSubarea === "road_segment" }
-                onActivateAdd={ () => {onAddSubarea?.("road_segment")}}
-                onDeactivateAdd={ () => {onAddSubarea?.("road_segment")}}
+                onClickAdd={ () => {onStartDrawing?.("subarea", "road_segment", aoi.id)}}
             >
                 {roadSegments.length > 0 ? (
-                    roadSegments.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onSubareaClick, onSubareaHover }) })
+                    roadSegments.map((sub) => { return subareaListItem({ subarea: sub, canClickThrough, onNavigateSubarea, onCardHover, onCardClick }) })
                 ) : (
                     <span className="placeholderText">You are not monitoring any road segments yet. Press the + icon to get started.</span>
                 )}
@@ -312,27 +320,26 @@ function AoiDetailMenu({ aoi, detailLoading, onBack, onAddSubarea, isDrawingSuba
 }
 
 // displays the sidebar for a certain subarea
-function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, onDeleteSubarea, onNavigateCamera, canClickThrough, onCameraHover, onCameraClick, parentName, onAddCamera, isAddingCamera } : {
+function SubareaDetailMenu({ subarea, cameras, detailLoading, onBack, onRenameSubarea, onDeleteSubarea, onNavigateCamera, canClickThrough, onCardHover, onCardClick, canStartDrawing, onStartDrawing, isAddingCamera } : {
     subarea: SubAreaSummary,
+    cameras: CameraSummary[],
     detailLoading?: boolean,
     onBack: () => void;
 
-    onRenameSubarea?: (id: number) => void;
-    onDeleteSubarea?: (id: number) => void;
-    onNavigateCamera?: (camera: CameraSummary) => void;
     canClickThrough?: boolean;
-    onCameraHover?: (id: number | null) => void;
-    onCameraClick?: (id: number, name: string) => void;
-
-    parentName: string,
-    onAddCamera?: () => void;
+    onCardHover?: (type: SummaryType, id: number | null) => void;
+    onCardClick?: (type: SummaryType, id: number) => void;
+    onRenameSubarea?: (type: SummaryType, id: number) => void;
+    onDeleteSubarea?: (type: SummaryType, id: number) => void;
+    onNavigateCamera?: (type: SummaryType, id: number) => void;
+    
+    canStartDrawing?: boolean;
+    onStartDrawing?: (type: SummaryType, subareaType?: SubAreaType, parentId?: number) => void
     isAddingCamera?: boolean;
 }) {
 
     return (
         <Box className="menuContainer main">
-            {/* back button */}
-            <BackButton onBack={onBack} label={parentName}/>
             
             { /* title, with edit name functions */ }
             <LandingSection
@@ -340,8 +347,8 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, on
                 labelHeader={ subarea.name }
                 
                 hasContextMenu
-                onClickEditName={() => {onRenameSubarea(subarea.id)}}
-                onClickDeleteObject={() => {onDeleteSubarea(subarea.id)}}
+                onClickEditName={() => {onRenameSubarea("subarea", subarea.id)}}
+                onClickDeleteObject={() => {onDeleteSubarea("subarea", subarea.id)}}
             />
 
             { /* overview – basic statistics */ }
@@ -387,12 +394,12 @@ function SubareaDetailMenu({ subarea, detailLoading, onBack, onRenameSubarea, on
                 canHide
 
                 canAdd
+                canStartDrawing={canStartDrawing}
                 isAddButtonActive={ isAddingCamera ?? false }
-                onActivateAdd={ () => onAddCamera?.() }
-                onDeactivateAdd={ () => onAddCamera?.() }
+                onClickAdd={ () => onStartDrawing?.("camera", null, subarea.id) }
             >
-                {(subarea.cameras?.length ?? 0) > 0 ? (
-                    (subarea.cameras ?? []).map((c) => { return cameraListItem({ camera: c, canClickThrough, onNavigateCamera, onCameraClick, onCameraHover }) })
+                {(cameras?.length ?? 0) > 0 ? (
+                    (cameras ?? []).map((c) => { return cameraListItem({ camera: c, canClickThrough, onNavigateCamera, onCardHover, onCardClick }) })
                 ) : (
                     <span className="placeholderText">You do not have any cameras yet for this {subarea.sub_area_type.replaceAll("_", " ")}. Press the + icon to get started.</span>
                 )}
@@ -438,7 +445,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 icon={ <UploadIcon /> }
                 onClickIcon={handleUploadClick}
             >
-                <Table
+                <VideoTable
                     cameraId={camera.id}
                     onVideoFileSelect={(url, thumb) => {
                         // update the thumbnail of the camera to the newly uploaded video
@@ -474,9 +481,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     parentName: string;
     onClickUploadVideo?: (id: number) => void;
     onFeedTabActive?: (active: boolean) => void;
-    onRenameCamera?: (id: number, name: string) => void;
+    onRenameCamera?: (type: SummaryType, id: number) => void;
     onRecalibrateCamera?: (id: number) => void;
-    onDeleteCamera?: (id: number, name: string) => void;
+    onDeleteCamera?: (type: SummaryType, id: number) => void;
 }) {
     const [videosLoading, setVideosLoading] = useState<boolean>(true);
     const [videosError, setVideosError] = useState<boolean>(false);
@@ -523,8 +530,6 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     // display page here
     return (
         <Box className="menuContainer main">
-            {/* back button */}
-            <BackButton onBack={onBack} label={parentName}/>
 
             { /* title, with edit name functions */ }
             <LandingSection
@@ -533,9 +538,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
                 labelSubheader={ camera.location }
                 
                 hasContextMenu
-                onClickEditName={() => {onRenameCamera(camera.id, camera.name)}}
+                onClickEditName={() => {onRenameCamera("camera", camera.id)}}
                 onClickRecalibratePolygons={() => {onRecalibrateCamera(camera.id)}}
-                onClickDeleteObject={() => {onDeleteCamera(camera.id, camera.name)}}
+                onClickDeleteObject={() => {onDeleteCamera("camera", camera.id)}}
             />
 
             { /* mode toggle between feed and statistics */ }
@@ -563,17 +568,23 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
 // use this type to call functions to quickly update data in the side menu
 export type SideMenuUpdater = {
     setLoading: (newSetting: boolean) => void;                              // sets whether listLoading is active to denote that the system is busy loading currently
-    renameObject: (type: SummaryType, id: number, newName: string) => void; // renames an object (area/subarea/camera) to a new name
-    deleteObject: (type: SummaryType, id: number) => void;                  // deletes an object (area/subarea/camera)
-    createObject: (obj: LocationSummary, parentId?: number) => void;        // creates a new object (area/subarea/camera) from the given data
-    addCamera: (camera: CameraSummary, subareaId: number) => void;          // adds a camera to a subarea in local state
-    selectCamera: (cameraId: number | string) => void;                      // navigates to a camera detail view by id
 };
 
 // definition of types for the props for MenuBar
 interface SideMenuProps {
-    refreshTrigger?: number;                                // increment to re-fetch the AOI list
+    refreshTrigger?: boolean;                               // invert to re-fetch the AOI list
     onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
+
+    allAois?: AOIRecord;                                    // all AOIs visible to this side menu
+    allSubareas?: SubareaRecord;                            // all subareas visible to this side menu
+    allCameras?: CameraRecord;                              // all cameras visible to this side menu
+    allVideos?: VideoRecord;                                // all videos visible to this side menu
+
+    selectedAOI?: AOISummary | null;                        // currently selected AOI
+    selectedSubarea?: SubAreaSummary | null;                // currently selected subarea
+    selectedCamera?: CameraSummary | null;                  // currently selected camera
+    currentSelectionMode?: "all" | SummaryType;             // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
+
 
     canClickToAreas?: boolean;                              // whether the user can click to areas or not (area cards will have loading icons if not)
     onAoiHover?: (id: number | null) => void;               // called with AOI id on hover, null on leave
@@ -605,9 +616,18 @@ interface SideMenuProps {
     onRecalibrateCamera?: (id: number) => void;             // triggers when user clicks to recalibrate a camera
     onDeleteCamera?: (id: number, name: string) => void;    // triggers when user clicks to delete a camera
     onAddCamera?: () => void;                               // called when + in the camera section is clicked
-    isDrawingCamera?: boolean;                              // rue while the user is creating a camera on the map
+    isDrawingCamera?: boolean;                              // true while the user is creating a camera on the map
 
-    onFeedTabActive?: (active: boolean) => void;              // called when the feed tab of a camera is active
+    canStartDrawing?: boolean;                                                                  // whether the user can click on the draw (add area/subarea/camera) buttons
+    onNavigateTo?: (type: SummaryType, id: number) => void;                                     // called with object id on selecting an object
+    onCardClick?: (type: SummaryType, id: number) => void;                                      // on click card --> leads to having that highlighted with options on the map
+    onCardHover?: (type: SummaryType, id: number | null) => void;                               // on hover on map
+    onStartDrawing?: (type: SummaryType, subareaType?: SubAreaType, parentId?: number) => void  // called when user requests to start drawing
+    onRequestRename?: (type: SummaryType, id: number) => void;                                  // called when user requests to rename an object (area/subarea/camera)
+    onRequestDelete?: (type: SummaryType, id: number) => void;                                  // called when user requests to delete an object (area/subarea/camera)
+    onBack?: () => void;                                                                        // called when returning from a previous menu
+
+    onFeedTabActive?: (active: boolean) => void;                // called when the feed tab of a camera is active
 }
 
 // creates a Landing Page side menu gui and handles its data operations
@@ -617,25 +637,11 @@ export default function SideMenu({
     canClickToCameras = true, onCameraClick, onCameraEnter, onCameraBack, onAddCamera, onCameraUpload, onRenameCamera, onRecalibrateCamera, onDeleteCamera, isDrawingCamera,
     onFeedTabActive,
     onMount, refreshTrigger, 
-    // onAddArea, onSelectSubarea, refreshTrigger, isDrawingAOI = false, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddSubarea, isDrawingSubarea = false, onSubareaHover, onSubareaClick, onMount
+    canStartDrawing = true, allAois, allSubareas, allCameras, allVideos, selectedAOI, selectedSubarea, selectedCamera, currentSelectionMode,
+    onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
 }: SideMenuProps) {
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
-    // list of all AOIs; ontaining a list of all subareas and cameras by parent
-    const [aois, setAois] = useState<AOISummary[]>([]);
-
-    // selections for AOI, subarea, and camera
-    const [selectedAOI, setSelectedAOI] = useState<AOISummary | null>(null);
-    const selectedAOIRef = useRef<AOISummary | null>(null);
-    selectedAOIRef.current = selectedAOI;
-    
-    const [selectedSubarea, setSelectedSubarea] = useState<SubAreaSummary | null>(null)
-    const selectedSubareaRef = useRef<SubAreaSummary | null>(null)
-    selectedSubareaRef.current = selectedSubarea;
-
-    const [selectedCamera, setSelectedCamera] = useState<CameraSummary | null>(null);
-    const selectedCameraRef = useRef<CameraSummary | null>(null);
-    selectedCameraRef.current = selectedCamera;
 
     const onCameraEnterRef = useRef(onCameraEnter);
     onCameraEnterRef.current = onCameraEnter;
@@ -645,394 +651,27 @@ export default function SideMenu({
 
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
+    const [initialLoadingFinished, setInitialLoadingFinished] = useState(false);
     const [listLoading, setListLoading] = useState(true);
 
-
-
-    // scans where an object may be and returns given its id
-    // starts all searches in the current selection (if any) and then loops through everything else
-    function getObjectAndParentsFromId(ofType: SummaryType, idToFind: number): {area?: AOISummary, subarea?: SubAreaSummary, camera?: CameraSummary} | null {
-        if (ofType == "area") {
-            if (selectedAOI && selectedAOI.id === idToFind) { return { area: selectedAOI } }
-            else {
-                const res =  aois.find((a) => a.id === idToFind) ?? null
-                if (res) return { area: res }
-            }
-        } else if (ofType == "subarea") {
-            if (selectedSubarea && selectedSubarea.id === idToFind) { return { area: selectedAOI, subarea: selectedSubarea } }
-            if (selectedAOI && selectedAOI.subareas != undefined) {
-                const res = selectedAOI.subareas.find((s) => s.id === idToFind);
-                if (res) return { area: selectedAOI, subarea: res };
-            }
-            for (const a of aois) {
-                if (selectedAOI && a.id == selectedAOI.id) continue; // skip current, already scanned this
-                const res = a.subareas.find((s) => s.id === idToFind);
-                if (res) return { area: a, subarea: res };
-            }
-            return null;
-        } else if (ofType == "camera") {
-            if (selectedCamera && selectedCamera.id === idToFind) { return { area: selectedAOI, subarea: selectedSubarea, camera: selectedCamera } }
-            else if (selectedSubarea && selectedSubarea.cameras != undefined) {
-                const res = selectedSubarea.cameras.find((c) => c.id === idToFind);
-                if (res) return { area: selectedAOI, subarea: selectedSubarea, camera: res };
-            }
-            else if (selectedAOI && selectedAOI.subareas != undefined) {
-                for (const s of selectedAOI.subareas) {
-                    if (!s.cameras) continue;
-                    if (selectedSubarea && s.id == selectedSubarea.id) continue; // skip current, already scanned this
-                    const res = s.cameras.find((c) => c.id === idToFind);
-                    if (res) return { area: selectedAOI, subarea: s, camera: res };
-                }
-            }
-            for (const a of aois) {
-                if (!a.subareas) continue;
-                if (selectedAOI && a.id == selectedAOI.id) continue; // skip current, already scanned this
-                for (const s of a.subareas) {
-                    if (!s.cameras) continue;
-                    const res = s.cameras.find((c) => c.id === idToFind)
-                    if (res) return { area: a, subarea: s, camera: res };
-                }
-            }
-            return null;
-        }
-    }
-
-    // above function but only returns a single object
-    function getObjectFromId(ofType: SummaryType, idToFind: number): LocationSummary | null {
-        const res = getObjectAndParentsFromId(ofType, idToFind)
-        switch (ofType) {
-            case "area": return (res.area as LocationSummary) ?? null;
-            case "subarea": return (res.subarea as LocationSummary) ?? null;
-            case "camera": return (res.camera as LocationSummary) ?? null;
-        }
-    }
-
-    function getObjectPathTraceFromId(ofType: SummaryType, idToFind: number): {area: number | null, subarea: number | null, camera: number | null} {
-        const res = getObjectAndParentsFromId(ofType, idToFind);
-        return {
-            area: (res.area ? res.area.id : null),
-            subarea: (res.subarea ? res.subarea.id : null),
-            camera: (res.camera ? res.camera.id : null)
-        }
-    }
-
-    // aliases of the above function for specific types
-    function getAreaFromId(idToFind: number): AOISummary | null { return getObjectFromId("area", idToFind) as AOISummary };
-    function getSubareaFromId(idToFind: number): SubAreaSummary | null { return getObjectFromId("subarea", idToFind) as SubAreaSummary };
-    function getCameraFromId(idToFind: number): CameraSummary | null { return getObjectFromId("camera", idToFind) as CameraSummary };
-
-    // update area, subarea, and camera selections to latest
-    function updateSelections(thisAoi?: AOISummary[]) {
-        if (thisAoi == undefined) { thisAoi = aois }
-        let newSelectedAoi: AOISummary = null;
-        let newSelectedSubarea: SubAreaSummary = null;
-        let newSelectedCamera: CameraSummary = null;
-
-        // updating AOI
-        if (selectedAOI) {
-            newSelectedAoi = thisAoi.find((a) => a.id === selectedAOI.id) ?? null
-        }
-
-        // updating subarea
-        if (selectedSubarea && newSelectedAoi && newSelectedAoi.subareas) {
-            newSelectedSubarea = newSelectedAoi.subareas.find((s) => s.id === selectedSubarea.id) ?? null
-        }
-
-        // updating camera
-        if (selectedCamera && newSelectedSubarea && newSelectedSubarea.cameras) {
-            newSelectedCamera = newSelectedSubarea.cameras.find((c) => c.id === selectedCamera.id) ?? null
-        }
-        
-        setSelectedAOI(newSelectedAoi);
-        setSelectedSubarea(newSelectedSubarea);
-        setSelectedCamera(newSelectedCamera);
-        setListLoading(false);
-    }
-
+    // automatically sets the listLoading state depending on whether data is provided for Aois, Subareas, Cameras, and Videos
     useEffect(() => {
-        updateSelections();
-    }, [aois])
-
-    useEffect(() => {
-        onMount?.({
-            setLoading(newSetting: boolean) {
-                setListLoading(newSetting);
-            },
-
-            renameObject: (type: SummaryType, id: number, newName: string) => {
-                let newAois: AOISummary[];
-                setListLoading(true);
-
-                // for AREA
-                if (type == "area") {
-                    setAois((prev) => prev.map((a) => (
-                        a.id === id ? ({ ...a, name: newName }) : a
-                    )))
-                }
-
-                // for SUBAREA
-                else if (type == "subarea") {
-                    setAois((prev => prev.map((a) => ({
-                        ...a,
-                        subareas: a.subareas?.map((s) => (
-                            s.id === id ? ({ ...s, name: newName }) : s
-                        ))
-                    }))))
-                }
-
-                // for CAMERA
-                else if (type == "camera") {
-                    setAois((prev) => prev.map((a) => ({
-                        ...a,
-                        subareas: a.subareas?.map((s) => ({
-                            ...s,
-                            cameras: s.cameras?.map((c) => (
-                                c.id === id ? ({...c, name: newName}) : c
-                            ))
-                        }))
-                    })))
-                }
-            },
-            addCamera: (camera, subareaId) => {
-                setSelectedSubarea((prev) => {
-                    if (!prev || prev.id !== subareaId) return prev;
-                    return {
-                        ...prev,
-                        cameras: [...(prev.cameras ?? []), camera],
-                        camera_count: prev.camera_count + 1,
-                    };
-                });
-                setAois((prev) => prev.map((a) => ({
-                    ...a,
-                    subareas: a.subareas?.map((s) => s.id !== subareaId ? s : {
-                        ...s,
-                        cameras: [...(s.cameras ?? []), camera],
-                        camera_count: s.camera_count + 1,
-                    }),
-                })));
-            },
-            selectCamera: (cameraId) => {
-                const numId = Number(cameraId);
-                const camera = selectedSubareaRef.current?.cameras?.find((c) => c.id === numId);
-                if (!camera) return;
-                setSelectedCamera(camera);
-                onCameraEnterRef.current?.(camera);
-                onFeedTabActiveRef?.current?.(true);
-            },
-
-            deleteObject: (type: SummaryType, id: number) => {
-                setListLoading(true);
-                // trace id path for quick reference
-                const pathTrace = getObjectPathTraceFromId(type, id);
-                if (!pathTrace) {return} // quickfail
-                // for AREA
-                if (type == "area") {
-                    setAois((prev) => 
-                        prev.filter((a) => a.id !== id)
-                    )
-                    console.log(aois)
-                }
-
-                // for SUBAREA
-                else if (type == "subarea") {
-                    setAois((prev) => prev.map((a) => (
-                        a.id == pathTrace.area ? {
-                            ...a,
-                            subareas: a.subareas?.filter((s) => s.id !== id),
-                            subarea_count: a.subarea_count - 1,
-                        } : a
-                    )))
-                }
-
-                // for CAMERA
-                else if (type == "camera") {
-                    setAois((prev) => prev.map((a) => (
-                        a.id == pathTrace.area ? {
-                            ...a,
-                            subareas: a.subareas.map((s) => (
-                                s.id == pathTrace.subarea ? {
-                                    ...s,
-                                    cameras: s.cameras?.filter((c) => c.id !== id),
-                                    camera_count: s.camera_count - 1,
-                                } : s
-                            ))
-                        } : a
-                    )))
-                    if (selectedCamera?.id === id) { handleBack() } // back if currently selected camera
-                }
-
-                updateSelections();
-                setListLoading(false);
-            },
-
-            createObject: (obj: LocationSummary, parentId?: number) => {
-                setListLoading(true);
-                // for AREA
-                if (isAreaSummary(obj)) {
-                    setAois((prev) => [...(prev ?? []), obj])
-                }
-
-                // for SUBAREA
-                else if (isSubareaSummary(obj)) {
-                    const pathTrace = getObjectPathTraceFromId("area", parentId);
-                    setAois((prev) => prev.map((a) => (
-                        a.id == pathTrace.area ? {
-                            ...a,
-                            subareas: [...(a.subareas ?? []), obj],
-                            subarea_count: a.subarea_count + 1,
-                        } : a
-                    )))
-                }
-
-                // for CAMERA
-                else if (isCameraSummary(obj)) {
-                    const pathTrace = getObjectPathTraceFromId("subarea", parentId);
-                    setAois((prev) => prev.map((a) => (
-                        a.id == pathTrace.area ? {
-                            ...a,
-                            subareas: a.subareas.map((s) => (
-                                s.id == pathTrace.subarea ? {
-                                    ...s,
-                                    cameras: [...(s.cameras ?? []), obj],
-                                    camera_count: s.camera_count + 1,
-                                } : s
-                            )) 
-                        } : a
-                    )))
-                }
-
-                console.log("hi")
-                updateSelections();
-                setListLoading(false);
-            },
-        });
-    }, [onMount, setAois, selectedAOI, selectedSubarea, selectedCamera, setSelectedAOI, setSelectedSubarea, setSelectedCamera, listLoading, setListLoading]);
-
-    // loads in all data from the api
-    useEffect(() => {
-        // flip when user cancels loading operation
-        let cancelled = false;
-        setListLoading(true);
-        
-        // load all data for all the user's saved locations and cameras
-        Promise.all([
-            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
-            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
-            authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras`).then((r) => r.json())
-        ])
-            .then(([aoiData, subData, cameraData]) => {
-                if (cancelled) return; // quickfail if cancelled
-
-                // sorts subareas by their parent area
-                const rawSubs: any[] = Array.isArray(subData?.saved_locations) ? subData.saved_locations : [];
-                const subsByParent = rawSubs.reduce<Record<number, any[]>>((acc, s) => {
-                    const pid = s.parent_id;
-                    if (pid != null) (acc[pid] ??= []).push(s);
-                    return acc;
-                }, {});
-
-                // sorts cameras by their parent subarea
-                const rawCameras: any[] = Array.isArray(cameraData?.cameras) ? cameraData.cameras : [];
-                const camerasByParent = rawCameras.reduce<Record<number, any[]>>((acc, s) => {
-                    const pid = s.saved_location;
-                    if (pid != null) (acc[pid] ??= []).push(s);
-                    return acc;
-                }, {});
-
-                const rawAois: any[] = Array.isArray(aoiData?.saved_locations) ? aoiData.saved_locations : [];
-                const built: AOISummary[] = rawAois.map((a) => {
-                    const subs: SubAreaSummary[] = (subsByParent[a.id] ?? []).map((s: any) => {
-                        const cameras: CameraSummary[] = (camerasByParent[s.id] ?? []).map((c: any) => (
-                            convertObjectToCameraSummary(c)
-                        ))
-                        return convertObjectToSubareaSummary(s, {
-                            cameras: cameras,
-                            vehicle_breakdown: (s.vehicle_breakdown ?? {}) as Record<string, number>,
-                        })
-                    })
-                    return convertObjectToAreaSummary(a, {
-                        subarea_count: subs.length,
-                        camera_count: subs.reduce((n, s) => n + s.camera_count, 0),
-                        vehicles: subs.reduce((n, s) => n + s.vehicles, 0),
-                        adb: subs.reduce((n, s) => n + s.adb, 0),
-                        speeding: subs.reduce((n, s) => n + s.speeding, 0),
-                        swerving: subs.reduce((n, s) => n + s.swerving, 0),
-                        abrupt_stopping: subs.reduce((n, s) => n + s.abrupt_stopping, 0),
-                        vehicle_breakdown: (() => {
-                            const merged: Record<string, number> = {};
-                            for (const s of subs) {
-                                for (const [type, count] of Object.entries(s.vehicle_breakdown)) {
-                                    merged[type] = (merged[type] ?? 0) + count;
-                                }
-                            }
-                            return Object.entries(merged).map(([label, value]) => ({
-                                label: label.charAt(0).toUpperCase() + label.slice(1),
-                                value,
-                            }));
-                        })(),
-                        subareas: subs,
-                    })
-                })
-
-                setAois(built);
-                setSelectedAOI((prev) => {
-                    if (!prev) return null;
-                    return built.find((a) => a.id === prev.id) ?? prev;
-                });
-                setSelectedSubarea((prev) => {
-                    if (!prev) return null;
-                    for (const a of built) {
-                        const found = a.subareas?.find((s) => s.id === prev.id);
-                        if (found) return found;
-                    }
-                    return prev;
-                });
-            })
-            .catch(() => {})
-            .finally(() => { if (!cancelled) setListLoading(false); });
-
-        return () => { cancelled = true; setListLoading(false) };
-    }, [refreshTrigger]);
-
-    // triggers when user selects a card, sets the related area/subarea/camera
-    const handleSelectCard = ( item: AOISummary | SubAreaSummary | CameraSummary ) => {
-        if (isCameraSummary(item)) {
-            // for cameras
-            onCameraEnter?.(item);
-            onFeedTabActive?.(true);
-            setSelectedCamera(item);
-        } else if (isSubareaSummary(item)) {
-            // for subareas
-            onSelectSubarea?.(item.id, (item.cameras ?? []).map((c) => c.id));
-            setSelectedSubarea(item);
-        } else if (isAreaSummary(item)) {
-            // for areas
-            onAoiEnter?.(item);
-            setSelectedAOI(item);
-        } else {
-            return;
+        if (
+            !allAois || !allSubareas || !allCameras || !allVideos ||
+            Object.keys(allAois).length === 0 ||
+            Object.keys(allSubareas).length === 0 ||
+            Object.keys(allCameras).length === 0 ||
+            Object.keys(allVideos).length === 0
+        ) {
+            setListLoading(true);
+            // setInitialLoadingFinished(false);
+        }
+        else {
+            setListLoading(false);
+            // setInitialLoadingFinished(true);
         }
 
-        scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    }
-
-    // triggers when user presses a back button
-    const handleBack = () => {
-        if (selectedCamera !== null) {
-            onCameraBack?.();
-            onFeedTabActive?.(false);
-            setSelectedCamera(null);
-        } else if (selectedSubarea !== null) {
-            onSubareaBack?.();
-            setSelectedSubarea(null);
-        } else if (selectedAOI !== null) {
-            onAoiBack?.();
-            setSelectedAOI(null);
-        } else {
-            return;
-        }
-        scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    };
+    }, [allAois, allSubareas, allCameras, allVideos])
 
     // handles the sign out process - removes user session data from the browser
     const handleSignOut = () => {
@@ -1042,10 +681,17 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
+    // TODO
+    const handleSelectCard = () => {}
+
+    // TODO
+    const handleBack = () => {}
+
     const handleAddArea = () => {
         onAddArea?.();
     };
 
+    const debugButtons = false
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
@@ -1084,65 +730,86 @@ export default function SideMenu({
                     </div>
                 </> ) : ( <> 
 
-                    {selectedCamera && (
+                    {/* back button */}
+                    {(selectedCamera || selectedSubarea || selectedAOI) && (
+                        <BackButton onBack={onBack} label={
+                            selectedCamera ? selectedSubarea.name : selectedSubarea ? selectedAOI.name : "all AOIs"
+                        }
+                    />
+                    )}
+
+                    { /* DEBUG OPTIONS — DISABLE debugButtons WHEN NOT BEING USED */ }
+                    { debugButtons && ( <div className="backButtonContainer" style={{fontFamily: "50%"}}>
+                        <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
+                        <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
+                        <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
+                    </div>)}
+
+
+                    {currentSelectionMode === "camera" && (
                         <CameraDetailMenu
                             camera={selectedCamera}
                             detailLoading={detailLoading}
                             onBack={handleBack}
-                            onRenameCamera={onRenameCamera}
+                            onRenameCamera={onRequestRename}
                             onRecalibrateCamera={onRecalibrateCamera}
-                            onDeleteCamera={onDeleteCamera}
+                            onDeleteCamera={onRequestDelete}
                             onClickUploadVideo={onCameraUpload}
                             onFeedTabActive={onFeedTabActive}
                             parentName={selectedSubarea.name}
                         />
                     )}
                     
-                    { !selectedCamera && selectedSubarea && (
+                    { currentSelectionMode === "subarea" && (
                         <SubareaDetailMenu
                             subarea={selectedSubarea}
+                            cameras={convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id)}
                             detailLoading={detailLoading}
                             onBack={handleBack}
-                            onRenameSubarea={onRenameSubarea}
-                            onDeleteSubarea={onDeleteSubarea}
+                            canStartDrawing={canStartDrawing}
+                            onStartDrawing={onStartDrawing}
+                            onRenameSubarea={onRequestRename}
+                            onDeleteSubarea={onRequestDelete}
                             canClickThrough={canClickToCameras}
-                            onNavigateCamera={handleSelectCard}
-                            onCameraClick={onCameraClick}
-                            parentName={selectedAOI.name}
-                            onAddCamera={onAddCamera}
+                            onNavigateCamera={onNavigateTo}
+                            onCardClick={onCardClick}
+                            onCardHover={onCardHover}
                             isAddingCamera={isDrawingCamera}
                         />
                     )}
 
-                    { !selectedCamera && !selectedSubarea && selectedAOI && (
+                    { currentSelectionMode === "area" && (
                         // AOI detail – if an AOI is currently selected
                         <AoiDetailMenu
                             aoi={selectedAOI}
+                            subareas={convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id)}
                             detailLoading={detailLoading}
                             onBack={handleBack}
-                            onAddSubarea={onAddSubarea}
                             isDrawingSubarea={isDrawingSubarea}
                             canClickThrough={canClickToSubareas}
-                            onSubareaHover={onSubareaHover}
-                            onSubareaClick={onSubareaClick}
-                            onRenameArea={onRenameAoi}
-                            onDeleteArea={onDeleteAoi}
-                            onNavigateSubarea={handleSelectCard}
+                            onCardHover={onCardHover}
+                            onCardClick={onCardClick}
+                            canStartDrawing={canStartDrawing}
+                            onStartDrawing={onStartDrawing}
+                            onRenameArea={onRequestRename}
+                            onDeleteArea={onRequestDelete}
+                            onNavigateSubarea={onNavigateTo}
                         />
                     )}
 
-                    { !selectedCamera && !selectedSubarea && !selectedAOI && (
+                    { currentSelectionMode === "all" && (
                         // main menu – list of all AOIs
                         // Panel 1: AOI list
                         <AllAoiMenu
-                            aois = {aois}
+                            aois = {convertRecordToArray(allAois)}
                             listLoading = {listLoading}
                             isDrawingAOI = {isDrawingAOI}
                             canClickThrough={canClickToAreas}
-                            onAoiHover = {onAoiHover}
-                            onAoiClick = {onAoiClick}
-                            handleAddArea = {handleAddArea} 
-                            handleSelectAOI = {handleSelectCard} 
+                            onCardHover = {onCardHover}
+                            onCardClick = {onCardClick}
+                            onNavigateAOI = {onNavigateTo} 
+                            canStartDrawing={canStartDrawing}
+                            onStartDrawing={onStartDrawing}
                         />
                     )}
                 </> )}

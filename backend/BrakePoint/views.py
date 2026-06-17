@@ -1127,6 +1127,19 @@ def detect_road_features_latest(request, pk: int):
         traceback.print_exc()
         return Response({"success": False, "error": str(e)}, status=500)
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+# gets a list of all videos in cameras that the user has
+def video_list_api(request):
+    user = request.user
+
+    try:
+        videos = Video.objects.filter(camera__user = user)
+        ser = VideoSerializer(videos, many=True)
+        return Response({ "success": True, "videos": ser.data })
+    except:
+        return Response({ "success": False, "error": "Unable to fetch videos" })
+
 
 @api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1477,3 +1490,131 @@ def dashboard_summary(request):
         "vehicle_breakdown": vehicle_breakdown,
         "sub_areas": sub_areas,
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landing_objects(request):
+    try:
+        qs = SavedLocation.objects.filter(user=request.user)
+        
+        res_areas = []
+        res_subareas = []
+        for loc in qs:
+            if (loc.location_type == "aoi"):
+                res_areas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+            elif (loc.location_type == "sub_area"):
+                res_subareas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+
+            res_cameras = Camera.objects.filter(user=request.user)
+        res_videos = Video.objects.filter(camera__user=request.user)
+        ser_cameras = CameraSerializer(res_cameras, many=True)
+        ser_videos = VideoSerializer(res_videos, many=True)
+
+        return Response({
+            "success": True,
+            "aois": res_areas,
+            "subareas": res_subareas,
+            "cameras": ser_cameras.data,
+            "videos": ser_videos.data,
+        })
+
+        pass
+
+    except Exception as e:
+        print(e)
+        return Response({"success": False, "error": e})
+        pass
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def inspect_video_metadata(request):
+    """
+    Inspect video file and extract metadata (creation_time, duration).
+    
+    Accepts video_id (GET/POST) or file path and returns:
+    {
+        "start_time": "ISO_8601_STRING_OR_NULL",
+        "duration_seconds": float,
+        "source": "metadata" | "filename" | "failed"
+    }
+    """
+    try:
+        from video_inspection import inspect_video
+        
+        video_id = request.query_params.get('video_id') or request.data.get('video_id')
+        file_path = request.query_params.get('file_path') or request.data.get('file_path')
+        
+        # If video_id provided, get file path from database
+        if video_id:
+            try:
+                video = Video.objects.get(pk=video_id, camera__user=request.user)
+                # Use the video file path from media storage
+                if hasattr(video, 'file') and video.file:
+                    file_path = video.file.path
+            except Video.DoesNotExist:
+                return Response(
+                    {"error": "Video not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        if not file_path:
+            return Response(
+                {"error": "Either video_id or file_path is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform inspection
+        inspection_result = inspect_video(file_path)
+        
+        # Return raw JSON response (no wrapping)
+        return Response(inspection_result)
+        
+    except Exception as e:
+        return Response({
+            "start_time": None,
+            "duration_seconds": None,
+            "source": "failed"
+        })

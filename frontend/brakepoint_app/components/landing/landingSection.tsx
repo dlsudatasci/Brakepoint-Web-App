@@ -1,5 +1,5 @@
 // import libraries & css
-import { IconButton, Menu, MenuItem, ListItemIcon, Typography } from "@mui/material";
+import { CircularProgress, IconButton, Menu, MenuItem, ListItemIcon, Typography } from "@mui/material";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import "./landingSection.css";
 
@@ -73,9 +73,9 @@ type LandingSectionProps = {
 	startHidden?: boolean;						// whether the contents of this section is hidden on first load
 
 	canAdd?: boolean;							// whether to create an add button
+	canStartDrawing?: boolean;					// when false, deactivates the add button (replaces it with loading...)
 	isAddButtonActive?: boolean;				// triggers on/off the activity status of this button, if has add button (canAdd == true)
-	onActivateAdd?: () => void;					// function to run when the add button is switched ON (canAdd == true)
-	onDeactivateAdd?: () => void;				// function to run when the add button is switched OFF (canAdd == true)
+	onClickAdd?: () => void;					// function to run when the add button is switched ON or OFF(canAdd == true)
 
 	hasContextMenu?: boolean;					// include the context menu?
 	onClickEditName?: () => void;				// if not undefined, enables option to edit name; triggers when this is clicked
@@ -90,7 +90,7 @@ export default function LandingSection({
 	icon, onClickIcon = () => {},
 	labelHeader, labelSubheader, chipCount,
 	canHide = false, startHidden = false,
-	canAdd = false, isAddButtonActive = false, onActivateAdd = () => {}, onDeactivateAdd = () => {},
+	canAdd = false, canStartDrawing = true, isAddButtonActive = false, onClickAdd = () => {},
 	hasContextMenu = false, onClickEditName, onClickRecalibratePolygons, onClickDeleteObject,
 	children
 }: LandingSectionProps) {
@@ -128,9 +128,11 @@ export default function LandingSection({
 
 					{ /* add button for adding areas */ }
 					{ canAdd && (
-						<div className={ `addButton addButton-${isAddButtonActive ? "active" : "inactive"}` }> <IconButton onClick={() => { isAddButtonActive ? onDeactivateAdd() : onActivateAdd() }} >
-							{ isAddButtonActive ? <CloseIcon/> : <AddIcon/> }
-						</IconButton> </div> )
+						<div className={ `addButton addButton-${!canStartDrawing ? "loading" : isAddButtonActive ? "active" : "inactive"}` }>
+							<IconButton onClick={() => { canStartDrawing ? onClickAdd() : {} }} >
+								{ !canStartDrawing ? <CircularProgress size={20} /> : isAddButtonActive ? <CloseIcon/> : <AddIcon/> }
+							</IconButton>
+						</div> )
 					}
 
 					{ /* context menu button for extra options (intended for a title header) */ }
