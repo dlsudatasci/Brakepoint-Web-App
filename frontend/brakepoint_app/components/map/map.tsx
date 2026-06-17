@@ -125,60 +125,6 @@ type FocusArea = {
 */
 type ExplorePhase = "idle" | "drawing-primary" | "locked-primary" | "drawing-sub";
 
-// definition of types for the props for Map
-type MapProps = {
-  mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
-
-  dashboardMarkers?: DashboardMarker[];                                                     // markers to show (mode = "dashboard")
-  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
-
-  onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
-  onCameraAdd?: (lat: number, lng: number) => void;                                         // triggers when user creates a camera (mode = "map" | "heatmap")
-  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
-  onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
-  selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
-  visibleCameraIds?: number[] | null;                                                       // when set, only show markers for cameras with these ids (level 3+)
-
-  refreshTrigger: boolean;                                                                  // invert to force a refresh
-  goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
-  goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
-  mapMaxBounds?: [[number, number], [number, number]] | null;                               // when set, restricts panning to this padded bounding box
-  
-  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
-  subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;           // sub-area polygons rendered when an AOI is selected
-  cameraItems?: Camera[] | null;                                                            // camera 
-  currentSelectionMode?: "all" | SummaryType;                                               // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
-
-
-  onObjectClick?: (type: SummaryType, id: number) => void;                                  // fires when user clicks a polygon of an AOI or subarea
-  onRequestRename?: (type: SummaryType, id: number) => void;                                // fires when user requests to rename an object
-  onRequestDelete?: (type: SummaryType, id: number) => void;                                // fires when user requests to delete an object  
-
-  showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
-  onMapReady?: () => void;                                                                  // triggers when map has been loaded
-  onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
-  hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
-  cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
-  isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
-  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a rectangle
-  hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
-  activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
-  onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
-  hideAoiMarkers?: boolean;                                                                 // suppress AOI marker rendering (used in sub-level view to show polygon only)
-  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that blue polygon
-  activeSubAreaId?: number | null;                                                          // id of selected sub-area — shows polygon and marker in orange
-  onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
-  onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
-  hideSubAreaMarkers?: boolean;                                                             // suppress sub-area centroid label markers (e.g. at camera level)
-  disableSubAreaInteraction?: boolean;                                                      // disable click and hover cursor on sub-area polygons (e.g. at camera level)
-  goToBoundsPadding?: { top: number; right: number; bottom: number; left: number };         // custom padding for fitBounds (accounts for sidebars)
-  showGeocoder?: boolean;                                                                   // show the search bar (landing page)
-  isPlacingCamera?: boolean;                                                                // when true, activates the "click map to place camera" tool mode externally
-  cameraParentLocationId?: number | null;                                                   // saved_location id to assign to newly created cameras
-  onCameraPlacedOutside?: () => void;                                                       // called when user clicks outside the current subarea polygon while placing a camera
-  hideCameraPolygons?: boolean;                                                             // when true, hide camera-associated road polygons (level 3)
-};
-
 // a MapLibre marker for each subarea (mode = "dashboard")
 type DashMarkerEntry = {
   marker: maplibregl.Marker;
@@ -490,6 +436,65 @@ class createPolygonEditButtons implements maplibregl.IControl {
 
 }
 
+
+
+
+
+// definition of types for the props for Map
+type MapProps = {
+  mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
+
+  dashboardMarkers?: DashboardMarker[];                                                     // markers to show (mode = "dashboard")
+  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
+
+  onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
+  onCameraAdd?: (lat: number, lng: number) => void;                                         // triggers when user creates a camera (mode = "map" | "heatmap")
+  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
+  onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
+  selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
+  visibleCameraIds?: number[] | null;                                                       // when set, only show markers for cameras with these ids (level 3+)
+
+  refreshTrigger: boolean;                                                                  // invert to force a refresh
+  goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
+  goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
+  mapMaxBounds?: [[number, number], [number, number]] | null;                               // when set, restricts panning to this padded bounding box
+  
+  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
+  subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;           // sub-area polygons rendered when an AOI is selected
+  cameraItems?: Camera[] | null;                                                            // camera 
+  currentSelectionMode?: "all" | SummaryType;                                               // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
+
+  onObjectClick?: (type: SummaryType, id: number) => void;                                    // fires when user clicks a polygon of an AOI or subarea
+  onRequestRename?: (type: SummaryType, id: number) => void;                                  // fires when user requests to rename an object
+  onRequestDelete?: (type: SummaryType, id: number) => void;                                  // fires when user requests to delete an object  
+  
+  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a bounding box for an area or subarea
+  onPolygonDrawn?: (id: number, polygon: [number, number][], onSuccess: () => void) => void;  // runs when polygon has finished being drawn
+
+  showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
+  onMapReady?: () => void;                                                                  // triggers when map has been loaded
+  onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
+  hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
+  cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
+  isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
+  hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
+  activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
+  onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
+  hideAoiMarkers?: boolean;                                                                 // suppress AOI marker rendering (used in sub-level view to show polygon only)
+  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that blue polygon
+  activeSubAreaId?: number | null;                                                          // id of selected sub-area — shows polygon and marker in orange
+  onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
+  onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
+  hideSubAreaMarkers?: boolean;                                                             // suppress sub-area centroid label markers (e.g. at camera level)
+  disableSubAreaInteraction?: boolean;                                                      // disable click and hover cursor on sub-area polygons (e.g. at camera level)
+  goToBoundsPadding?: { top: number; right: number; bottom: number; left: number };         // custom padding for fitBounds (accounts for sidebars)
+  showGeocoder?: boolean;                                                                   // show the search bar (landing page)
+  isPlacingCamera?: boolean;                                                                // when true, activates the "click map to place camera" tool mode externally
+  cameraParentLocationId?: number | null;                                                   // saved_location id to assign to newly created cameras
+  onCameraPlacedOutside?: () => void;                                                       // called when user clicks outside the current subarea polygon while placing a camera
+  hideCameraPolygons?: boolean;                                                             // when true, hide camera-associated road polygons (level 3)
+};
+
 export default function MapView({
   mode,
   dashboardMarkers,
@@ -535,6 +540,7 @@ export default function MapView({
   currentSelectionMode,
   onRequestDelete,
   onRequestRename,
+  onPolygonDrawn,
 }: MapProps) {
 
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -2563,8 +2569,8 @@ export default function MapView({
           const poly = completedPolygonsRef.current[polyIdx];
           if (!poly) return;
 
-          const ok = await savePolygonToCamera(id, poly.points);
-          if (!ok) return;
+          //const ok = await savePolygonToCamera(id, poly.points);
+          //if (!ok) return;
 
           setCompletedPolygons((prev) => prev.map((p, i) => (i === polyIdx ? { ...p, cameraId: id } : p)));
 
@@ -2888,25 +2894,12 @@ export default function MapView({
     }
 
     if (mode === "map") {
-      /*
-      if (!editControlRef.current) {
-        editControlRef.current = new ToggleEditButton((isEdit) => {
-          setIsEditMode(isEdit);
-          setToolMode("none");
-        });
-        map.addControl(editControlRef.current, "bottom-right");
-      }
-      
-    } else {
-      if (editControlRef.current) {
-        map.removeControl(editControlRef.current);
-        editControlRef.current = null;
-      }
-    */
 
+    // handles visibility of the map point toolbox 
     if (!hideEditControls) {
       if (!editControlRef.current) {
         editControlRef.current = new createToggleButtons((toolMode) => {
+          // brings up the primary toolbox
           setToolMode(toolMode);
 
           // if setting to add polygon, bring up the add polygon specific menu options
@@ -2931,23 +2924,38 @@ export default function MapView({
             polygonEditControlRef.current = null;
           }
         });
-          map.addControl(editControlRef.current, "bottom-right");
-        }
-      } else {
-        if (polygonEditControlRef.current) {
-          map.removeControl(polygonEditControlRef.current);
-          polygonEditControlRef.current = null;
-        }
-        if (editControlRef.current) {
-          map.removeControl(editControlRef.current);
-          editControlRef.current = null;
-        }
-        setToolMode("none");
-        setPolygonPoints([]);
-        clearGuideline();
-      }  // end hideEditControls check
-
-
+        map.addControl(editControlRef.current, "bottom-right");
+      }
+    } else {
+      // if they should not be present, remove them and clear all related variables
+      if (polygonEditControlRef.current) {
+        map.removeControl(polygonEditControlRef.current);
+        polygonEditControlRef.current = null;
+      }
+      if (editControlRef.current) {
+        map.removeControl(editControlRef.current);
+        editControlRef.current = null;
+      }
+      setToolMode("none");
+      setPolygonPoints([]);
+      clearGuideline();
+    }  // end hideEditControls check
+      
+      /*
+      if (!editControlRef.current) {
+        editControlRef.current = new ToggleEditButton((isEdit) => {
+          setIsEditMode(isEdit);
+          setToolMode("none");
+        });
+        map.addControl(editControlRef.current, "bottom-right");
+      }
+      
+    } else {
+      if (editControlRef.current) {
+        map.removeControl(editControlRef.current);
+        editControlRef.current = null;
+      }
+    */
       /*
                       <button
                         onClick={() => }
@@ -3173,11 +3181,13 @@ export default function MapView({
 
       if (!isEditMode && activeTool !== "none") return;
 
+      // place a camera onto the map
       if (activeTool === "addCamera") {
         onCameraAdd(e.lngLat.lat, e.lngLat.lng);
         return;
       }
 
+      // creates a new polygon point 
       if (activeTool === "addPoint") {
         if (polygonPointsRef.current.length >= 3) {
           const hit = map.queryRenderedFeatures(e.point, {
@@ -3189,7 +3199,33 @@ export default function MapView({
             const idx = Number(props.index);
             const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
+            // handles polygon completion
             if (!isCompleted && idx === 0) {
+              const currentPoints = polygonPointsRef.current;
+              const cameraId = Number(selectedCameraIdRef.current);
+              setPolygonPoints([]);
+
+              clearGuideline();
+
+              onPolygonDrawn(cameraId, currentPoints, () => {
+                const newPoly: CompletedPolygon = {
+                  points: [...currentPoints],
+                  cameraId: cameraId,
+                };
+
+                // update completed polygon storage to instantly display this polygon
+                // though it /will/ reload again anyway when leaving and returning :>
+                // setCompletedPolygons((prev) => [...prev.filter((x) => x.cameraId !== cameraId), newPoly])
+                let newCompletedPolygons = completedPolygonsRef.current;
+                newCompletedPolygons = newCompletedPolygons.filter((x) => x.cameraId !== cameraId)
+                newCompletedPolygons = [...newCompletedPolygons, newPoly];
+                setCompletedPolygons(newCompletedPolygons);
+
+                setShowSuccessNotification(true);
+                window.setTimeout(() => setShowSuccessNotification(false), 1500)
+              });
+
+              /*
               const newPoly: CompletedPolygon = {
                 points: [...polygonPointsRef.current],
                 cameraId: null,
@@ -3200,6 +3236,7 @@ export default function MapView({
               clearGuideline();
               setShowSuccessNotification(true);
               window.setTimeout(() => setShowSuccessNotification(false), 1500);
+              */
               return;
             }
           }

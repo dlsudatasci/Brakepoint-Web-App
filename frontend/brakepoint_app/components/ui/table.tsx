@@ -94,6 +94,8 @@ interface TableProps {
   onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
   onVideoSelect?: (videoData: any) => void;
   onMultipleVideoSelect?: (videoDataArray: any[]) => void;
+  externalModalOpen?: boolean;
+  onExternalModalClose?: () => void;
 }
 
 interface AddModalProps {
@@ -1282,7 +1284,7 @@ function SessionBlock({
 
 // ------- Main Table -------- 
 
-export default function Table({ onVideoFileSelect, hideUpload = false, cameraId, onUploadComplete, visibleCameraIds = [], onUploadStart, onProcessingStart, onProcessingComplete, onVideoSelect, onMultipleVideoSelect }: TableProps) {
+export default function Table({ onVideoFileSelect, hideUpload = false, cameraId, onUploadComplete, visibleCameraIds = [], onUploadStart, onProcessingStart, onProcessingComplete, onVideoSelect, onMultipleVideoSelect, externalModalOpen, onExternalModalClose }: TableProps) {
   const [handleOpenAddModal, setAddModalOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -1305,6 +1307,13 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
 
   // The single selected video (calendar supports one at a time)
   const selectedRow = selectedRows.length === 1 ? selectedRows[0] : null;
+
+  useEffect(() => {
+    if (externalModalOpen) {
+      setAddModalOpen(true);
+      onExternalModalClose?.(); 
+    }
+  }, [externalModalOpen]);
 
   // Fetch videos for the selected camera or visible cameras on calendar view
   const fetchVideos = async () => {
@@ -1585,10 +1594,10 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
 
           {!hideUpload && (
             <div className="cal-header__actions">
-              <button className="cal-icon-btn" title="Upload video" aria-label="Upload video" onClick={() => setAddModalOpen(true)}>
+              {/*<button className="cal-icon-btn" title="Upload video" aria-label="Upload video" onClick={() => setAddModalOpen(true)}>
                 <FileUploadIcon sx={{ fontSize: 17 }} />
               </button>
-              {/* <button className="cal-icon-btn" title="Edit calibration" aria-label="Edit calibration" disabled={!selectedRow} onClick={handleEditCalibration}>
+               <button className="cal-icon-btn" title="Edit calibration" aria-label="Edit calibration" disabled={!selectedRow} onClick={handleEditCalibration}>
                 <TuneIcon sx={{ fontSize: 17 }} />
               </button>
               <button className="cal-icon-btn" title="Rename video" aria-label="Rename video" disabled={!selectedRow} onClick={handleEdit}>

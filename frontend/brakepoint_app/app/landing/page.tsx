@@ -65,14 +65,14 @@ export default function LandingPage() {
 
   // are we currently in an edit mode?
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
-  const [drawType, setDrawType] = useState<null | SummaryType | "polygon">(null);
+  const [drawType, setDrawType] = useState<null | SummaryType>(null);
   const [drawSubareaType, setDrawSubareaType] = useState<null | SubAreaType>(null);
   const [drawParentId, setDrawParentId] = useState<null | number>(null);
   const [drawIsLoading, setDrawIsLoading] = useState<boolean>(false);
   
   const isDrawingRef = useRef<boolean>(false);
   isDrawingRef.current = isDrawing;
-  const drawTypeRef = useRef<null | SummaryType | "polygon">(null);
+  const drawTypeRef = useRef<null | SummaryType>(null);
   drawTypeRef.current = drawType;
   const drawSubareaTypeRef = useRef<SubAreaType>(null);
   drawSubareaTypeRef.current = drawSubareaType;
@@ -637,9 +637,28 @@ export default function LandingPage() {
     }
   }, []);  
 
+  /*
+  const handleCameraEdit = useCallback((id: number, name: string) => {
+    setEditCamera({ id, name, ring: [] });
+    setEditCameraName(name);
+  }, []);
+
+  const handleCameraDelete = useCallback((id: number, name: string) => {
+    setDeleteConfirmCamera({ id, name, ring: [] });
+  }, []);
+
+  const handleAddSubarea = useCallback((type: SubAreaType) => {
+    setIsDrawingSubarea((d) => {
+      const next = d === type ? false : type;
+      pendingSubAreaTypeRef.current = next || null;
+      return next;
+    });
+    setIsDrawing(false);
+  }, []);
+  */
+
   // called once user places a camera on the map
   const handleCameraAdded = useCallback(async (lat: number, lng: number) => {
-
     // retrieve consts based on our states set earlier
     const type = drawTypeRef.current;
     const parentId = drawParentIdRef.current;
@@ -703,15 +722,6 @@ export default function LandingPage() {
       setDrawIsLoading(false);
       handleDrawingCleanup();
     }
-
-    // setIsPlacingCamera(false);
-    // setSubareaCameraIds((prev) => [...(prev ?? []), _id]);
-    // if (selectedSubareaIdRef.current != null) {
-      //sideMenuUpdaterRef.current?.addCamera(
-      //  convertObjectToCameraSummary(camera),
-      //  selectedSubareaIdRef.current,
-      // );
-    // }
   }, []);
 
   // asks the API to rename the given object;
@@ -726,9 +736,9 @@ export default function LandingPage() {
     
     setEditIsLoading(true);
     try {
-
-      if (type != "camera") { // area or subarea
-          const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
+          // throw in a PATCH request to either cameras (for cameras) or saved-locations (for areas and subareas)
+          const fetchLink = `${process.env.NEXT_PUBLIC_API_URL}/api/${type === "camera" ? "cameras" : "saved-locations"}/${id}/`
+          const res = await authFetch(fetchLink, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: newName }),
@@ -736,26 +746,88 @@ export default function LandingPage() {
           if (!res.ok) { console.log(await res.text()); return false; }
 
           // past this point, api success - patch the relevant data in our local copy
-          if (type === "area") {
+          if (type === "area") { // area
             const newAllAois = allAois;
             newAllAois[id].name = newName;
             setAllAois(newAllAois)
             return;
-          } else if (type === "subarea"){ // subarea
+          } else if (type === "subarea") { // subarea
             const newAllSubareas = allSubareas;
             newAllSubareas[id].name = newName;
             setAllSubareas(newAllSubareas)
+          } else if (type === "camera") { // camera
+            const newAllCameras = allCameras;
+            newAllCameras[id].name = newName;
+            setAllCameras(newAllCameras);
           }
-
-      } else if (type == "camera") { // camera
-      }
-
-    } catch {
+    } catch (exception) {
+      console.log(exception)
     } finally {
       // cleanup
       handleEditClose()
       }
   }
+
+  // handles a polygon being drawn
+  const handlePolygonDrawn = async (id: number, polygon: [number, number][], onSuccess?: () => void) => {
+    // quickfails: if camera doesn't exist or already has a polygon 
+    const camera = getCameraSummaryFromId(id);
+    if (!camera) return;
+    // else if (camera.polygon != null && camera.polygon.length > 0) return;
+
+    try {
+      // perform our api call
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/polygon/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ polygon: polygon }),
+      })
+      if (!res.ok) { console.log(await res.text()); return false; }
+
+      // patching local copies...
+      const newCameras = allCamerasRef.current;
+      newCameras[id].polygon = polygon;
+      setAllCameras(newCameras);
+      onSuccess();
+
+    } catch (exception) {
+      console.log(exception)
+    } finally {
+
+    }
+    // onSuccess();
+  }
+
+  /*
+
+  const handleSaveCameraName = async () => {
+    if (!editCamera) return;
+    const target = editCamera;
+    const newName = editCameraName.trim() || target.name;
+
+    sideMenuUpdaterRef.current?.setLoading(true);
+    setEditCamera(null);
+
+    setSavingCamera(true);
+    try {
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${target.id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      sideMenuUpdaterRef.current?.renameObject("camera", target.id, newName);
+    } catch (err) {
+      console.error("Failed to rename camera:", err);
+      sideMenuUpdaterRef.current?.setLoading(false);
+      setEditCamera(target);
+      setEditCameraName(target.name);
+    } finally {
+      setSavingCamera(false);
+    }
+  };
+
+  */
 
   // asks the API to delete the given object
   const handleDeleteObject = async () =>  {
@@ -768,11 +840,9 @@ export default function LandingPage() {
     
     setEditIsLoading(true);
     
-    // if id is currently selected, back out of it
-
-    
     try {
-      if (type !== "camera") { // deleting area or subarea
+      // deleting area or subarea
+      if (type !== "camera") { 
         const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
           method: "DELETE",
         });
@@ -796,8 +866,27 @@ export default function LandingPage() {
           newAllAreas[parentOfThis].subarea_ids = newAllAreas[parentOfThis].subarea_ids.filter((x) => x !== id)
           setAllAois(newAllAreas)          
         }
-      } else if (type === "camera") { // deleting camera
+      }
+      
+      // deleting camera
+      else if (type === "camera") { 
+        const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/`, {
+          method: "DELETE",
+        })
+        if (!res.ok) throw new Error(await res.text()); // throw error and shunt out
+
+        // done — in this case, delete in our local camera list and update the subarea list accordingly
         if (selectedCameraRef.current === id) handleBack() // perform a return if this is selected
+
+        const newAllCameras = allCamerasRef.current;
+        const parentOfThis = newAllCameras[id].parent;
+        delete newAllCameras[id];
+        setAllCameras(newAllCameras);
+
+        const newAllSubareas = allSubareasRef.current;
+        newAllSubareas[parentOfThis].camera_count--;
+        newAllSubareas[parentOfThis].camera_ids = newAllSubareas[parentOfThis].camera_ids.filter((x) => x !== id);
+        setAllSubareas(newAllSubareas)
       }
     } catch (exception) {
       console.log(exception)
@@ -878,8 +967,9 @@ export default function LandingPage() {
 
           isPlacingCamera={isDrawing && drawTypeRef.current === "camera"}
           onCameraAdd={handleCameraAdded}
+          onPolygonDrawn={handlePolygonDrawn}
 
-          hideEditControls={!isFeedTabActive}
+          hideEditControls={currentSelectionModeRef.current !== "camera"}
           cleanMap={selectedSubareaId == null}
           showGeocoder
           hoveredAoiId={hoveredAoiId}
@@ -926,6 +1016,8 @@ export default function LandingPage() {
           isDrawingAOI={isDrawingRef.current && drawTypeRef.current === "area"}
           isDrawingSubarea={(isDrawingRef.current && drawTypeRef.current === "subarea") ? drawSubareaTypeRef.current : false}
           isDrawingCamera={isDrawingRef.current && drawTypeRef.current === "camera"}
+          
+          onDeleteCamera={() => {}}
 
           onFeedTabActive={setIsFeedTabActive}
         />

@@ -168,8 +168,8 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
   useEffect(() => { fetchTimeline(); }, [fetchTimeline]);
   // --- derived data ---
   const sortedData = useMemo(
-    () => [...DUMMY_ROWS].sort((a, b) => a.date.getTime() - b.date.getTime()),
-    [],
+    () => [...rows].sort((a, b) => a.date.getTime() - b.date.getTime()),
+    [rows],
   );
 
   const totalBreakdown = useMemo(() => {
@@ -181,14 +181,14 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
       truck: 0,
     };
 
-    // sortedData.forEach(r => {
-    //   if (!r.breakdown) return;
-    //   sum.car += r.breakdown.car ?? 0;
-    //   sum.jeepney += r.breakdown.jeepney ?? 0;
-    //   sum.motorcycle += r.breakdown.motorcycle ?? 0;
-    //   sum.bus += r.breakdown.bus ?? 0;
-    //   sum.truck += r.breakdown.truck ?? 0;
-    // });
+    sortedData.forEach((r: any) => {
+      if (!r.breakdown) return;
+      sum.car += r.breakdown.car ?? 0;
+      sum.jeepney += r.breakdown.jeepney ?? 0;
+      sum.motorcycle += r.breakdown.motorcycle ?? 0;
+      sum.bus += r.breakdown.bus ?? 0;
+      sum.truck += r.breakdown.truck ?? 0;
+    });
 
     return sum;
   }, [sortedData]);
@@ -207,21 +207,6 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
     { label: 'Bus', value: totalBreakdown.bus, color: '#4254FB' },
     { label: 'Truck', value: totalBreakdown.truck, color: '#FA4F58' },
   ], [totalBreakdown]);
-
-  const bandData = useMemo(() => {
-    const build = (key: MetricKey) => {
-      const stats = statistics[key];
-      const lower = sortedData.map(d => {
-        const v = d[key]; return v == null || stats.std == null ? null : Math.max(0, v - stats.std);
-      });
-      const upper = sortedData.map(d => {
-        const v = d[key]; return v == null || stats.std == null ? null : v + stats.std;
-      });
-      const band = upper.map((u, i) => u == null || lower[i] == null ? null : u - lower[i]!);
-      return { lower, band };
-    };
-    return { speeding: build('speeding'), swerving: build('swerving'), abruptStop: build('abruptStop'), vehicles: build('vehicles') };
-  }, [sortedData, statistics]);
 
   // --- helpers ---
   const isOn = (k: string) => selectedMetrics.includes(k);
@@ -374,15 +359,15 @@ export default function Timeline({ cameraIds = [] }: TimelineProps) {
                 Select cameras on the map to view behavior data.
               </Typography>
             </Box>
-          )}
+          )}*/}
 
           {noData && !noCameras && !error && (
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography variant="body2" color="text.secondary">
-                No video data found for the selected cameras and date range.
+                No video data found for the selected date range.
               </Typography>
             </Box>
-          )} */}
+          )} 
 
             {error && (
               <Box sx={{ textAlign: 'center', py: 8 }}>

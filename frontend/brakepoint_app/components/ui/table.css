@@ -158,7 +158,7 @@
 }
 
 .cal-empty--inline {
-  position: absolute;
+  margin-top: 1.5em;
   inset: 0;
   min-height: unset;
 }

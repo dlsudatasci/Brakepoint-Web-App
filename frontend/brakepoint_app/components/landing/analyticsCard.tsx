@@ -29,10 +29,15 @@ export type ChartData = {
 const BAR_COLORS = ["#e63946", "#f4b961", "#4f8ef7", "#a855f7", "#06b6d4", "#10b981"];
 
 export function StackedBar({ data }: { data: ChartData[] }) {
-  const cleaned = useMemo(
-    () => data.filter((d) => Number.isFinite(d.value) && d.value > 0),
-    [data],
-  );
+  const cleaned = useMemo(() => {
+    // normalize
+    const arr: ChartData[] = Array.isArray(data)
+      ? data
+      : Object.entries(data ?? {}).map(([label, value]) => ({ label, value: value as number }));
+
+    return arr.filter((d) => Number.isFinite(d.value) && d.value > 0);
+  }, [data]);
+
   const total = useMemo(() => cleaned.reduce((s, d) => s + d.value, 0), [cleaned]);
 
   if (!cleaned.length || total === 0) {

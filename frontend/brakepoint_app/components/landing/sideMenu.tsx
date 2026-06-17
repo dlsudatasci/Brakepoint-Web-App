@@ -5,6 +5,7 @@ import { Box, Typography, Button, Chip, CircularProgress, Divider, IconButton } 
 import { useRouter } from "next/navigation";
 import styles from "./menuBar.module.css";
 import { authFetch } from "@/lib/authFetch";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 // components
 import AnalyticsCard, { StackedBar } from "./analyticsCard";
@@ -19,8 +20,10 @@ import {
     convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
     VideoSummary, convertObjectToVideoSummary,
     AOIRecord, SubareaRecord, CameraRecord, VideoRecord, convertRecordToArray,
+    VehicleBreakdown
 } from "@/components/landing/summaryTypes";
 import CameraTags from "@/components/ui/cameraTags";
+import VideoTable from "@/components/ui/table";
 
 // icons
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -39,6 +42,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 // css
 import "./sideMenu.css";
 import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
+import Table from "@/components/ui/table";
 
 // displays a single AOI card
 function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardClick }: {
@@ -408,14 +412,25 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onBack, onRenameSu
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo} : {
+function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onUploadStart, onProcessingStart, onProcessingComplete} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
     videosLoading?: boolean,            // whether videos are still being loaded
     videosError?: boolean,              // whether video loading have posted an error
     thumbnail?: string;                 // the thumbnail to display
     onClickUploadVideo?: () => void,    // event to trigger when user clicks on Upload Video button
+    onThumbnailUpdate?: (thumb: string) => void; // callback when thumbnail updates
+    onUploadStart?: (videoName: string) => void;
+    onProcessingStart?: (videoName: string, videoId: number) => void;
+    onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
 }) {
+    const [openUploadModal, setOpenUploadModal] = useState(false);
+
+    const handleUploadClick = () => {
+        setOpenUploadModal(true);
+        onClickUploadVideo?.();  // still notify parent if needed
+    };
+
     return (
         <div className="menuContainer">
             { /* thumbnail */ }
@@ -435,30 +450,54 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
                 canHide
 
                 icon={ <UploadIcon /> }
-                onClickIcon={ onClickUploadVideo }
+                onClickIcon={handleUploadClick}
             >
-                { /* TODO video table */ }            
+                <Table
+                    cameraId={camera.id}
+                    onVideoFileSelect={(url, thumb) => {
+                        if (thumb) onThumbnailUpdate?.(thumb);
+                    }}
+                    hideUpload={false}
+                    externalModalOpen={openUploadModal}
+                    onExternalModalClose={() => setOpenUploadModal(false)}
+                    onUploadStart={onUploadStart}
+                    onProcessingStart={onProcessingStart}
+                    onProcessingComplete={onProcessingComplete}
+                />     
             </LandingSection>
         </div>
     )
 }
 
 // displays part of the sidebar for the camera statistics tab
-function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading} : {
+function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading, vehicleBreakdown} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
     videosLoading?: boolean,            // whether videos are still being loaded
     videosError?: boolean,              // whether video loading have posted an error
+    vehicleBreakdown: VehicleBreakdown; // breakdown of vehicles by type
 }) {
     return (
         <div className="menuContainer">
             <Timeline cameraIds={[camera.id]} />
+
+             { /* overview – basic statistics */ }
+            {/* <LandingSection type="header" labelHeader="Overview" canHide> */}
+                <LandingSection type="header" labelHeader="Total vehicle count" canHide>
+                    <AnalyticsCard
+                        variant="bar"
+                        data={vehicleBreakdown ?? []}
+                        compact
+                    />
+                </LandingSection>
+            {/* </LandingSection> */}
+
         </div>
     )
 }
 
 // displays the sidebar for a certain camera
-function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo, onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera} : {
+function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo, onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onUploadStart, onProcessingStart, onProcessingComplete} : {
     camera: CameraSummary,
     detailLoading?: boolean,
     onBack: () => void;
@@ -468,6 +507,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     onRenameCamera?: (type: SummaryType, id: number) => void;
     onRecalibrateCamera?: (id: number) => void;
     onDeleteCamera?: (type: SummaryType, id: number) => void;
+    onUploadStart?: (videoName: string) => void;
+    onProcessingStart?: (videoName: string, videoId: number) => void;
+    onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
 }) {
     const [videosLoading, setVideosLoading] = useState<boolean>(true);
     const [videosError, setVideosError] = useState<boolean>(false);
@@ -475,8 +517,12 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     const [thumbnail, setThumbnail] = useState<string | undefined>(undefined)
     const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
     
+    const [cameraBreakdown, setCameraBreakdown] = useState<VehicleBreakdown>({
+    Bus: 0, Car: 0, Jeepney: 0, Motorcycle: 0, Truck: 0
+});
     // get a video from the api
     useEffect(() => {
+        /*
         const fetchVideos = async () => {
             try {
                 const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camera.id}/videos/`);
@@ -493,6 +539,15 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
 
                 // set our data
                 setLoadedVideos(allVideos);
+
+                const merged: VehicleBreakdown = { Bus: 0, Car: 0, Jeepney: 0, Motorcycle: 0, Truck: 0 };
+                    for (const v of allVideos) {
+                        for (const key of Object.keys(merged) as (keyof VehicleBreakdown)[]) {
+                            merged[key] += v.vehicle_breakdown?.[key] ?? 0;
+                        }
+                    }
+                setCameraBreakdown(merged);
+
                 setThumbnail(allVideos.length > 0 ? allVideos[0].thumbnail : "");
                 setVideosLoading(false);
             } catch(e) {
@@ -503,6 +558,7 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
         }
 
         fetchVideos();
+        */
     }, [camera])
 
     // toggles the tab
@@ -531,14 +587,22 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
             <ModeSegmentedControl currentMode={activeTab} onClick={handleToggleTab} />
 
             {activeTab == "feed" && (<CameraFeedMenu
-                camera={camera} loadedVideos={loadedVideos}
-                videosLoading={videosLoading} videosError={videosError} thumbnail={thumbnail}
+                camera={camera} 
+                loadedVideos={loadedVideos}
+                videosLoading={videosLoading} 
+                videosError={videosError} 
+                thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
+                onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
+                onUploadStart={onUploadStart}
+                onProcessingStart={onProcessingStart}
+                onProcessingComplete={onProcessingComplete}
             />)}
 
             {activeTab == "statistics" && (<CameraStatisticsMenu
                 camera={camera} loadedVideos={loadedVideos}
                 videosLoading={videosLoading} videosError={videosError}
+                vehicleBreakdown={cameraBreakdown}
             />)}
         </Box>
     )
@@ -596,9 +660,9 @@ interface SideMenuProps {
     onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
     onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
     onCameraUpload?: (id: number) => void;                  // triggers when user clicks to upload a new video for a camera
-    onRenameCamera?: (id: number) => void;                  // triggers when user clicks to rename a camera
+    onRenameCamera?: (id: number, name: string) => void;    // triggers when user clicks to rename a camera
     onRecalibrateCamera?: (id: number) => void;             // triggers when user clicks to recalibrate a camera
-    onDeleteCamera?: (id: number) => void;                  // triggers when user clicks to delete a camera
+    onDeleteCamera?: (id: number, name: string) => void;    // triggers when user clicks to delete a camera
     onAddCamera?: () => void;                               // called when + in the camera section is clicked
     isDrawingCamera?: boolean;                              // true while the user is creating a camera on the map
 
@@ -614,6 +678,8 @@ interface SideMenuProps {
     onFeedTabActive?: (active: boolean) => void;                // called when the feed tab of a camera is active
 }
 
+
+
 // creates a Landing Page side menu gui and handles its data operations
 export default function SideMenu({
     canClickToAreas = true, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, onRenameAoi, onDeleteAoi, isDrawingAOI = false,
@@ -625,7 +691,11 @@ export default function SideMenu({
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
 }: SideMenuProps) {
     const router = useRouter();
+    const { trackVideoProcessing, showToast } = useNotifications();
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const onFeedTabActiveRef = useRef(onFeedTabActive);
+    onFeedTabActiveRef.current = onFeedTabActive;
 
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
@@ -735,6 +805,18 @@ export default function SideMenu({
                             onClickUploadVideo={onCameraUpload}
                             onFeedTabActive={onFeedTabActive}
                             parentName={selectedSubarea.name}
+                            onUploadStart={(videoName) => showToast(`Uploading "${videoName}"…`, "info")}
+                            onProcessingStart={(videoName, videoId) => {
+                                showToast(`"${videoName}" uploaded — processing started`, "info");
+                                trackVideoProcessing(videoName, videoId);
+                            }}
+                            onProcessingComplete={(videoName, success, data) => {
+                                showToast(
+                                    success ? `"${videoName}" processed successfully` : `"${videoName}" — ${data?.error || "Processing failed"}`,
+                                    success ? "success" : "error"
+                                );
+                            }}
+                            
                         />
                     )}
                     

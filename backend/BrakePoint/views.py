@@ -928,11 +928,11 @@ def camera_videos_api(request, pk: int):
     
     return Response({"success": True, "videos": ser.data})
 
-@api_view(['DELETE'])
+@api_view(['DELETE', 'PATCH'])
 @permission_classes([IsAuthenticated]) 
 def camera_delete_api(request, pk: int):
     user = request.user 
-    print(f"DELETE Camera API called - Camera ID: {pk}, User: {user.username}, Authenticated: {request.user.is_authenticated}")
+    print(f"Camera detail API called - Method: {request.method}, Camera ID: {pk}, User: {user.username}, Authenticated: {request.user.is_authenticated}")
     
     try:
         camera = Camera.objects.get(pk=pk, user=user)
@@ -941,6 +941,21 @@ def camera_delete_api(request, pk: int):
         print(f"Camera not found with ID {pk} for user {user.username}")
         return Response({"success": False, "error": "Camera not found"}, status=404)
     
+    if request.method == 'PATCH':
+        name = request.data.get('name')
+        if name is not None:
+            name = str(name).strip()
+            if not name:
+                return Response({"success": False, "error": "Name cannot be empty"}, status=400)
+            camera.name = name
+
+        location = request.data.get('location')
+        if location is not None:
+            camera.location = str(location).strip()
+
+        camera.save()
+        return Response({"success": True, "camera": CameraSerializer(camera).data})
+
     camera.delete()
     return Response({"success": True})
 
