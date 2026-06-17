@@ -627,9 +627,6 @@ export default function SideMenu({
     const router = useRouter();
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    const onCameraEnterRef = useRef(onCameraEnter);
-    onCameraEnterRef.current = onCameraEnter;
-
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
     const [initialLoadingFinished, setInitialLoadingFinished] = useState(false);
