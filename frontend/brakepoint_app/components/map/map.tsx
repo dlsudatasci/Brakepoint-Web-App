@@ -133,7 +133,7 @@ type MapProps = {
   onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
 
   onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
-  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void; // triggers when user creates a camera (mode = "map" | "heatmap")
+  onCameraAdd?: (lat: number, lng: number) => void;                                         // triggers when user creates a camera (mode = "map" | "heatmap")
   onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
   onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
   selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
@@ -164,15 +164,11 @@ type MapProps = {
   hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
   activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
   onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
-  onAoiEdit?: (id: number) => void;                                                         // fired when user clicks pencil icon in AOI marker
-  onAoiDelete?: (id: number) => void;                                                       // fired when user clicks trash icon in AOI marker
   hideAoiMarkers?: boolean;                                                                 // suppress AOI marker rendering (used in sub-level view to show polygon only)
   hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that blue polygon
   activeSubAreaId?: number | null;                                                          // id of selected sub-area — shows polygon and marker in orange
   onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
   onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
-  onSubAreaEdit?: (id: number) => void;                                                     // fired when user clicks pencil icon in sub-area marker
-  onSubAreaDelete?: (id: number) => void;                                                   // fired when user clicks trash icon in sub-area marker
   hideSubAreaMarkers?: boolean;                                                             // suppress sub-area centroid label markers (e.g. at camera level)
   disableSubAreaInteraction?: boolean;                                                      // disable click and hover cursor on sub-area polygons (e.g. at camera level)
   goToBoundsPadding?: { top: number; right: number; bottom: number; left: number };         // custom padding for fitBounds (accounts for sidebars)
@@ -518,15 +514,11 @@ export default function MapView({
   activeAoiId,
   onObjectClick,
   onAoiClick,
-  onAoiEdit,
-  onAoiDelete,
   hideAoiMarkers = false,
   hoveredSubAreaId,
   activeSubAreaId,
   onSubAreaClick,
   onSubAreaHover,
-  onSubAreaEdit,
-  onSubAreaDelete,
   hideSubAreaMarkers = false,
   disableSubAreaInteraction = false,
   goToBoundsPadding,
@@ -2684,6 +2676,7 @@ export default function MapView({
     setToolMode(isPlacingCamera ? "addCamera" : "none");
   }, [isPlacingCamera]);
 
+  /*
   const addCamera = useCallback(
     async (cameraLat: number, cameraLng: number) => {
       try {
@@ -2723,9 +2716,12 @@ export default function MapView({
         addCameraFromData(data.camera.lat, data.camera.lng, data.camera.id);
         onCameraAdd?.(data.camera.id, data.camera.lat, data.camera.lng, data.camera);
       } catch { }
+
+      onCameraAdd(cameraLat, cameraLng);
     },
     [addCameraFromData, onCameraAdd],
   );
+  */
 
   const assignCameraToSavedLocation = useCallback(async (cameraId: number, savedLocationId: number) => {
     await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/assign-saved-location/`, {
@@ -3178,7 +3174,7 @@ export default function MapView({
       if (!isEditMode && activeTool !== "none") return;
 
       if (activeTool === "addCamera") {
-        await addCamera(e.lngLat.lat, e.lngLat.lng);
+        onCameraAdd(e.lngLat.lat, e.lngLat.lng);
         return;
       }
 
@@ -3242,7 +3238,7 @@ export default function MapView({
       map.off("click", handleMapClick);
       map.off("mousemove", handleMouseMove);
     };
-  }, [addCamera, clearGuideline, isEditMode, mode, renderGuideline, toolModeRef, polygonPointsRef]);
+  }, [onCameraAdd, clearGuideline, isEditMode, mode, renderGuideline, toolModeRef, polygonPointsRef]);
 
   useEffect(() => {
     const selected = selectedCameraId != null ? String(selectedCameraId) : null;

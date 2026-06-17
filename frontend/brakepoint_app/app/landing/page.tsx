@@ -94,40 +94,19 @@ export default function LandingPage() {
   const [editIsLoading, setEditIsLoading] = useState<boolean>(false);
 
   // legacy states — move above when currently being used
-  const pendingSubAreaTypeRef = useRef<SubAreaType | null>(null);
-  const [aoiItems, setAoiItems] = useState<AoiItem[]>([]);
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
   const [hoveredSubAreaId, setHoveredSubAreaId] = useState<number | null>(null);
   const selectedAoiIdRef = useRef<number | null>(null);
   selectedAoiIdRef.current = selectedAoiId;
-  const aoiItemsRef = useRef(aoiItems);
-  aoiItemsRef.current = aoiItems;
-  const [aoiBounds, setAoiBounds] = useState<[[number, number], [number, number]] | null>(null);
-  const [subAreaItems, setSubAreaItems] = useState<AoiItem[]>([]);
   const selectedSubareaIdRef = useRef<number | null>(null);
   selectedSubareaIdRef.current = selectedSubareaId;
-  const [subareaBounds, setSubareaBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [atCameraLevel, setAtCameraLevel] = useState(false);
-  const [atCameraDetailLevel, setAtCameraDetailLevel] = useState(false);
-  const [selectedCameraMapId, setSelectedCameraMapId] = useState<number | null>(null);
-  const [subareaCameraIds, setSubareaCameraIds] = useState<number[] | null>(null);
   const [isPlacingCamera, setIsPlacingCamera] = useState(false);
   const [drawError, setDrawError] = useState<string | null>(null);
 
   // Edit-dialog state
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  // AOI delete confirmation state
-  const [deleteConfirmAoi, setDeleteConfirmAoi] = useState<AoiItem | null>(null);
-
-  // Sub-area edit-dialog state
-  // const [editName, setEditName] = useState("");
-  const [deletingSubarea, setDeletingSubarea] = useState(false);
-  const [savingSubarea, setSavingSubarea] = useState(false);
-
-  // Sub-area delete confirmation state
-  const [deleteConfirmSubArea, setDeleteConfirmSubArea] = useState<number | null>(null);
 
   // Direct updater for SideMenu sub-area list
   const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
@@ -151,6 +130,7 @@ export default function LandingPage() {
     let cancelled = false;
     
     Promise.all([
+        // authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`).then((r) => r.json()),
@@ -164,6 +144,11 @@ export default function LandingPage() {
       subareaData = subareaData.saved_locations;
       cameraData = cameraData.cameras;
       videoData = videoData.videos;
+
+      // for some reason, doing these four fetches separately is somehow faster??? commented out attempt to fetch all areas and subareas at once
+      // savedLocationData = savedLocationData.saved_locations;
+      // const aoiData = savedLocationData.filter((loc) => loc.location_type === "aoi")
+      // const subareaData = savedLocationData.filter((loc) => loc.location_type === "sub_area")
 
       // using videos, cameras, and subareas: create a list of children by parent
       const videoIdsByCamera: Record<number, number[]> = {}
@@ -268,53 +253,13 @@ export default function LandingPage() {
 
   // TODO — NOT YET REWORKED
   const handleCameraEnter = useCallback((camera: CameraSummary) => {
-    setAtCameraDetailLevel(true);
-    setSelectedCameraMapId(camera.id);
+    // setAtCameraDetailLevel(true);
+    // setSelectedCameraMapId(camera.id);
     setIsPlacingCamera(false);
   }, []);
 
   // TODO — NOT YET REWORKED
   const handleAddCamera = useCallback(() => setIsPlacingCamera((d) => !d), []);
-
-  // TODO — NOT YET REWORKED
-  const handleCameraAdded = useCallback((_id: number, _lat: number, _lng: number, camera: Record<string, any>) => {
-    setIsPlacingCamera(false);
-    setSubareaCameraIds((prev) => [...(prev ?? []), _id]);
-    if (selectedSubareaIdRef.current != null) {
-      //sideMenuUpdaterRef.current?.addCamera(
-      //  convertObjectToCameraSummary(camera),
-      //  selectedSubareaIdRef.current,
-      // );
-    }
-  }, []);
-  // TODO — NOT YET REWORKED
-  const handleCameraPlacedOutside = useCallback(() => {
-    setDrawError("Camera must be placed within the sub-area boundaries.");
-  }, []);
-
-  // TODO — NOT YET REWORKED
-  const handleDeleteConfirm = async () => {
-    if (!deleteConfirmAoi) return;
-    const target = deleteConfirmAoi;
-
-    setAoiItems((prev) => prev.filter((a) => a.id !== target.id));
-    setDeleteConfirmAoi(null);
-    setHighlightedAoiId(null);
-
-    setDeleting(true);
-    try {
-      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${target.id}/`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(await res.text());
-      //updateSideMenu()
-    } catch (err) {
-      console.error("Failed to delete AOI:", err);
-      setAoiItems((prev) => [...prev, { id: target.id, name: target.name, ring: target.ring }]); // revert
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   
 
@@ -467,21 +412,16 @@ export default function LandingPage() {
     } else if (selectedSubareaRef.current != null) {
       // back from SUBAREA
       setSelectedSubareaId(null);
-      setSubareaBounds(null);
-      setHighlightedSubareaId(null);
-      setSubAreaItems([]);
       
       setAtCameraLevel(false);
-      setAtCameraDetailLevel(false);
-      setSelectedCameraMapId(null);
-      setSubareaCameraIds(null);
-      setSubareaBounds(null);
-      setAoiBounds((prev) => prev ? [[prev[0][0], prev[0][1]], [prev[1][0], prev[1][1]]] : null);
+      // setAtCameraDetailLevel(false);
+      // setSelectedCameraMapId(null);
+      // setSubareaCameraIds(null);
+      // setSubareaBounds(null);
 
     } else if (selectedAoiRef.current != null) {
       // back from AREA
       setSelectedAoiId(null);
-      setAoiBounds(null);
     }
   }, [])
 
@@ -552,6 +492,40 @@ export default function LandingPage() {
 
   
 
+
+  // checks whether childrenCoords (as either a single point or a bounding box) is within parent
+  // assumes a [lng, lat] format for both sets of coordinates
+  function checkBounds(parentCoords: [number, number][], childrenCoords: [number, number][] | [number, number]) {
+    const parentLngs = parentCoords.map((p) => p[0]);
+    const parentLats = parentCoords.map((p) => p[1]);
+    const parentMinLng = Math.min(...parentLngs), parentMaxLng = Math.max(...parentLngs);
+    const parentMinLat = Math.min(...parentLats), parentMaxLat = Math.max(...parentLats);
+    
+    // this function splits [number, number][] from [number, number]
+    if ((childrenCoords[0] as Array<number>).length !== undefined) {
+      // if [number, number][] — childrenCoords is a bounding box
+      childrenCoords = childrenCoords as [number, number][]
+
+      const childLngs = childrenCoords.map((p) => p[0]);
+      const childLats = childrenCoords.map((p) => p[1]);
+      const childMinLng = Math.min(...childLngs), childMaxLng = Math.max(...childLngs);
+      const childMinLat = Math.min(...childLats), childMaxLat = Math.max(...childLats);
+
+      if (childMinLng < parentMinLng || childMinLat < parentMinLat || childMaxLng > parentMaxLng || childMaxLat > parentMaxLat) return false;
+      else return true;
+
+    } else {
+      // if [number, number] — childrenCoords is a single point
+      childrenCoords = childrenCoords as [number, number]
+
+      const childLng = childrenCoords[0]; const childLat = childrenCoords[1];
+      console.log(parentMinLng, parentMaxLng, parentMinLat, parentMaxLat)
+      console.log(childLng, childLat)
+      if (childLng < parentMinLng || childLat < parentMinLat || childLng > parentMaxLng || childLat > parentMaxLat) return false;
+      return true;
+    }
+  }
+
   // called once user finished drawing an AOI or subarea on the map
   const handleAoiDrawn = useCallback(async (ring: [number, number][], clearDrawing: () => void) => {
 
@@ -567,13 +541,14 @@ export default function LandingPage() {
     // quickfail conditions
     if (!isDrawingRef.current) return;
     if (type === "subarea" && (subareaType == null || parentId == null || !idIsPresentInMap("area", parentId))) return;
+
+    // get our parent as a const and throw an error if not within bounds of subarea
+    const parent = (type === "subarea") ? getAoiSummaryFromId(parentId) : null; 
+    if (!checkBounds(parent.geometry, ring)) return;
     
     // set loading state
     setDrawIsLoading(true)
 
-    // get our parent as a const
-    const parent = (type === "subarea") ? getAoiSummaryFromId(parentId) : null; 
-    
     // set consts based on our bounding box geometry
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
@@ -585,23 +560,6 @@ export default function LandingPage() {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ];    
-    
-    // another fail condition — throw an error if not within bounds of subarea
-    if (type === "subarea") {
-        // Validate that the drawn polygon is within the AOI's bounding box
-        const aoiLngs = parent.geometry.map((p) => p[0]);
-        const aoiLats = parent.geometry.map((p) => p[1]);
-        const aoiMinLng = Math.min(...aoiLngs), aoiMaxLng = Math.max(...aoiLngs);
-        const aoiMinLat = Math.min(...aoiLats), aoiMaxLat = Math.max(...aoiLats);
-        const [subMinLng, subMinLat] = bounds[0] as [number, number];
-        const [subMaxLng, subMaxLat] = bounds[1] as [number, number];
-
-        if (subMinLng < aoiMinLng || subMinLat < aoiMinLat || subMaxLng > aoiMaxLng || subMaxLat > aoiMaxLat) {
-          setDrawError("Polygon must be within the AOI boundaries.");
-          setDrawIsLoading(false);
-          return;
-        }
-    }
 
     // default name
     const defaultName = "New " + (type === "area" ? "area" : subareaType.toLowerCase().replaceAll("_", " "));
@@ -610,68 +568,66 @@ export default function LandingPage() {
       let newObjectRaw;
       if (type === "area") {
         newObjectRaw = {
-            name: defaultName,
-            lat: centroid.lat,
-            lng: centroid.lng,
-            geometry: ring,
-            bounds,
-            location_type: "aoi",
-            parent_id: null,
-          }
-        } else if (type === "subarea") {
-          newObjectRaw = {
-            name: defaultName,
-            lat: centroid.lat,
-            lng: centroid.lng,
-            geometry: ring,
-            bounds,
-            location_type: "sub_area",
-            sub_area_type: subareaType,
-            parent_id: parentId,
-          }
+          name: defaultName,
+          lat: centroid.lat,
+          lng: centroid.lng,
+          geometry: ring,
+          bounds,
+          location_type: "aoi",
+          parent_id: null,
         }
+      } else if (type === "subarea") {
+        newObjectRaw = {
+          name: defaultName,
+          lat: centroid.lat,
+          lng: centroid.lng,
+          geometry: ring,
+          bounds,
+          location_type: "sub_area",
+          sub_area_type: subareaType,
+          parent_id: parentId,
+        }
+      }
         
-        // ----- shared portion — pass our request to the api
-        const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newObjectRaw),
-        });
-        if (!res.ok) throw new Error(await res.text());
+      // ----- shared portion — pass our request to the api
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newObjectRaw),
+      });
+      if (!res.ok) throw new Error(await res.text());
 
-        // unpack data sent by our api
-        const saved = await res.json();
-        const newId = saved.saved_location?.id
-        if (newId == undefined) { throw new Error("Unable to get id of new object") }
-        // ----- shared portion ends here
+      // unpack data sent by our api
+      const saved = await res.json();
+      const newId = saved.saved_location?.id
+      if (newId == undefined) { throw new Error("Unable to get id of new object") }
+      // ----- shared portion ends here
 
-        if (type === "area") {
-          // add to list of areas
-          const newArea = convertObjectToAreaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
-          const newAreaList = allAoisRef.current
-          newAreaList[newId] = newArea
-          setAllAois(newAreaList)
+      if (type === "area") {
+        // add to list of areas
+        const newArea = convertObjectToAreaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
+        const newAreaList = allAoisRef.current
+        newAreaList[newId] = newArea
+        setAllAois(newAreaList)
 
-          forceTriggerRefresh();
-          console.log("new entity set <3")
-        } else if (type === "subarea") {
-          // add to list of subareas
-          const newSubarea = convertObjectToSubareaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
-          const newSubareaList = allSubareasRef.current
-          newSubareaList[newId] = newSubarea;
-          setAllSubareas(newSubareaList)
+      } else if (type === "subarea") {
+        // add to list of subareas
+        const newSubarea = convertObjectToSubareaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
+        const newSubareaList = allSubareasRef.current
+        newSubareaList[newId] = newSubarea;
+        setAllSubareas(newSubareaList)
 
-          // update the parent area
-          parent.subarea_count += 1;
-          parent.subarea_ids = [...parent.subarea_ids, newId];
-          const newAreaList = allAoisRef.current;
-          newAreaList[parentId] = parent;
-          setAllAois(newAreaList)
-          
-          forceTriggerRefresh();
-          setDrawIsLoading(false);
-          console.log("new entity set <3")
-        }
+        // update the parent area
+        parent.subarea_count += 1;
+        parent.subarea_ids = [...parent.subarea_ids, newId];
+        const newAreaList = allAoisRef.current;
+        newAreaList[parentId] = parent;
+        setAllAois(newAreaList)
+      }
+
+      // done!
+      forceTriggerRefresh();
+      setDrawIsLoading(false);
 
     } catch (exception) {
       console.log(exception)
@@ -679,6 +635,83 @@ export default function LandingPage() {
       // and done! do cleanup
       handleDrawingCleanup()
     }
+  }, []);  
+
+  // called once user places a camera on the map
+  const handleCameraAdded = useCallback(async (lat: number, lng: number) => {
+
+    // retrieve consts based on our states set earlier
+    const type = drawTypeRef.current;
+    const parentId = drawParentIdRef.current;
+
+    // some of these are quickfails...
+    if (type !== "camera" || parentId == null) return;
+
+    // clean up edit menu and polygon in map
+    handleDrawingCleanup()
+
+    // get the parent, quickfail if it is not available
+    const parentSubarea = getSubareaSummaryFromId(parentId)
+    if (parentSubarea == null) return;
+
+    // check if our camera is within our subarea's bounds and quickfail if not
+    if (!checkBounds(parentSubarea.geometry, [lng, lat])) {
+      setDrawError("Camera must be placed within the sub-area boundaries.");
+      return
+    };
+    
+    // set loading state
+    setDrawIsLoading(true)
+
+    try {
+      // throw to API here...
+      const body = { lat: lat, lng: lng, saved_location: parentId }
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+
+      // unpack data sent by our api
+      const saved = await res.json();
+      const newId = saved.camera?.id
+      if (newId == undefined) { throw new Error("Unable to get id of new object") }
+
+      // add to list of cameras
+      const newCamera = convertObjectToCameraSummary(saved.camera ?? {...body, id: newId});
+      const newCameraList = allCamerasRef.current
+      newCameraList[newId] = newCamera;
+      setAllCameras(newCameraList)
+
+      // update list of subareas
+      parentSubarea.camera_count++;
+      parentSubarea.camera_ids = [...parentSubarea.camera_ids, newId];
+      const newSubareaList = allSubareasRef.current;
+      setAllSubareas(newSubareaList);
+
+      // done!
+      forceTriggerRefresh();
+      setDrawIsLoading(false);
+
+
+
+    } catch (exception) {
+      console.log(exception)
+    } finally {
+      // handle cleanup
+      setDrawIsLoading(false);
+      handleDrawingCleanup();
+    }
+
+    // setIsPlacingCamera(false);
+    // setSubareaCameraIds((prev) => [...(prev ?? []), _id]);
+    // if (selectedSubareaIdRef.current != null) {
+      //sideMenuUpdaterRef.current?.addCamera(
+      //  convertObjectToCameraSummary(camera),
+      //  selectedSubareaIdRef.current,
+      // );
+    // }
   }, []);
 
   // asks the API to rename the given object;
@@ -840,30 +873,26 @@ export default function LandingPage() {
           onRequestRename={handleStartEditingName}
           onRequestDelete={handleStartDeletion}     
           
-          isDrawingAOI={isDrawing}  
-          onAoiDrawn={handleAoiDrawn}   
+          isDrawingAOI={isDrawing && (["area", "subarea"].includes(drawTypeRef.current))}  
+          onAoiDrawn={handleAoiDrawn}
+
+          isPlacingCamera={isDrawing && drawTypeRef.current === "camera"}
+          onCameraAdd={handleCameraAdded}
 
           hideEditControls={!isFeedTabActive}
           cleanMap={selectedSubareaId == null}
           showGeocoder
           hoveredAoiId={hoveredAoiId}
           activeAoiId={highlightedAoiId}
-          onAoiEdit={() => {}}
-          onAoiDelete={() => {}}
           
           hideAoiMarkers={selectedAoiId != null}
           hideSubAreaMarkers={atCameraLevel}
           disableSubAreaInteraction={atCameraLevel}
           hoveredSubAreaId={hoveredSubAreaId}
           activeSubAreaId={highlightedSubareaId}
-          onSubAreaEdit={() => {}}
-          onSubAreaDelete={() => {}}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}
-          isPlacingCamera={isPlacingCamera}
           cameraParentLocationId={selectedSubareaId}
           hideCameraPolygons={false}
-          onCameraAdd={handleCameraAdded}
-          onCameraPlacedOutside={handleCameraPlacedOutside}
         />
       </Box>
 
