@@ -604,14 +604,14 @@ function MapPageInner() {
         <Map
           mode="map"
           onCameraClick={handleCameraClick}
-          onCameraAdd={handleNewCameraAdded}
+          onCameraAdd={() => {}} // handleNewCameraAdded
           onVisibleCamerasChange={handleVisibleCamerasChange}
           onCamerasLoaded={handleCamerasLoaded}
           selectedCameraId={selectedFeedId}
-          refreshTrigger={camerasRefreshTrigger}
+          refreshTrigger={false} // camerasRefreshTrigger
           goTo={goTo}
           goToBounds={goToBounds}
-          onMapReady={handleMapReady}
+          onMapReady={() => {}} // handleMapReady
           showMapillarySigns
         />
       </Box>

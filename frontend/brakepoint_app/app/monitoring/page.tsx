@@ -226,7 +226,7 @@ function MonitoringContent() {
           onVisibleCamerasChange={handleVisibleCamerasChange}
           onCamerasLoaded={handleCamerasLoaded}
           selectedCameraId={selectedFeedId}
-          refreshTrigger={camerasRefreshTrigger}
+          refreshTrigger={false}
           goTo={goToTarget}
         />
       </Box>
