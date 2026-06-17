@@ -694,9 +694,6 @@ export default function SideMenu({
     const { trackVideoProcessing, showToast } = useNotifications();
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    const onFeedTabActiveRef = useRef(onFeedTabActive);
-    onFeedTabActiveRef.current = onFeedTabActive;
-
     // whether the page is loading
     const [detailLoading, setDetailLoading] = useState(false);
     const [initialLoadingFinished, setInitialLoadingFinished] = useState(false);
