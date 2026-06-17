@@ -482,6 +482,16 @@ export default function LandingPage() {
 
     // get name; name has to be initialized before and stay initialized while editAction is not null
     const thisObject = getSummaryFromId(type, id);
+
+    console.log(thisObject)
+    // if thisObject has children: deny request
+    if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
+      setDrawError(`Cannot delete the area ${thisObject.name}; please delete all its subareas firsts`); return;
+    }
+    if (isSubareaSummary(thisObject) && thisObject.camera_count > 0) {
+      setDrawError(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} ${thisObject.name}; please delete all its cameras firsts`); return;
+    }
+
     setEditName(thisObject.name);
 
     // set all relevant states
