@@ -194,11 +194,10 @@ function AllAoiMenu({ aois, listLoading, isDrawingAOI, canClickThrough, onCardHo
 
 
 // displays the sidebar for a selected AOI (name, loc, stats, subareas)
-function AoiDetailMenu({ aoi, subareas, detailLoading, onBack, canStartDrawing, onStartDrawing, isDrawingSubarea, canClickThrough, onNavigateSubarea, onRenameArea, onDeleteArea, onCardHover, onCardClick, } : {
+function AoiDetailMenu({ aoi, subareas, detailLoading, canStartDrawing, onStartDrawing, isDrawingSubarea, canClickThrough, onNavigateSubarea, onRenameArea, onDeleteArea, onCardHover, onCardClick, } : {
     aoi: AOISummary;
     subareas: SubAreaSummary[];
     detailLoading?: boolean;
-    onBack: () => void;
     isDrawingSubarea?: SubAreaType | false;
     canClickThrough?: boolean;
     onNavigateSubarea?: (type: SummaryType, id: number) => void;
@@ -323,11 +322,10 @@ function AoiDetailMenu({ aoi, subareas, detailLoading, onBack, canStartDrawing, 
 }
 
 // displays the sidebar for a certain subarea
-function SubareaDetailMenu({ subarea, cameras, detailLoading, onBack, onRenameSubarea, onDeleteSubarea, onNavigateCamera, canClickThrough, onCardHover, onCardClick, canStartDrawing, onStartDrawing, isAddingCamera } : {
+function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, onDeleteSubarea, onNavigateCamera, canClickThrough, onCardHover, onCardClick, canStartDrawing, onStartDrawing, isAddingCamera } : {
     subarea: SubAreaSummary,
     cameras: CameraSummary[],
     detailLoading?: boolean,
-    onBack: () => void;
 
     canClickThrough?: boolean;
     onCardHover?: (type: SummaryType, id: number | null) => void;
@@ -412,7 +410,7 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onBack, onRenameSu
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onUploadStart, onProcessingStart, onProcessingComplete} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onUploadStart, onProcessingStart, onProcessingComplete} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
     videosLoading?: boolean,            // whether videos are still being loaded
@@ -431,22 +429,23 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
         onClickUploadVideo?.();  // still notify parent if needed
     };
 
+    console.log(loadedVideos)
+
     return (
         <div className="menuContainer">
             { /* thumbnail */ }
             <div className="thumbnail">
-                { videosError && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
-                { !videosError && videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
-                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail == undefined || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
-                { !videosError && !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
-                { !videosError && !videosLoading && (loadedVideos.length > 0 && (thumbnail != undefined && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
+                { videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
+                { !videosLoading && (loadedVideos.length > 0 && (thumbnail == null || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
+                { !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
+                { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
             </div>
 
             <CameraTags cameraId={camera.id} />
 
             <LandingSection type="header"
                 labelHeader="Videos"
-                chipCount={ !videosLoading && !videosError ? ( loadedVideos.length ?? 0 ) : (0) }
+                chipCount={ !videosLoading ? ( loadedVideos.length ?? 0 ) : (0) }
                 canHide
 
                 icon={ <UploadIcon /> }
@@ -470,7 +469,7 @@ function CameraFeedMenu({camera, loadedVideos, videosError, videosLoading, thumb
 }
 
 // displays part of the sidebar for the camera statistics tab
-function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading, vehicleBreakdown} : {
+function CameraStatisticsMenu({camera, loadedVideos, videosLoading, vehicleBreakdown} : {
     camera: CameraSummary,              // summary objecet for this camera
     loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
     videosLoading?: boolean,            // whether videos are still being loaded
@@ -497,11 +496,10 @@ function CameraStatisticsMenu({camera, loadedVideos, videosError, videosLoading,
 }
 
 // displays the sidebar for a certain camera
-function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUploadVideo, onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onUploadStart, onProcessingStart, onProcessingComplete} : {
+function CameraDetailMenu({camera, videos, videosLoading, onClickUploadVideo, onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onUploadStart, onProcessingStart, onProcessingComplete} : {
     camera: CameraSummary,
-    detailLoading?: boolean,
-    onBack: () => void;
-    parentName: string;
+    videos: VideoSummary[],
+    videosLoading: boolean,
     onClickUploadVideo?: (id: number) => void;
     onFeedTabActive?: (active: boolean) => void;
     onRenameCamera?: (type: SummaryType, id: number) => void;
@@ -511,55 +509,10 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
     onProcessingStart?: (videoName: string, videoId: number) => void;
     onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
 }) {
-    const [videosLoading, setVideosLoading] = useState<boolean>(true);
-    const [videosError, setVideosError] = useState<boolean>(false);
-    const [loadedVideos, setLoadedVideos] = useState<VideoSummary[]>()
-    const [thumbnail, setThumbnail] = useState<string | undefined>(undefined)
+
+    // state variables
+    const [thumbnail, setThumbnail] = useState<string | null>(camera.thumbnail)
     const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
-    
-    const [cameraBreakdown, setCameraBreakdown] = useState<VehicleBreakdown>({
-    Bus: 0, Car: 0, Jeepney: 0, Motorcycle: 0, Truck: 0
-});
-    // get a video from the api
-    useEffect(() => {
-        /*
-        const fetchVideos = async () => {
-            try {
-                const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camera.id}/videos/`);
-                if (!response.ok) { setVideosLoading(false); setVideosError(true); } // quickfail
-                const data = await response.json();
-
-                // convert everything to a VideoSummary
-                const allVideos: VideoSummary[] = data.videos
-                    .map((v) => ( convertObjectToVideoSummary(v) ))
-                    .sort((a: VideoSummary, b: VideoSummary) => { a.uploaded_at < b.uploaded_at ? 1 : a.uploaded_at > b.uploaded_at ? -1 : 0  });
-
-                // process the data here
-                // ...
-
-                // set our data
-                setLoadedVideos(allVideos);
-
-                const merged: VehicleBreakdown = { Bus: 0, Car: 0, Jeepney: 0, Motorcycle: 0, Truck: 0 };
-                    for (const v of allVideos) {
-                        for (const key of Object.keys(merged) as (keyof VehicleBreakdown)[]) {
-                            merged[key] += v.vehicle_breakdown?.[key] ?? 0;
-                        }
-                    }
-                setCameraBreakdown(merged);
-
-                setThumbnail(allVideos.length > 0 ? allVideos[0].thumbnail : "");
-                setVideosLoading(false);
-            } catch(e) {
-                // error handler — notify immediately and clean up
-                setVideosLoading(false);
-                setVideosError(true);
-            }
-        }
-
-        fetchVideos();
-        */
-    }, [camera])
 
     // toggles the tab
     const handleToggleTab = (newMode: "feed" | "statistics") => {
@@ -588,9 +541,8 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
 
             {activeTab == "feed" && (<CameraFeedMenu
                 camera={camera} 
-                loadedVideos={loadedVideos}
-                videosLoading={videosLoading} 
-                videosError={videosError} 
+                loadedVideos={videos}
+                videosLoading={videosLoading}
                 thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
@@ -600,9 +552,9 @@ function CameraDetailMenu({camera, detailLoading, onBack, parentName, onClickUpl
             />)}
 
             {activeTab == "statistics" && (<CameraStatisticsMenu
-                camera={camera} loadedVideos={loadedVideos}
-                videosLoading={videosLoading} videosError={videosError}
-                vehicleBreakdown={cameraBreakdown}
+                camera={camera} loadedVideos={videos}
+                videosLoading={videosLoading}
+                vehicleBreakdown={camera.vehicle_breakdown}
             />)}
         </Box>
     )
@@ -706,16 +658,6 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    // TODO
-    const handleSelectCard = () => {}
-
-    // TODO
-    const handleBack = () => {}
-
-    const handleAddArea = () => {
-        onAddArea?.();
-    };
-
     const debugButtons = true
     return (
         <Box className={styles.menuContainer}>
@@ -769,20 +711,20 @@ export default function SideMenu({
                         <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
                         <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
                         <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
+                        <Button variant="outlined" onClick={() => { console.log(locationSummariesLoading, videosLoading) }}> Loadings? </Button>
                     </div>)}
 
 
                     {currentSelectionMode === "camera" && (
                         <CameraDetailMenu
                             camera={selectedCamera}
-                            detailLoading={false}
-                            onBack={handleBack}
+                            videos={convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id)}
+                            videosLoading={videosLoading}
                             onRenameCamera={onRequestRename}
                             onRecalibrateCamera={onRecalibrateCamera}
                             onDeleteCamera={onRequestDelete}
                             onClickUploadVideo={onCameraUpload}
                             onFeedTabActive={onFeedTabActive}
-                            parentName={selectedSubarea.name}
                             onUploadStart={(videoName) => showToast(`Uploading "${videoName}"…`, "info")}
                             onProcessingStart={(videoName, videoId) => {
                                 showToast(`"${videoName}" uploaded — processing started`, "info");
@@ -803,7 +745,6 @@ export default function SideMenu({
                             subarea={selectedSubarea}
                             cameras={convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id)}
                             detailLoading={false}
-                            onBack={handleBack}
                             canStartDrawing={canStartDrawing}
                             onStartDrawing={onStartDrawing}
                             onRenameSubarea={onRequestRename}
@@ -822,7 +763,6 @@ export default function SideMenu({
                             aoi={selectedAOI}
                             subareas={convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id)}
                             detailLoading={false}
-                            onBack={handleBack}
                             isDrawingSubarea={isDrawingSubarea}
                             canClickThrough={canClickToSubareas}
                             onCardHover={onCardHover}

@@ -72,6 +72,8 @@ export type CameraSummary = LocationSummary & {
 	video_count?: number;
 	video_ids: number[];
     latest_upload?: Date;
+	latest_upload_id?: number;
+	thumbnail?: string | null;
     behaviors: string[];
 
 	vehicle_breakdown?: VehicleBreakdown;

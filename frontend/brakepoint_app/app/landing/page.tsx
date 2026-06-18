@@ -141,7 +141,6 @@ export default function LandingPage() {
   // Initial fetch
   const initialLoadLocationSummaries = async () => {
     let cancelled = false;
-    console.log("started areas/subareas/cameras")
 
     Promise.all([
         // authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`).then((r) => r.json()),
@@ -239,7 +238,6 @@ export default function LandingPage() {
       if (!cancelled) {
         setLocationSummariesReady(true);
       }
-      console.log("finished areas/subareas/cameras")
     })
     return () => { cancelled = true; };
   };
@@ -248,7 +246,6 @@ export default function LandingPage() {
   const initialLoadVideos = async () => {
 
     setVideosReady(false);
-    console.log("started videos")
     try { 
       authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/`).then((r) => r.json())
       .then((videoData) => {
@@ -270,7 +267,6 @@ export default function LandingPage() {
         const newCamerasList = allCamerasRef.current;
         for (const cameraId of Object.keys(videoIdsByCamera)) {
           const camera = getCameraSummaryFromId(Number(cameraId));
-          console.log(camera)
           if (camera === null) continue;
           const childrenVideoIds = videoIdsByCamera[cameraId];
           const childrenVideos = Object.values(videosProcessed).filter((x) => childrenVideoIds.includes(x.id));
@@ -290,7 +286,12 @@ export default function LandingPage() {
             camera.speeding += currVideo.speeding_count;
             camera.swerving += currVideo.swerving_count;
             camera.abrupt_stopping += currVideo.abrupt_stopping_count;
-            camera.latest_upload = (camera.latest_upload === null) ? currVideo.uploaded_at : camera.latest_upload > currVideo.uploaded_at ? camera.latest_upload : currVideo.uploaded_at
+            
+            if (camera.latest_upload === null || camera.latest_upload < currVideo.uploaded_at) {
+              camera.latest_upload = currVideo.uploaded_at;
+              camera.latest_upload_id = currVideo.id;
+              camera.thumbnail = currVideo.thumbnail;
+            }
 
             for (const item in currVideo.vehicle_breakdown) {
               newVehicleBreakdown[item] += currVideo.vehicle_breakdown[item];
@@ -304,8 +305,6 @@ export default function LandingPage() {
         setVideosReady(true);
         setAllVideos(videosProcessed)
         setAllCameras(newCamerasList);
-
-        console.log("finished videos")
       })
     } catch {
 
@@ -322,7 +321,6 @@ export default function LandingPage() {
       .then((videoData) => {
         if (!videoData.success) { return; }
         videoData = videoData.videos;
-        console.log(videoData);
 
         // get the parent, dispose if parent doesn't exist
         const parent = getCameraSummaryFromId(videoData.camera)
@@ -345,8 +343,14 @@ export default function LandingPage() {
         for (const item in newVideoSummary.vehicle_breakdown) {
           parent.vehicle_breakdown[item] += newVideoSummary.vehicle_breakdown[item];
         }
-        parent.latest_upload = (parent.latest_upload === null) ? newVideoSummary.uploaded_at : parent.latest_upload > newVideoSummary.uploaded_at ? parent.latest_upload : newVideoSummary.uploaded_at
-
+        
+        // update its latest upload only if necessary
+        if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
+          parent.latest_upload = newVideoSummary.uploaded_at;
+          parent.latest_upload_id = newVideoSummary.id;
+          parent.thumbnail = newVideoSummary.thumbnail;
+        }
+            
         // and set the newly updated data to our camera list
         const newCameraList = allCamerasRef.current;
         newCameraList[parent.id] = parent;
@@ -591,7 +595,6 @@ export default function LandingPage() {
     // get name; name has to be initialized before and stay initialized while editAction is not null
     const thisObject = getSummaryFromId(type, id);
 
-    console.log(thisObject)
     // if thisObject has children: deny request
     if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
       setDrawError(`Cannot delete the area ${thisObject.name}; please delete all its subareas firsts`); return;
@@ -637,8 +640,6 @@ export default function LandingPage() {
       childrenCoords = childrenCoords as [number, number]
 
       const childLng = childrenCoords[0]; const childLat = childrenCoords[1];
-      console.log(parentMinLng, parentMaxLng, parentMinLat, parentMaxLat)
-      console.log(childLng, childLat)
       if (childLng < parentMinLng || childLat < parentMinLat || childLng > parentMaxLng || childLat > parentMaxLat) return false;
       return true;
     }
