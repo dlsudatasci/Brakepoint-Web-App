@@ -623,6 +623,9 @@ interface SideMenuProps {
     refreshTrigger?: boolean;                               // invert to re-fetch the AOI list
     onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
 
+    locationSummariesLoading?: boolean;                     // has our parent page finished loading all the location summaries?
+    videosLoading?: boolean;                                // has our parent page finished loading all the videos?
+
     allAois?: AOIRecord;                                    // all AOIs visible to this side menu
     allSubareas?: SubareaRecord;                            // all subareas visible to this side menu
     allCameras?: CameraRecord;                              // all cameras visible to this side menu
@@ -682,6 +685,7 @@ interface SideMenuProps {
 
 // creates a Landing Page side menu gui and handles its data operations
 export default function SideMenu({
+    locationSummariesLoading = true, videosLoading = true,
     canClickToAreas = true, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, onRenameAoi, onDeleteAoi, isDrawingAOI = false,
     canClickToSubareas = true, onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, onRenameSubarea, onDeleteSubarea, isDrawingSubarea = false,
     canClickToCameras = true, onCameraClick, onCameraEnter, onCameraBack, onAddCamera, onCameraUpload, onRenameCamera, onRecalibrateCamera, onDeleteCamera, isDrawingCamera,
@@ -693,30 +697,6 @@ export default function SideMenu({
     const router = useRouter();
     const { trackVideoProcessing, showToast } = useNotifications();
     const scrollRef = useRef<HTMLDivElement>(null);
-
-    // whether the page is loading
-    const [detailLoading, setDetailLoading] = useState(false);
-    const [initialLoadingFinished, setInitialLoadingFinished] = useState(false);
-    const [listLoading, setListLoading] = useState(true);
-
-    // automatically sets the listLoading state depending on whether data is provided for Aois, Subareas, Cameras, and Videos
-    useEffect(() => {
-        if (
-            !allAois || !allSubareas || !allCameras || !allVideos ||
-            Object.keys(allAois).length === 0 ||
-            Object.keys(allSubareas).length === 0 ||
-            Object.keys(allCameras).length === 0 ||
-            Object.keys(allVideos).length === 0
-        ) {
-            setListLoading(true);
-            // setInitialLoadingFinished(false);
-        }
-        else {
-            setListLoading(false);
-            // setInitialLoadingFinished(true);
-        }
-
-    }, [allAois, allSubareas, allCameras, allVideos])
 
     // handles the sign out process - removes user session data from the browser
     const handleSignOut = () => {
@@ -736,7 +716,7 @@ export default function SideMenu({
         onAddArea?.();
     };
 
-    const debugButtons = false
+    const debugButtons = true
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
@@ -768,7 +748,7 @@ export default function SideMenu({
                     "&::-webkit-scrollbar-thumb": { bgcolor: "#c5c7d8", borderRadius: 4 },
                 }}
             >
-                { listLoading ? ( <>
+                { locationSummariesLoading ? ( <>
                     <div className="loadingContainer">
                         <CircularProgress size={24} sx={{ color: "#1d1f3f"  }} />
                         <span className="placeholderText"> Loading data... </span>
@@ -788,13 +768,14 @@ export default function SideMenu({
                         <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
                         <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
                         <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
+                        <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
                     </div>)}
 
 
                     {currentSelectionMode === "camera" && (
                         <CameraDetailMenu
                             camera={selectedCamera}
-                            detailLoading={detailLoading}
+                            detailLoading={false}
                             onBack={handleBack}
                             onRenameCamera={onRequestRename}
                             onRecalibrateCamera={onRecalibrateCamera}
@@ -821,7 +802,7 @@ export default function SideMenu({
                         <SubareaDetailMenu
                             subarea={selectedSubarea}
                             cameras={convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id)}
-                            detailLoading={detailLoading}
+                            detailLoading={false}
                             onBack={handleBack}
                             canStartDrawing={canStartDrawing}
                             onStartDrawing={onStartDrawing}
@@ -840,7 +821,7 @@ export default function SideMenu({
                         <AoiDetailMenu
                             aoi={selectedAOI}
                             subareas={convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id)}
-                            detailLoading={detailLoading}
+                            detailLoading={false}
                             onBack={handleBack}
                             isDrawingSubarea={isDrawingSubarea}
                             canClickThrough={canClickToSubareas}
@@ -859,7 +840,7 @@ export default function SideMenu({
                         // Panel 1: AOI list
                         <AllAoiMenu
                             aois = {convertRecordToArray(allAois)}
-                            listLoading = {listLoading}
+                            listLoading = {locationSummariesLoading}
                             isDrawingAOI = {isDrawingAOI}
                             canClickThrough={canClickToAreas}
                             onCardHover = {onCardHover}

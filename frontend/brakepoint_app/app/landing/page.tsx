@@ -21,6 +21,7 @@ import {
   convertRecordToArray,
 } from "@/components/landing/summaryTypes";
 import { Cameraswitch } from "@mui/icons-material";
+import { ValidateNotSelfIntersecting } from "terra-draw";
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
 
@@ -42,6 +43,15 @@ export default function LandingPage() {
   allCamerasRef.current = allCameras;
   const allVideosRef = useRef<VideoRecord>({});
   allVideosRef.current = allVideos;
+
+  // have we finished loading our videos?
+  const [locationSummariesReady, setLocationSummariesReady] = useState<boolean>(false);
+  const locationSummariesReadyRef = useRef<boolean>(false);
+  locationSummariesReadyRef.current = locationSummariesReady;
+  const [videosReady, setVideosReady] = useState<boolean>(false);
+  const videosReadyRef = useRef<boolean>(false);
+  videosReadyRef.current = videosReady;
+  
 
   // stores the current selected objects
   const [selectedAoiId, setSelectedAoiId] = useState<number | null>(null);
@@ -111,9 +121,6 @@ export default function LandingPage() {
   // Direct updater for SideMenu sub-area list
   const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
 
-  // Loading state
-  const [isMapLoading, setIsMapLoading] = useState(true);
-
   // Feed tab active state
   const [isFeedTabActive, setIsFeedTabActive] = useState(false);
 
@@ -125,63 +132,56 @@ export default function LandingPage() {
 
 
 
-  // Initial fetch
+
+  // runs the below function on startup
   useEffect(() => {
+      initialLoadLocationSummaries();
+  }, [])
+
+  // Initial fetch
+  const initialLoadLocationSummaries = async () => {
     let cancelled = false;
-    
+    console.log("started areas/subareas/cameras")
+
     Promise.all([
         // authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
         authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`).then((r) => r.json()),
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/`).then((r) => r.json())
-    ]).then(([aoiData, subareaData, cameraData, videoData]) => {
+    ]).then(([aoiData, subareaData, cameraData]) => {
       
       // quickfail
-      if (!aoiData.success || !subareaData.success || !cameraData.success || !videoData.success) { return; }
+      if (!aoiData.success || !subareaData.success || !cameraData.success) { return; }
 
       aoiData = aoiData.saved_locations;
       subareaData = subareaData.saved_locations;
       cameraData = cameraData.cameras;
-      videoData = videoData.videos;
 
       // for some reason, doing these four fetches separately is somehow faster??? commented out attempt to fetch all areas and subareas at once
       // savedLocationData = savedLocationData.saved_locations;
       // const aoiData = savedLocationData.filter((loc) => loc.location_type === "aoi")
       // const subareaData = savedLocationData.filter((loc) => loc.location_type === "sub_area")
 
-      // using videos, cameras, and subareas: create a list of children by parent
-      const videoIdsByCamera: Record<number, number[]> = {}
+      // using cameras, and subareas: create a list of children by parent
       const cameraIdsBySubarea: Record<number, number[]> = {}
       const subareaIdsByArea: Record<number, number[]> = {}
 
       // and empty objects for our main objects
-      const videosProcessed: VideoRecord = {}
+      // const videosProcessed: VideoRecord = {}
       const camerasProcessed: CameraRecord = {}
       const subareasProcessed: SubareaRecord = {}
       const aoisProcessed: AOIRecord = {}
 
-      // step 1: format videos
-      for (const curr of videoData) {
-        const parentOfThis = curr.camera ?? -1;
-        parentOfThis in videoIdsByCamera ? videoIdsByCamera[parentOfThis].push(curr.id) : videoIdsByCamera[parentOfThis] = [curr.id]
-        if (parentOfThis === -1) { continue }
-        videosProcessed[curr.id] = convertObjectToVideoSummary(curr);
-      }
-      
-      // step 2: format cameras
+      // step 1: format cameras
       for (const curr of cameraData) {
         const parentOfThis = curr.saved_location ?? -1;
         parentOfThis in cameraIdsBySubarea ? cameraIdsBySubarea[parentOfThis].push(curr.id) : cameraIdsBySubarea[parentOfThis] = [curr.id]
         if (parentOfThis === -1) { continue }
 
-        camerasProcessed[curr.id] = convertObjectToCameraSummary(curr, {
-          video_count: (videoIdsByCamera[curr.id] ?? []).length,
-          video_ids: (videoIdsByCamera[curr.id] ?? []),
-        })
+        camerasProcessed[curr.id] = convertObjectToCameraSummary(curr)
       }
       
-      // step 3: format subareas
+      // step 2: format subareas
       for (const curr of subareaData) {
         const parentOfThis = curr.parent_id ?? -1;
         parentOfThis in subareaIdsByArea ? subareaIdsByArea[parentOfThis].push(curr.id) : subareaIdsByArea[parentOfThis] = [curr.id]
@@ -194,7 +194,7 @@ export default function LandingPage() {
         })
       }
 
-      // step 4: format areas
+      // step 3: format areas
       for (const curr of aoiData) {
         // get subarea and all stats that can be obtained via them
         const childSubareasIds = subareaIdsByArea[curr.id] ?? []
@@ -228,16 +228,137 @@ export default function LandingPage() {
       setAllAois(aoisProcessed);
       setAllSubareas(subareasProcessed);
       setAllCameras(camerasProcessed);
-      setAllVideos(videosProcessed);
+
+      // continue to loading videos
+      initialLoadVideos();
 
     }).catch(() => {
       // error handling
       
     }).finally(() => {
-      if (!cancelled) setIsMapLoading(false);
+      if (!cancelled) {
+        setLocationSummariesReady(true);
+      }
+      console.log("finished areas/subareas/cameras")
     })
     return () => { cancelled = true; };
-  }, []);
+  };
+
+  // initial fetch for all videos, loads /after/ location summaries have been loaded
+  const initialLoadVideos = async () => {
+
+    setVideosReady(false);
+    console.log("started videos")
+    try { 
+      authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/`).then((r) => r.json())
+      .then((videoData) => {
+        if (!videoData.success) { return; }
+
+        // variable temp storages
+        const videoIdsByCamera: Record<number, number[]> = {}
+        const videosProcessed: VideoRecord = {};
+
+        // process videos
+        for (const curr of videoData.videos) {
+          const parentOfThis = curr.camera ?? -1;
+          parentOfThis in videoIdsByCamera ? videoIdsByCamera[parentOfThis].push(curr.id) : videoIdsByCamera[parentOfThis] = [curr.id]
+          if (parentOfThis === -1 || !idIsPresentInMap("camera", parentOfThis)) { continue } // quickfail; this is corrupted data and should be ignored
+          videosProcessed[curr.id] = convertObjectToVideoSummary(curr);
+        }
+
+        // for all cameras with videos, edit them to include relevant statistics
+        const newCamerasList = allCamerasRef.current;
+        for (const cameraId of Object.keys(videoIdsByCamera)) {
+          const camera = getCameraSummaryFromId(Number(cameraId));
+          console.log(camera)
+          if (camera === null) continue;
+          const childrenVideoIds = videoIdsByCamera[cameraId];
+          const childrenVideos = Object.values(videosProcessed).filter((x) => childrenVideoIds.includes(x.id));
+
+          camera.video_count = childrenVideoIds.length;
+          camera.video_ids = childrenVideoIds;
+
+          // reset stats and reload to be very sure they are accurate here
+          camera.latest_upload = null;
+          camera.vehicles = 0; camera.adb = 0;
+          camera.speeding = 0; camera.swerving = 0; camera.abrupt_stopping = 0;
+          const newVehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0} as VehicleBreakdown
+
+          for (const currVideo of childrenVideos) {
+            camera.vehicles += currVideo.vehicles;
+            camera.adb += currVideo.occurrences;
+            camera.speeding += currVideo.speeding_count;
+            camera.swerving += currVideo.swerving_count;
+            camera.abrupt_stopping += currVideo.abrupt_stopping_count;
+            camera.latest_upload = (camera.latest_upload === null) ? currVideo.uploaded_at : camera.latest_upload > currVideo.uploaded_at ? camera.latest_upload : currVideo.uploaded_at
+
+            for (const item in currVideo.vehicle_breakdown) {
+              newVehicleBreakdown[item] += currVideo.vehicle_breakdown[item];
+            }
+            camera.vehicle_breakdown = newVehicleBreakdown;
+          }
+
+          newCamerasList[Number(cameraId)] = camera;
+        }
+
+        setVideosReady(true);
+        setAllVideos(videosProcessed)
+        setAllCameras(newCamerasList);
+
+        console.log("finished videos")
+      })
+    } catch {
+
+    } finally {
+      setVideosReady(true);
+    }
+  }
+
+  // handles adding new video data, after the initial load
+  const addNewVideoData = async (newVideoId: number) => {
+    setVideosReady(false);
+    try {
+      authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${newVideoId}`).then((r) => r.json())
+      .then((videoData) => {
+        if (!videoData.success) { return; }
+        videoData = videoData.videos;
+        console.log(videoData);
+
+        // get the parent, dispose if parent doesn't exist
+        const parent = getCameraSummaryFromId(videoData.camera)
+        if (parent === null) { setVideosReady(true); return; };
+
+        // create a new video for appending to our video list
+        const newVideoList = allVideosRef.current;
+        const newVideoSummary = convertObjectToVideoSummary(videoData)
+        newVideoList[newVideoId] = newVideoSummary;
+        setAllVideos(newVideoList);
+
+        // update this object's parent accordingly
+        parent.video_count++;
+        parent.video_ids = parent.video_ids ? [...parent.video_ids, newVideoId] : [newVideoId];
+        parent.vehicles += newVideoSummary.vehicles;
+        parent.adb += newVideoSummary.occurrences;
+        parent.speeding += newVideoSummary.speeding_count;
+        parent.swerving += newVideoSummary.swerving_count;
+        parent.abrupt_stopping += newVideoSummary.abrupt_stopping_count;
+        for (const item in newVideoSummary.vehicle_breakdown) {
+          parent.vehicle_breakdown[item] += newVideoSummary.vehicle_breakdown[item];
+        }
+        parent.latest_upload = (parent.latest_upload === null) ? newVideoSummary.uploaded_at : parent.latest_upload > newVideoSummary.uploaded_at ? parent.latest_upload : newVideoSummary.uploaded_at
+
+        // and set the newly updated data to our camera list
+        const newCameraList = allCamerasRef.current;
+        newCameraList[parent.id] = parent;
+        setAllCameras(newCameraList);
+      })
+    } catch (exception) {
+      console.log(exception)
+    } finally {
+      setVideosReady(true);
+    }
+  }
+
 
 
 
@@ -250,19 +371,6 @@ export default function LandingPage() {
     const t = setTimeout(() => setDrawError(null), ERROR_LENGTH_SECONDS*1000);
     return () => clearTimeout(t);
   }, [drawError]);
-
-  // TODO — NOT YET REWORKED
-  const handleCameraEnter = useCallback((camera: CameraSummary) => {
-    // setAtCameraDetailLevel(true);
-    // setSelectedCameraMapId(camera.id);
-    setIsPlacingCamera(false);
-  }, []);
-
-  // TODO — NOT YET REWORKED
-  const handleAddCamera = useCallback(() => setIsPlacingCamera((d) => !d), []);
-
-  
-
   
   // checks if this object is present in the [Object]Record map 
   function idIsPresentInMap(type: SummaryType, id: number) {
@@ -928,6 +1036,7 @@ export default function LandingPage() {
       <Box sx={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0 }}>
         <Map
           mode="map"
+
           aoiItems = {
             currentSelectionModeRef.current === "all" ? 
             getAllAreasAsArray() :
@@ -1002,18 +1111,17 @@ export default function LandingPage() {
           refreshTrigger={currentRefreshTrigger}
           onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
 
-          allAois = {allAoisRef.current}
-          allSubareas = {allSubareasRef.current}
-          allCameras = {allCamerasRef.current}
-          allVideos = {allVideosRef.current}
+          locationSummariesLoading = {!locationSummariesReady}
+          videosLoading = {!videosReady}
+          allAois = {allAois}
+          allSubareas = {allSubareas}
+          allCameras = {allCameras}
+          allVideos = {allVideos}
           
           selectedAOI={selectedAoiRef.current ? allAoisRef.current[selectedAoiRef.current] : null}
           selectedSubarea={selectedSubareaRef.current ? allSubareasRef.current[selectedSubareaRef.current] : null}
           selectedCamera={selectedCameraRef.current ? allCamerasRef.current[selectedCameraRef.current] : null}
           currentSelectionMode={currentSelectionModeRef.current}
-
-          onCameraEnter={handleCameraEnter}
-          onAddCamera={handleAddCamera}
 
           onNavigateTo={handleNavigateTo}
           onBack={handleBack}
@@ -1034,7 +1142,7 @@ export default function LandingPage() {
       </Box>
 
       {/* Loading overlay - disabled currently */}
-      {false && isMapLoading && (
+      {false && locationSummariesReady && (
         <Box sx={{
           position: 'fixed',
           top: 0,

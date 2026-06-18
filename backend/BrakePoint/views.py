@@ -1141,7 +1141,7 @@ def video_list_api(request):
         return Response({ "success": False, "error": "Unable to fetch videos" })
 
 
-@api_view(['PATCH', 'DELETE'])
+@api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def video_detail_api(request, pk: int):
     """Update or delete a specific video"""
@@ -1151,6 +1151,10 @@ def video_detail_api(request, pk: int):
         video = Video.objects.get(pk=pk, camera__user=user)
     except Video.DoesNotExist:
         return Response({"success": False, "error": "Video not found"}, status=404)
+    
+    if request.method == 'GET':
+        ser = VideoSerializer(video, many=False)
+        return Response({ "success": True, "videos": ser.data })
     
     if request.method == 'PATCH':
         updated = False

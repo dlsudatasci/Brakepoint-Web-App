@@ -84,7 +84,7 @@ export default function LocationCard({ type, locationDetails, canClickThrough = 
         { isCameraSummary(locationDetails) && (
           <Box className="lc-dateContainer">
             <span><b>{locationDetails.video_count ?? "0"}</b> video{locationDetails.video_count == 1 ? "" : "s"} uploaded</span>
-            <span>Last video uploaded on <b>{locationDetails.latest_upload ? locationDetails.latest_upload.getDate() : "—"}</b></span>
+            <span>Last video uploaded on <b>{locationDetails.latest_upload ? new Date(locationDetails.latest_upload).toDateString() : "—"}</b></span>
           </Box>
         )}
 
