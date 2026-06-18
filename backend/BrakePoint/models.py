@@ -165,6 +165,8 @@ class Video(models.Model):
     camera = models.ForeignKey(Camera, on_delete=models.CASCADE, related_name='videos')
     filename = models.CharField(max_length=255)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    start_time = models.DateTimeField(null=True, blank=True)
+    start_time_source = models.CharField(max_length=20, default='failed', blank=True)
     
     # Video metadata
     duration_seconds = models.FloatField(null=True, blank=True)

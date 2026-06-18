@@ -1176,7 +1176,7 @@ function formatHourLabel(hour: number): string {
 // We re-parse via new Date() which handles locale strings reliably in the same browser
 function parseVideoTime(row: any): { dateKey: string; startHour: number } | null {
   try {
-    const d = new Date(row.uploaded_time);
+    const d = new Date(row.recorded_time_iso || row.uploaded_time_iso || row.uploaded_time);
     if (isNaN(d.getTime())) return null;
     return {
       dateKey: toDateKey(d),
@@ -1190,6 +1190,70 @@ function parseVideoTime(row: any): { dateKey: string; startHour: number } | null
 function parseDurationSeconds(duration: string): number {
   if (!duration || duration === 'N/A') return 0;
   return parseInt(duration.replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+function formatDurationLabel(durationSeconds?: number | null): string {
+  if (typeof durationSeconds !== 'number' || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
+    return 'N/A';
+  }
+
+  if (durationSeconds < 60) {
+    return `${Math.round(durationSeconds)}s`;
+  }
+
+  const totalSeconds = Math.round(durationSeconds);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatMetadataSource(source?: string | null): string {
+  switch (source) {
+    case 'metadata':
+      return 'Container metadata';
+    case 'filename':
+      return 'Filename pattern';
+    default:
+      return 'Unavailable';
+  }
+}
+
+function buildVideoRow(video: any) {
+  const uploadedAt = video.uploaded_at ? new Date(video.uploaded_at) : null;
+  const recordedAt = video.start_time ? new Date(video.start_time) : null;
+  const validRecordedAt = recordedAt && !isNaN(recordedAt.getTime()) ? recordedAt : null;
+  const validUploadedAt = uploadedAt && !isNaN(uploadedAt.getTime()) ? uploadedAt : null;
+
+  return {
+    id: video.id,
+    camera_id: video.camera,
+    video_name: video.filename,
+    uploaded_time: validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A',
+    uploaded_time_iso: validUploadedAt ? validUploadedAt.toISOString() : null,
+    recorded_time: validRecordedAt ? validRecordedAt.toLocaleString() : (validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A'),
+    recorded_time_iso: validRecordedAt ? validRecordedAt.toISOString() : (validUploadedAt ? validUploadedAt.toISOString() : null),
+    metadata_source: video.start_time_source || 'failed',
+    vehicles: video.vehicles || 0,
+    signs: video.signs || 0,
+    speeding: video.speeding_count || 0,
+    swerving: video.swerving_count || 0,
+    abrupt_stop: video.abrupt_stopping_count || 0,
+    jeepney_hotspot: video.jeepney_hotspot || false,
+    duration_seconds: typeof video.duration_seconds === 'number' ? video.duration_seconds : null,
+    duration: formatDurationLabel(video.duration_seconds),
+    status: video.processing_status || 'pending',
+    sign_classes: video.sign_classes || [],
+    thumbnail: video.thumbnail || null,
+    calibration_points: video.calibration_points || [],
+    reference_points: video.reference_points || [],
+    reference_distance_meters: video.reference_distance_meters,
+  };
 }
 
 function formatBlockTimeRange(startHour: number, durationSeconds: number): string {
@@ -1336,25 +1400,7 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
 
         allVideos.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
 
-        const transformedRows = allVideos.map((video: any) => ({
-          id: video.id,
-          camera_id: video.camera,
-          video_name: video.filename,
-          uploaded_time: new Date(video.uploaded_at).toLocaleString(),
-          vehicles: video.vehicles || 0,
-          signs: video.signs || 0,
-          speeding: video.speeding_count || 0,
-          swerving: video.swerving_count || 0,
-          abrupt_stop: video.abrupt_stopping_count || 0,
-          jeepney_hotspot: video.jeepney_hotspot || false,
-          duration: video.duration_seconds ? `${Math.round(video.duration_seconds)}s` : 'N/A',
-          status: video.processing_status || 'pending',
-          sign_classes: video.sign_classes || [],
-          thumbnail: video.thumbnail || null,
-          calibration_points: video.calibration_points || [],
-          reference_points: video.reference_points || [],
-          reference_distance_meters: video.reference_distance_meters,
-        }));
+        const transformedRows = allVideos.map((video: any) => buildVideoRow(video));
         setRows(transformedRows);
         setLoading(false);
         return;
@@ -1371,24 +1417,7 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.videos) {
-          const transformedRows = data.videos.map((video: any) => ({
-            id: video.id,
-            video_name: video.filename,
-            uploaded_time: new Date(video.uploaded_at).toLocaleString(),
-            vehicles: video.vehicles || 0,
-            signs: video.signs || 0,
-            speeding: video.speeding_count || 0,
-            swerving: video.swerving_count || 0,
-            abrupt_stop: video.abrupt_stopping_count || 0,
-            jeepney_hotspot: video.jeepney_hotspot || false,
-            duration: video.duration_seconds ? `${Math.round(video.duration_seconds)}s` : 'N/A',
-            status: video.processing_status || 'pending',
-            sign_classes: video.sign_classes || [],
-            thumbnail: video.thumbnail || null,
-            calibration_points: video.calibration_points || [],
-            reference_points: video.reference_points || [],
-            reference_distance_meters: video.reference_distance_meters,
-          }));
+          const transformedRows = data.videos.map((video: any) => buildVideoRow(video));
           setRows(transformedRows);
         }
       } else {
@@ -1660,6 +1689,54 @@ export default function Table({ onVideoFileSelect, hideUpload = false, cameraId,
             </div>
           )}
         </div>
+
+        {selectedRow && (
+          <Box
+            sx={{
+              mt: 1.5,
+              border: '1px solid #e7e9f3',
+              borderRadius: '12px',
+              p: 1.5,
+              backgroundColor: '#fafbff',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 1,
+            }}
+          >
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Recorded At
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.recorded_time || 'N/A'}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Duration
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.duration}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Source
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {formatMetadataSource(selectedRow.metadata_source)}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Uploaded At
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.uploaded_time || 'N/A'}
+              </Typography>
+            </Box>
+          </Box>
+        )}
 
       </div>
 

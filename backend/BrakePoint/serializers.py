@@ -58,7 +58,7 @@ class VideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Video
         fields = [
-            'id', 'camera', 'filename', 'uploaded_at',
+            'id', 'camera', 'filename', 'uploaded_at', 'start_time', 'start_time_source',
             'duration_seconds', 'fps', 'resolution', 'file_size_mb', 'thumbnail',
             'calibration_points', 'reference_points', 'reference_distance_meters', 'meter_per_pixel',
             'vehicles', 'speeding_count', 'swerving_count', 'abrupt_stopping_count', 'vehicle_breakdown', 'jeepney_hotspot',

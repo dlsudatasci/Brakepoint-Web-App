@@ -165,6 +165,8 @@ export type VideoSummary = {
 	camera: number;
 	filename?: string;
 	file_size_mb?: number;
+	start_time?: string | null;
+	start_time_source?: "metadata" | "filename" | "failed" | string;
 	duration_seconds: number;
 	fps?: number;
 	resolution: string;
