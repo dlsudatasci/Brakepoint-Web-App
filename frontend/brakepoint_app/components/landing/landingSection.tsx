@@ -62,7 +62,7 @@ export function EditContext({anchorEl, isOpen, onClickEditName, onClickRecalibra
 type LandingSectionProps = {
 	type: HeaderType;							// the type of the header to display 
 
-	icon?: React.ReactNode;						// the icon to use; can be undefined
+	icon?: React.ReactNode;			// the icon to use; can be undefined
 	onClickIcon?: () => void;					// function to run when the icon button is clicked (icon != undefined)
 
 	labelHeader: string;						// the label for the header

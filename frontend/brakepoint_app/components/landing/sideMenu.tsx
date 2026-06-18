@@ -410,14 +410,15 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onUploadStart, onProcessingStart, onProcessingComplete} : {
-    camera: CameraSummary,              // summary objecet for this camera
-    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
-    videosLoading?: boolean,            // whether videos are still being loaded
-    videosError?: boolean,              // whether video loading have posted an error
-    thumbnail?: string;                 // the thumbnail to display
-    onClickUploadVideo?: () => void,    // event to trigger when user clicks on Upload Video button
-    onThumbnailUpdate?: (thumb: string) => void; // callback when thumbnail updates
+function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onEditCameraTags, onUploadStart, onProcessingStart, onProcessingComplete} : {
+    camera: CameraSummary,                                      // summary objecet for this camera
+    loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
+    videosLoading?: boolean,                                    // whether videos are still being loaded
+    videosError?: boolean,                                      // whether video loading have posted an error
+    thumbnail?: string;                                         // the thumbnail to display
+    onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
+    onClickUploadVideo?: () => void,                            // event to trigger when user clicks on Upload Video button
+    onThumbnailUpdate?: (thumb: string) => void;                // callback when thumbnail updates
     onUploadStart?: (videoName: string) => void;
     onProcessingStart?: (videoName: string, videoId: number) => void;
     onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
@@ -429,8 +430,6 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
         onClickUploadVideo?.();  // still notify parent if needed
     };
 
-    console.log(loadedVideos)
-
     return (
         <div className="menuContainer">
             { /* thumbnail */ }
@@ -441,7 +440,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
             </div>
 
-            <CameraTags cameraId={camera.id} />
+            <CameraTags camera={camera} tagLength={camera.tags.length} onEditCameraTags={onEditCameraTags}/>
 
             <LandingSection type="header"
                 labelHeader="Videos"
@@ -496,16 +495,21 @@ function CameraStatisticsMenu({camera, loadedVideos, videosLoading, vehicleBreak
 }
 
 // displays the sidebar for a certain camera
-function CameraDetailMenu({camera, videos, videosLoading, onClickUploadVideo, onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onUploadStart, onProcessingStart, onProcessingComplete} : {
-    camera: CameraSummary,
-    videos: VideoSummary[],
-    videosLoading: boolean,
-    onClickUploadVideo?: (id: number) => void;
-    onFeedTabActive?: (active: boolean) => void;
-    onRenameCamera?: (type: SummaryType, id: number) => void;
-    onRecalibrateCamera?: (id: number) => void;
-    onDeleteCamera?: (type: SummaryType, id: number) => void;
-    onUploadStart?: (videoName: string) => void;
+function CameraDetailMenu({
+    camera, videos, videosLoading,
+    onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
+    onClickUploadVideo, onUploadStart, onProcessingStart, onProcessingComplete
+} : {
+    camera: CameraSummary,                                                              // summary object for this camera
+    videos: VideoSummary[],                                                             // array of all videos that this camera has
+    videosLoading: boolean,                                                             // whether videos are still loading; displays a loading graphic over menu
+    onFeedTabActive?: (active: boolean) => void;                                        // event to trigger when user enters the feed tab
+    onRenameCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to rename this camera
+    onRecalibrateCamera?: (id: number) => void;                                         // event to trigger when user requests to delete this camera
+    onDeleteCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to delete this camera
+    onEditCameraTags?: (id: number, newTags: string[]) => void;                         // event to trigger when user requests to edit (add or remove) this camera's tags
+    onClickUploadVideo?: (id: number) => void;                                          // event to trigger when user requests to upload a video
+    onUploadStart?: (videoName: string) => void;                                        
     onProcessingStart?: (videoName: string, videoId: number) => void;
     onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
 }) {
@@ -546,6 +550,7 @@ function CameraDetailMenu({camera, videos, videosLoading, onClickUploadVideo, on
                 thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
+                onEditCameraTags={onEditCameraTags}
                 onUploadStart={onUploadStart}
                 onProcessingStart={onProcessingStart}
                 onProcessingComplete={onProcessingComplete}
@@ -565,61 +570,28 @@ function CameraDetailMenu({camera, videos, videosLoading, onClickUploadVideo, on
 
 
 
-// use this type to call functions to quickly update data in the side menu
-export type SideMenuUpdater = {
-    setLoading: (newSetting: boolean) => void;                              // sets whether listLoading is active to denote that the system is busy loading currently
-};
-
 // definition of types for the props for MenuBar
 interface SideMenuProps {
-    refreshTrigger?: boolean;                               // invert to re-fetch the AOI list
-    onMount?: (updater: SideMenuUpdater) => void;           // provides direct update fns to avoid full refetch on edit/delete
 
-    locationSummariesLoading?: boolean;                     // has our parent page finished loading all the location summaries?
-    videosLoading?: boolean;                                // has our parent page finished loading all the videos?
+    locationSummariesLoading?: boolean;                                                         // has our parent page finished loading all the location summaries?
+    videosLoading?: boolean;                                                                    // has our parent page finished loading all the videos?
 
-    allAois?: AOIRecord;                                    // all AOIs visible to this side menu
-    allSubareas?: SubareaRecord;                            // all subareas visible to this side menu
-    allCameras?: CameraRecord;                              // all cameras visible to this side menu
-    allVideos?: VideoRecord;                                // all videos visible to this side menu
+    allAois?: AOIRecord;                                                                        // all AOIs visible to this side menu
+    allSubareas?: SubareaRecord;                                                                // all subareas visible to this side menu
+    allCameras?: CameraRecord;                                                                  // all cameras visible to this side menu
+    allVideos?: VideoRecord;                                                                    // all videos visible to this side menu
 
-    selectedAOI?: AOISummary | null;                        // currently selected AOI
-    selectedSubarea?: SubAreaSummary | null;                // currently selected subarea
-    selectedCamera?: CameraSummary | null;                  // currently selected camera
-    currentSelectionMode?: "all" | SummaryType;             // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
+    selectedAOI?: AOISummary | null;                                                            // currently selected AOI
+    selectedSubarea?: SubAreaSummary | null;                                                    // currently selected subarea
+    selectedCamera?: CameraSummary | null;                                                      // currently selected camera
+    currentSelectionMode?: "all" | SummaryType;                                                 // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
 
-
-    canClickToAreas?: boolean;                              // whether the user can click to areas or not (area cards will have loading icons if not)
-    onAoiHover?: (id: number | null) => void;               // called with AOI id on hover, null on leave
-    onAoiClick?: (id: number) => void;                      // called when an AOI card is clicked — opens edit/delete dialog
-    onAoiEnter?: (aoi: AOISummary) => void;                 // called when the arrow button is clicked — zooms map to AOI
-    onAoiBack?: () => void;                                 // called when the user navigates back from an AOI detail view
-    onRenameAoi?: (id: number) => void;                     // triggers when user clicks to rename an area;
-    onDeleteAoi?: (id: number) => void;                     // triggers when user clicks to delete an area;
-    onAddArea?: () => void;                                 // triggers when the user clicks the "add area" button
-    isDrawingAOI?: boolean;                                 // true while the user is drawing an AOI on the map
-
-    canClickToSubareas?: boolean;                              // whether the user can click to areas or not (area cards will have loading icons if not)
-    onSelectSubarea?: (subareaId: number, cameraIds: number[]) => void;          // triggers when the user selects a subarea
-    onSubareaHover?: (id: number | null) => void;           // called with sub-area id on hover, null on leave
-    onSubareaClick?: (id: number, name: string) => void;    // called when a road segment card body is clicked — opens edit/delete dialog
-    onRenameSubarea?: (id: number) => void;                 // triggers when user clicks to rename a subarea;
-    onDeleteSubarea?: (id: number) => void;                 // triggers when user clicks to delete a subarea;
-    onAddSubarea?: (type: SubAreaType) => void;             // called when + in any segment section is clicked
-    isDrawingSubarea?: SubAreaType | false;                 // which sub-area type is currently being drawn
-
-    onSubareaBack?: () => void;                             // called when the user navigates back from a subarea detail view
-
-    canClickToCameras?: boolean;                            // whether the user can click to cameras or not (area cards will have loading icons if not)
-    onCameraClick?: (id: number) => void;                   // called when a camera card is clicked — opens edit/delete dialog
-    onCameraEnter?: (camera: CameraSummary) => void;        // called when the arrow button is clicked — selects and enters the submenu of this camera
-    onCameraBack?: () => void;                              // called when the user navigates back from a camera detail view
-    onCameraUpload?: (id: number) => void;                  // triggers when user clicks to upload a new video for a camera
-    onRenameCamera?: (id: number, name: string) => void;    // triggers when user clicks to rename a camera
-    onRecalibrateCamera?: (id: number) => void;             // triggers when user clicks to recalibrate a camera
-    onDeleteCamera?: (id: number, name: string) => void;    // triggers when user clicks to delete a camera
-    onAddCamera?: () => void;                               // called when + in the camera section is clicked
-    isDrawingCamera?: boolean;                              // true while the user is creating a camera on the map
+    canClickToAreas?: boolean;                                                                  // whether the user can click to areas or not (area cards will have loading icons if not)
+    canClickToSubareas?: boolean;                                                               // whether the user can click to subareas or not (subarea cards will have loading icons if not)
+    canClickToCameras?: boolean;                                                                // whether the user can click to cameras or not (camera cards will have loading icons if not)
+    isDrawingAOI?: boolean;                                                                     // true while the user is drawing an AOI on the map
+    isDrawingSubarea?: SubAreaType | false;                                                     // which sub-area type is currently being drawn, false if not drawing subarea
+    isDrawingCamera?: boolean;                                                                  // true while the user is creating a camera on the map
 
     canStartDrawing?: boolean;                                                                  // whether the user can click on the draw (add area/subarea/camera) buttons
     onNavigateTo?: (type: SummaryType, id: number) => void;                                     // called with object id on selecting an object
@@ -629,20 +601,21 @@ interface SideMenuProps {
     onRequestRename?: (type: SummaryType, id: number) => void;                                  // called when user requests to rename an object (area/subarea/camera)
     onRequestDelete?: (type: SummaryType, id: number) => void;                                  // called when user requests to delete an object (area/subarea/camera)
     onBack?: () => void;                                                                        // called when returning from a previous menu
+    
+    onEditCameraTags?: (id: number, newTags: string[]) => void;                                 // event to trigger when user requests to edit (add or remove) a camera's tags
+    onCameraUpload?: (id: number) => void;                                                      // triggers when user clicks to upload a new video for a camera
+    onRecalibrateCamera?: (id: number) => void;                                                 // triggers when user clicks to recalibrate a camera
 
-    onFeedTabActive?: (active: boolean) => void;                // called when the feed tab of a camera is active
+    onFeedTabActive?: (active: boolean) => void;                                                // called when the feed tab of a camera is active
 }
-
-
 
 // creates a Landing Page side menu gui and handles its data operations
 export default function SideMenu({
     locationSummariesLoading = true, videosLoading = true,
-    canClickToAreas = true, onAoiHover, onAoiClick, onAoiEnter, onAoiBack, onAddArea, onRenameAoi, onDeleteAoi, isDrawingAOI = false,
-    canClickToSubareas = true, onSelectSubarea, onSubareaHover, onSubareaClick, onSubareaBack, onAddSubarea, onRenameSubarea, onDeleteSubarea, isDrawingSubarea = false,
-    canClickToCameras = true, onCameraClick, onCameraEnter, onCameraBack, onAddCamera, onCameraUpload, onRenameCamera, onRecalibrateCamera, onDeleteCamera, isDrawingCamera,
+    canClickToAreas = true, isDrawingAOI = false,
+    canClickToSubareas = true, isDrawingSubarea = false,
+    canClickToCameras = true, onCameraUpload, onRecalibrateCamera, isDrawingCamera, onEditCameraTags,
     onFeedTabActive,
-    onMount, refreshTrigger, 
     canStartDrawing = true, allAois, allSubareas, allCameras, allVideos, selectedAOI, selectedSubarea, selectedCamera, currentSelectionMode,
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
 }: SideMenuProps) {
@@ -723,9 +696,12 @@ export default function SideMenu({
                             onRenameCamera={onRequestRename}
                             onRecalibrateCamera={onRecalibrateCamera}
                             onDeleteCamera={onRequestDelete}
+                            onEditCameraTags={onEditCameraTags}
                             onClickUploadVideo={onCameraUpload}
                             onFeedTabActive={onFeedTabActive}
+
                             onUploadStart={(videoName) => showToast(`Uploading "${videoName}"…`, "info")}
+                            
                             onProcessingStart={(videoName, videoId) => {
                                 showToast(`"${videoName}" uploaded — processing started`, "info");
                                 trackVideoProcessing(videoName, videoId);

@@ -24,6 +24,7 @@
 	font-size: 200%;
 	font-weight: 600;
 	margin: 0;
+	align-self: center;
 
 	/* flexy purely for the sake of when the chip is used */
 	display: flex;

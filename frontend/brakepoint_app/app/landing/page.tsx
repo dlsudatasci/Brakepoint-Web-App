@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SideMenu from "@/components/landing/sideMenu";
-import type { SideMenuUpdater } from "@/components/landing/sideMenu";
+// import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
 
 import {
@@ -119,7 +119,7 @@ export default function LandingPage() {
   const [deleting, setDeleting] = useState(false);
 
   // Direct updater for SideMenu sub-area list
-  const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
+  // const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
 
   // Feed tab active state
   const [isFeedTabActive, setIsFeedTabActive] = useState(false);
@@ -377,7 +377,7 @@ export default function LandingPage() {
   }, [drawError]);
   
   // checks if this object is present in the [Object]Record map 
-  function idIsPresentInMap(type: SummaryType, id: number) {
+  function idIsPresentInMap(type: SummaryType | "video", id: number): boolean {
     switch (type) {
       case "area":
         return id in allAoisRef.current
@@ -387,11 +387,15 @@ export default function LandingPage() {
 
       case "camera":
         return id in allCamerasRef.current
+
+      case "video":
+        return id in allVideosRef.current
     }
   }
 
   // gets object from map (if present)
-  function getSummaryFromId(type: SummaryType, id: number): null | AOISummary | SubAreaSummary | CameraSummary {
+
+  function getLocationSummaryFromId(type: SummaryType | "video", id: number): null | AOISummary | SubAreaSummary | CameraSummary {
     if (!idIsPresentInMap(type, id)) return null;
     switch(type) {
       case "area":
@@ -403,6 +407,36 @@ export default function LandingPage() {
       case "camera":
         return allCamerasRef.current[id]
     }
+  }
+
+  // gets object from the allAois map (if present)
+  function getAoiSummaryFromId(id: number): null | AOISummary {
+    return (idIsPresentInMap("area", id))? allAoisRef.current[id] : null;
+  }
+  // gets object from the allAois map (if present)
+  function getSubareaSummaryFromId(id: number): null | SubAreaSummary {
+    return (idIsPresentInMap("subarea", id))? allSubareasRef.current[id] : null;
+  }
+  // gets object from the allAois map (if present)
+  function getCameraSummaryFromId(id: number): null | CameraSummary {
+    return (idIsPresentInMap("camera", id))? allCamerasRef.current[id] : null;
+  }
+  // gets object from the allAois map (if present)
+  function getVideoSummaryFromId(id: number): null | VideoSummary {
+    return (idIsPresentInMap("video", id))? allVideosRef.current[id] : null;
+  }
+
+  // returns a list of all areas in this format
+  const getAllAreasAsArray = () => {
+    return convertRecordToArray(allAoisRef.current).map((aoi) => convertToMapAreaFormat(aoi))
+  }
+  // gets all children of this parent object, as an array of LocationSummary objects
+  const getAllSubareaChildrenAsArray = (parentId: number) => {
+    return convertRecordToArray(allSubareasRef.current).filter((x) => x.parent === parentId).map((sub) => convertToMapAreaFormat(sub))
+  }
+  // gets all children of this parent object, as an array of LocationSummary objects
+  const getAllCameraChildrenAsArray = (parentId: number) => {
+    return convertRecordToArray(allCamerasRef.current).filter((x) => x.parent === parentId).map((cam) => convertToCameraAreaFormat(cam));
   }
 
   // converts a compatible Summary object to a relevant map format
@@ -425,15 +459,39 @@ export default function LandingPage() {
       }
   }
 
+  // patches a single area/subarea/camera with new data
+  const patchObjectInList = (type: SummaryType | "video", id: number, patchObject: any) => {
+    if (!idIsPresentInMap(type, id)) return; // test first if it's even present
+
+    // get object
+    let newListObject;
+    switch (type) {
+      case "area": newListObject = allAoisRef.current; break;
+      case "subarea": newListObject = allSubareasRef.current; break;
+      case "camera": newListObject = allCamerasRef.current; break;
+      case "video": newListObject = allVideosRef.current; break;
+    }
+
+    // patch in everything
+    for (const key in patchObject) {
+      const val = patchObject[key];
+      newListObject[id][key] = val;
+    }
+
+    // return it in
+    switch(type) {
+      case "area": setAllAois(newListObject); break;
+      case "subarea": setAllSubareas(newListObject); break;
+      case "camera": setAllCameras(newListObject); break;
+      case "video": setAllVideos(newListObject); break;
+    }
+  }
 
 
 
 
 
-  // aliases of getObjectFromMap that specifies the necessary type
-  function getAoiSummaryFromId(id: number): null | AOISummary { return getSummaryFromId("area", id) as (AOISummary | null) }
-  function getSubareaSummaryFromId(id: number): null | SubAreaSummary { return getSummaryFromId("subarea", id) as (SubAreaSummary | null) }
-  function getCameraSummaryFromId(id: number): null | CameraSummary { return getSummaryFromId("camera", id) as (CameraSummary | null) }
+
 
   // handles selecting a certain object
   const handleNavigateTo = useCallback((type: SummaryType, id: number) => {
@@ -580,7 +638,7 @@ export default function LandingPage() {
     if (!idIsPresentInMap(type, id)) return; // quickfail
 
     // get name; name has to be initialized before and stay initialized while editAction is not null
-    const thisObject = getSummaryFromId(type, id);
+    const thisObject = getLocationSummaryFromId(type, id);
     setEditName(thisObject.name);
 
     // set all relevant states
@@ -593,7 +651,7 @@ export default function LandingPage() {
     if (!idIsPresentInMap(type, id)) return; // quickfail
 
     // get name; name has to be initialized before and stay initialized while editAction is not null
-    const thisObject = getSummaryFromId(type, id);
+    const thisObject = getLocationSummaryFromId(type, id);
 
     // if thisObject has children: deny request
     if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
@@ -865,20 +923,8 @@ export default function LandingPage() {
           if (!res.ok) { console.log(await res.text()); return false; }
 
           // past this point, api success - patch the relevant data in our local copy
-          if (type === "area") { // area
-            const newAllAois = allAois;
-            newAllAois[id].name = newName;
-            setAllAois(newAllAois)
-            return;
-          } else if (type === "subarea") { // subarea
-            const newAllSubareas = allSubareas;
-            newAllSubareas[id].name = newName;
-            setAllSubareas(newAllSubareas)
-          } else if (type === "camera") { // camera
-            const newAllCameras = allCameras;
-            newAllCameras[id].name = newName;
-            setAllCameras(newAllCameras);
-          }
+          patchObjectInList(type, id, {name: newName});
+
     } catch (exception) {
       console.log(exception)
     } finally {
@@ -904,9 +950,7 @@ export default function LandingPage() {
       if (!res.ok) { console.log(await res.text()); return false; }
 
       // patching local copies...
-      const newCameras = allCamerasRef.current;
-      newCameras[id].polygon = polygon;
-      setAllCameras(newCameras);
+      patchObjectInList("camera", id, {polygon: polygon})
       onSuccess();
 
     } catch (exception) {
@@ -916,37 +960,6 @@ export default function LandingPage() {
     }
     // onSuccess();
   }
-
-  /*
-
-  const handleSaveCameraName = async () => {
-    if (!editCamera) return;
-    const target = editCamera;
-    const newName = editCameraName.trim() || target.name;
-
-    sideMenuUpdaterRef.current?.setLoading(true);
-    setEditCamera(null);
-
-    setSavingCamera(true);
-    try {
-      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${target.id}/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      sideMenuUpdaterRef.current?.renameObject("camera", target.id, newName);
-    } catch (err) {
-      console.error("Failed to rename camera:", err);
-      sideMenuUpdaterRef.current?.setLoading(false);
-      setEditCamera(target);
-      setEditCameraName(target.name);
-    } finally {
-      setSavingCamera(false);
-    }
-  };
-
-  */
 
   // asks the API to delete the given object
   const handleDeleteObject = async () =>  {
@@ -1017,18 +1030,39 @@ export default function LandingPage() {
     }
   }
 
-  // returns a list of all areas in this format
-  const getAllAreasAsArray = () => {
-    return convertRecordToArray(allAoisRef.current).map((aoi) => convertToMapAreaFormat(aoi))
+  const handleEditCameraTags = async (id: number, newTags: string[]) => {
+    console.log(id, newTags)
+    // get camera in question
+    const camera = getCameraSummaryFromId(id);
+    if (!camera) return;
+
+
+    try {
+      // pass on request to api
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/tags/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tags: newTags }),
+      }).then((r) => r.json())
+      if (!res.success) return;
+      
+      // patch our local copy if successful
+      patchObjectInList("camera", id, {tags: newTags});
+      
+    } catch (exception) {
+      console.log(exception)
+    } finally {
+
+    }
+
   }
-  // gets all children of this parent object, as an array of LocationSummary objects
-  const getAllSubareaChildrenAsArray = (parentId: number) => {
-    return convertRecordToArray(allSubareasRef.current).filter((x) => x.parent === parentId).map((sub) => convertToMapAreaFormat(sub))
-  }
-  // gets all children of this parent object, as an array of LocationSummary objects
-  const getAllCameraChildrenAsArray = (parentId: number) => {
-    return convertRecordToArray(allCamerasRef.current).filter((x) => x.parent === parentId).map((cam) => convertToCameraAreaFormat(cam));
-  }
+
+
+
+
+
 
   return (
     <Box sx={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
@@ -1109,9 +1143,6 @@ export default function LandingPage() {
       {/* SideMenu */}
       <Box sx={{ position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 10, overflowY: "auto" }}>
         <SideMenu
-          refreshTrigger={currentRefreshTrigger}
-          onMount={(updater) => { sideMenuUpdaterRef.current = updater; }}
-
           locationSummariesLoading = {!locationSummariesReady}
           videosLoading = {!videosReady}
           allAois = {allAois}
@@ -1132,11 +1163,11 @@ export default function LandingPage() {
           onRequestRename={handleStartEditingName}
           onRequestDelete={handleStartDeletion}
 
+          onEditCameraTags={handleEditCameraTags}
+
           isDrawingAOI={isDrawingRef.current && drawTypeRef.current === "area"}
           isDrawingSubarea={(isDrawingRef.current && drawTypeRef.current === "subarea") ? drawSubareaTypeRef.current : false}
           isDrawingCamera={isDrawingRef.current && drawTypeRef.current === "camera"}
-          
-          onDeleteCamera={() => {}}
 
           onFeedTabActive={setIsFeedTabActive}
         />
