@@ -736,6 +736,7 @@ def _upload_and_process_video(request):
         calibration_points=calibration_points or [],
         reference_points=reference_points or [],
         reference_distance_meters=reference_distance_meters,
+        start_time_source='failed',
         processing_status='processing',
         processing_started_at=timezone.now()
     )
@@ -761,8 +762,7 @@ def _upload_and_process_video(request):
                     parsed_start_time = timezone.make_aware(parsed_start_time, timezone.get_current_timezone())
                 video_record.start_time = parsed_start_time
 
-        if inspection_result.get('source'):
-            video_record.start_time_source = inspection_result['source']
+        video_record.start_time_source = inspection_result.get('source') or 'failed'
 
         if inspection_result.get('duration_seconds') is not None:
             video_record.duration_seconds = inspection_result['duration_seconds']
