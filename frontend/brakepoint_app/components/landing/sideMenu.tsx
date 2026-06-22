@@ -42,7 +42,6 @@ import UploadIcon from '@mui/icons-material/Upload';
 // css
 import "./sideMenu.css";
 import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
-import Table from "@/components/ui/table";
 
 // displays a single AOI card
 function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardClick }: {
@@ -450,8 +449,12 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 icon={ <UploadIcon /> }
                 onClickIcon={handleUploadClick}
             >
-                <Table
+                <VideoTable
                     cameraId={camera.id}
+                    camera={camera}
+                    loadedVideos={loadedVideos}
+
+
                     onVideoFileSelect={(url, thumb) => {
                         if (thumb) onThumbnailUpdate?.(thumb);
                     }}

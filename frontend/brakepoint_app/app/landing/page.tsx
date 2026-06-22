@@ -11,6 +11,8 @@ import SideMenu from "@/components/landing/sideMenu";
 // import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
 
+import { CameraAddModal, CameraEditModal } from "@/components/landing/cameraModals";
+import { useNotifications } from "@/contexts/NotificationContext";
 import {
 	SubAreaType, SummaryType, VehicleBreakdown,
 	LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
@@ -22,6 +24,7 @@ import {
 } from "@/components/landing/summaryTypes";
 import { Cameraswitch } from "@mui/icons-material";
 import { ValidateNotSelfIntersecting } from "terra-draw";
+import { dataIndexSerializer } from "@mui/x-charts/internals";
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
 
@@ -97,7 +100,7 @@ export default function LandingPage() {
   mapGoToRef.current = mapGoTo;
 
   // handles states for editing and deletingareas/subareas/cameras
-  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate">(null);
+  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "addVideo" | "editVideo">(null);
   const [editObjectType, setEditObjectType] = useState<null | SummaryType>(null);
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
@@ -127,6 +130,9 @@ export default function LandingPage() {
   // function to force update the side menu and map from anywhere
   const [currentRefreshTrigger, setCurrentRefreshTrigger] = useState<boolean>(false);
   const forceTriggerRefresh = () => { setCurrentRefreshTrigger(!setCurrentRefreshTrigger); }
+
+  // prepare to bake some nice warm toast (enables the use of toasts)
+  const { trackVideoProcessing, showToast } = useNotifications();
 
 
 
@@ -314,56 +320,60 @@ export default function LandingPage() {
   }
 
   // handles adding new video data, after the initial load
-  const addNewVideoData = async (newVideoId: number) => {
+  const addNewVideoDataFromId = async (newVideoId: number) => {
     setVideosReady(false);
     try {
       authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${newVideoId}`).then((r) => r.json())
       .then((videoData) => {
         if (!videoData.success) { return; }
-        videoData = videoData.videos;
-
-        // get the parent, dispose if parent doesn't exist
-        const parent = getCameraSummaryFromId(videoData.camera)
-        if (parent === null) { setVideosReady(true); return; };
-
-        // create a new video for appending to our video list
-        const newVideoList = allVideosRef.current;
-        const newVideoSummary = convertObjectToVideoSummary(videoData)
-        newVideoList[newVideoId] = newVideoSummary;
-        setAllVideos(newVideoList);
-
-        // update this object's parent accordingly
-        parent.video_count++;
-        parent.video_ids = parent.video_ids ? [...parent.video_ids, newVideoId] : [newVideoId];
-        parent.vehicles += newVideoSummary.vehicles;
-        parent.adb += newVideoSummary.occurrences;
-        parent.speeding += newVideoSummary.speeding_count;
-        parent.swerving += newVideoSummary.swerving_count;
-        parent.abrupt_stopping += newVideoSummary.abrupt_stopping_count;
-        for (const item in newVideoSummary.vehicle_breakdown) {
-          parent.vehicle_breakdown[item] += newVideoSummary.vehicle_breakdown[item];
-        }
-        
-        // update its latest upload only if necessary
-        if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
-          parent.latest_upload = newVideoSummary.uploaded_at;
-          parent.latest_upload_id = newVideoSummary.id;
-          parent.thumbnail = newVideoSummary.thumbnail;
-        }
-            
-        // and set the newly updated data to our camera list
-        const newCameraList = allCamerasRef.current;
-        newCameraList[parent.id] = parent;
-        setAllCameras(newCameraList);
+        addNewVideoData(videoData.videos)
       })
     } catch (exception) {
       console.log(exception)
-    } finally {
       setVideosReady(true);
+    } finally {
     }
   }
 
+  const addNewVideoData = async (videoData: any) => {
+    setVideosReady(false);
 
+    // get the id and parent, dispose if parent doesn't exist
+    const videoId = videoData.id;
+    const parent = getCameraSummaryFromId(videoData.camera)
+    if (parent === null || videoId === undefined) { setVideosReady(true); return; };
+
+    // create a new video for appending to our video list
+    const newVideoList = allVideosRef.current;
+    const newVideoSummary = convertObjectToVideoSummary(videoData)
+    newVideoList[videoData] = newVideoSummary;
+    setAllVideos(newVideoList);
+
+    // update this object's parent accordingly
+    parent.video_count++;
+    parent.video_ids = parent.video_ids ? [...parent.video_ids, videoId] : [videoId];
+    parent.vehicles += newVideoSummary.vehicles;
+    parent.adb += newVideoSummary.occurrences;
+    parent.speeding += newVideoSummary.speeding_count;
+    parent.swerving += newVideoSummary.swerving_count;
+    parent.abrupt_stopping += newVideoSummary.abrupt_stopping_count;
+    for (const item in newVideoSummary.vehicle_breakdown) {
+      parent.vehicle_breakdown[item] += newVideoSummary.vehicle_breakdown[item];
+    }
+    
+    // update its latest upload only if necessary
+    if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
+      parent.latest_upload = newVideoSummary.uploaded_at;
+      parent.latest_upload_id = newVideoSummary.id;
+      parent.thumbnail = newVideoSummary.thumbnail;
+    }
+        
+    // and set the newly updated data to our camera list
+    const newCameraList = allCamerasRef.current;
+    newCameraList[parent.id] = parent;
+    setAllCameras(newCameraList);
+  }
+  //onComplete?: (fullData: any) => void
 
 
 
@@ -566,6 +576,7 @@ export default function LandingPage() {
 
   // returns from the previous menu
   const handleBack = useCallback(() => {
+
     // force shut isDrawing flags
     handleDrawingCleanup()
 
@@ -814,26 +825,6 @@ export default function LandingPage() {
     }
   }, []);  
 
-  /*
-  const handleCameraEdit = useCallback((id: number, name: string) => {
-    setEditCamera({ id, name, ring: [] });
-    setEditCameraName(name);
-  }, []);
-
-  const handleCameraDelete = useCallback((id: number, name: string) => {
-    setDeleteConfirmCamera({ id, name, ring: [] });
-  }, []);
-
-  const handleAddSubarea = useCallback((type: SubAreaType) => {
-    setIsDrawingSubarea((d) => {
-      const next = d === type ? false : type;
-      pendingSubAreaTypeRef.current = next || null;
-      return next;
-    });
-    setIsDrawing(false);
-  }, []);
-  */
-
   // called once user places a camera on the map
   const handleCameraAdded = useCallback(async (lat: number, lng: number) => {
     // retrieve consts based on our states set earlier
@@ -1031,7 +1022,6 @@ export default function LandingPage() {
   }
 
   const handleEditCameraTags = async (id: number, newTags: string[]) => {
-    console.log(id, newTags)
     // get camera in question
     const camera = getCameraSummaryFromId(id);
     if (!camera) return;
@@ -1056,11 +1046,55 @@ export default function LandingPage() {
     } finally {
 
     }
-
   }
 
+  // run when we are starting to upload a video
+  const handleRequestUploadVideo = async (id: number) => {
+    setEditId(id);
+    setEditObjectType("camera");
+    setEditAction("addVideo");
+  }
 
+  // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
+  const handleUploadStart = async (
+    savedFile: File, videoName: string, cameraId: number,
+    calibrationPoints: {x: number, y: number}[], originalReferencePoints: {x: number, y: number}[],
+    referenceDistance: number, uploadThumbnail?: string
+  ) => {
 
+    // create our FormData for sending to the api
+    const formData = new FormData();
+    formData.append('file', savedFile);
+    formData.append('video_name', videoName);
+    formData.append('camera_id', cameraId.toString());
+    formData.append('calibration_points', JSON.stringify(calibrationPoints));
+    formData.append('reference_points', JSON.stringify(originalReferencePoints));
+    formData.append('reference_distance_meters', referenceDistance.toString());
+    if (uploadThumbnail) formData.append('thumbnail', uploadThumbnail);
+
+    // console.log("Sending file:", formData)
+
+    try {
+      // upload video :)
+      showToast(`Uploading "${videoName}"...`, "info");
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
+
+      // if fail, display a note — the user needs to know this
+      if (!res.ok) {
+        showToast("Failed to upload video", "error");
+        return;
+      }
+
+      const data = await res.json();
+
+      // else, note that we've finished processing and pass this onto the processing tracker
+      // afterwards, pass the video data onto addNewVideoData()
+      showToast(`"${videoName}" uploaded — processing started`, "info");
+      trackVideoProcessing(videoName, data.videoId, (data) => { addNewVideoData(data.videos) })
+    } catch (exception) {
+      console.log(exception)
+    } finally {}
+  }
 
 
 
@@ -1162,6 +1196,8 @@ export default function LandingPage() {
           onStartDrawing={handleOnDrawingToggle}
           onRequestRename={handleStartEditingName}
           onRequestDelete={handleStartDeletion}
+
+          onCameraUpload={handleRequestUploadVideo}
 
           onEditCameraTags={handleEditCameraTags}
 
@@ -1304,6 +1340,17 @@ export default function LandingPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      { /* Camera add video modal */ }
+      <CameraAddModal
+        open = { editAction === "addVideo" && editObjectType === "camera" }
+        cameraId = { editId }
+        onClose = { handleEditClose }
+        onSubmit={ () => {} }
+        onVideoFileSelect={ () => {} }
+
+        onUploadStart={ handleUploadStart }
+      />
 
 
 

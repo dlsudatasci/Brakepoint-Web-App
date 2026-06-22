@@ -36,7 +36,7 @@ interface NotificationContextType {
   completeProcessing: (id: string, success: boolean, data?: any) => void;
   updateProgress: (id: string, stage: string, progress: number) => void;
 
-  trackVideoProcessing: (videoName: string, videoId: number) => string;
+  trackVideoProcessing: (videoName: string, videoId: number, onComplete?: (fullData: any) => void) => string;
 
   removeNotification: (id: string) => void;
   markAsRead: (id: string) => void;
@@ -174,7 +174,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const startPollingForVideo = useCallback(
-    (notifId: string, videoId: number) => {
+    (notifId: string, videoId: number, onComplete?: (fullData: any) => void) => {
       if (pollersRef.current.has(videoId)) return;
 
       const intervalId = window.setInterval(async () => {
@@ -202,10 +202,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             if (videoResponse.ok) {
               const fullData = await videoResponse.json();
               if (fullData.success && fullData.video) {
+                onComplete(fullData);
                 videoData = {
                   yolo_results: { total_unique: fullData.video.vehicles || 0 },
                   sign_results: { unique_signs: fullData.video.signs || 0 },
-                };
+                }
               }
             }
 
@@ -226,10 +227,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     [completeProcessing, stopPolling, updateProgress],
   );
 
+  // onComplete are for extra functions to piggyback on the completion of this task
   const trackVideoProcessing = useCallback(
-    (videoName: string, videoId: number) => {
+    (videoName: string, videoId: number, onComplete?: (fullData: any) => void) => {
       const notifId = addProcessingNotification(videoName, videoId);
-      startPollingForVideo(notifId, videoId);
+      startPollingForVideo(notifId, videoId, onComplete);
       return notifId;
     },
     [addProcessingNotification, startPollingForVideo],

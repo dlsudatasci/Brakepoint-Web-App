@@ -186,14 +186,17 @@ export type VideoSummary = {
 	jeepney_hotspot?: boolean;
 	uploaded_at: Date;
 	vehicle_breakdown: VehicleBreakdown;
+
+	processing_status: "completed" | "failed" | "processing";
+
 }
 
 export function convertObjectToVideoSummary(obj: any, additional?: any) {
 	return {
 		summaryType: "video",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
-		...obj, ...additional,
 		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
+		...obj, ...additional,
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
 	} as VideoSummary
 }
 
