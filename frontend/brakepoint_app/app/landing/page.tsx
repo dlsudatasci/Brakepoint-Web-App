@@ -101,7 +101,7 @@ export default function LandingPage() {
 
   // handles states for editing and deletingareas/subareas/cameras
   const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "addVideo" | "editVideo">(null);
-  const [editObjectType, setEditObjectType] = useState<null | SummaryType>(null);
+  const [editObjectType, setEditObjectType] = useState<null | SummaryType | "video">(null);
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
   const [editIsLoading, setEditIsLoading] = useState<boolean>(false);
@@ -661,21 +661,28 @@ export default function LandingPage() {
     setEditObjectType(type);
   }
 
-  const handleStartDeletion = (type: SummaryType, id: number) => {
+  const handleStartDeletion = (type: SummaryType | "video", id: number) => {
     if (!idIsPresentInMap(type, id)) return; // quickfail
 
-    // get name; name has to be initialized before and stay initialized while editAction is not null
-    const thisObject = getLocationSummaryFromId(type, id);
+    let thisObject: LocationSummary | VideoSummary;
+    if (type !== "video") {
+      // get name; name has to be initialized before and stay initialized while editAction is not null
+      thisObject = getLocationSummaryFromId(type, id);
 
-    // if thisObject has children: deny request
-    if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
-      setDrawError(`Cannot delete the area ${thisObject.name}; please delete all its subareas firsts`); return;
-    }
-    if (isSubareaSummary(thisObject) && thisObject.camera_count > 0) {
-      setDrawError(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} ${thisObject.name}; please delete all its cameras firsts`); return;
+      if (thisObject === null) return;
+      // if thisObject has children: deny request
+      if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
+        setDrawError(`Cannot delete the area ${thisObject.name}; please delete all its subareas firsts`); return;
+      }
+      if (isSubareaSummary(thisObject) && thisObject.camera_count > 0) {
+        setDrawError(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} ${thisObject.name}; please delete all its cameras first`); return;
+      }
+      setEditName(thisObject.name);
+    } else {
+      thisObject = getVideoSummaryFromId(id);
+      setEditName(thisObject.filename);
     }
 
-    setEditName(thisObject.name);
 
     // set all relevant states
     setEditAction("delete")
@@ -972,7 +979,7 @@ export default function LandingPage() {
     
     try {
       // deleting area or subarea
-      if (type !== "camera") { 
+      if (type === "area" || type === "subarea") { 
         const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
           method: "DELETE",
         });
@@ -1018,6 +1025,24 @@ export default function LandingPage() {
         newAllSubareas[parentOfThis].camera_ids = newAllSubareas[parentOfThis].camera_ids.filter((x) => x !== id);
         setAllSubareas(newAllSubareas)
       }
+
+      // deleting video
+      else if (type === "video") {
+        const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${id}/`, { method: 'DELETE' })
+        if (!res.ok) throw new Error(await res.text()); // throw error and shunt out
+
+        // done — work on deleting this object and updating the camera to note this video's absence
+        const newAllVideos = allVideosRef.current;
+        const parentOfThis = newAllVideos[id].camera;
+        delete newAllVideos[id];
+        setAllVideos(newAllVideos);
+
+        patchObjectInList("camera", parentOfThis, {
+          video_count: allCamerasRef.current[parentOfThis].video_count - 1,
+          video_ids: allCamerasRef.current[parentOfThis].video_ids.filter((x) => x !== id),
+        })
+      }
+
     } catch (exception) {
       console.log(exception)
     } finally {
@@ -1057,6 +1082,8 @@ export default function LandingPage() {
 
   // run when we are starting to upload a video
   const handleRequestUploadVideo = async (id: number) => {
+
+
     setEditId(id);
     setEditObjectType("camera");
     setEditAction("addVideo");
@@ -1093,11 +1120,12 @@ export default function LandingPage() {
       }
 
       const data = await res.json();
+      console.log(data);
 
       // else, note that we've finished processing and pass this onto the processing tracker
       // afterwards, pass the video data onto addNewVideoData()
       showToast(`"${videoName}" uploaded — processing started`, "info");
-      trackVideoProcessing(videoName, data.videoId, (data) => { addNewVideoData(data.videos) })
+      trackVideoProcessing(videoName, data.video_id, (data) => { addNewVideoData(data.videos) })
     } catch (exception) {
       console.log(exception)
     } finally {}
@@ -1358,7 +1386,6 @@ export default function LandingPage() {
 
         onUploadStart={ handleUploadStart }
       />
-
 
 
     </Box>

@@ -39,6 +39,8 @@ import SwapCallsIcon from '@mui/icons-material/SwapCalls';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import UploadIcon from '@mui/icons-material/Upload';
 
+import NotificationDebugButton from "@/components/ui/notifDebug";
+
 // css
 import "./sideMenu.css";
 import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
@@ -409,7 +411,7 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onThumbnailUpdate, onEditCameraTags, onUploadStart, onProcessingStart, onProcessingComplete} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags} : {
     camera: CameraSummary,                                      // summary objecet for this camera
     loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
     videosLoading?: boolean,                                    // whether videos are still being loaded
@@ -417,10 +419,8 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     thumbnail?: string;                                         // the thumbnail to display
     onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
     onClickUploadVideo?: () => void,                            // event to trigger when user clicks on Upload Video button
+    onDeleteVideo?: (type: "video", id: number) => void;        // event to trigger when user requests to delete a video
     onThumbnailUpdate?: (thumb: string) => void;                // callback when thumbnail updates
-    onUploadStart?: (videoName: string) => void;
-    onProcessingStart?: (videoName: string, videoId: number) => void;
-    onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
 }) {
     const [openUploadModal, setOpenUploadModal] = useState(false);
 
@@ -455,15 +455,11 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                     loadedVideos={loadedVideos}
 
 
-                    onVideoFileSelect={(url, thumb) => {
-                        if (thumb) onThumbnailUpdate?.(thumb);
-                    }}
+                    onDelete={onDeleteVideo}
+                    onVideoFileSelect={(url, thumb) => { if (thumb) onThumbnailUpdate?.(thumb); }}
                     hideUpload={false}
                     externalModalOpen={openUploadModal}
                     onExternalModalClose={() => setOpenUploadModal(false)}
-                    onUploadStart={onUploadStart}
-                    onProcessingStart={onProcessingStart}
-                    onProcessingComplete={onProcessingComplete}
                 />     
             </LandingSection>
         </div>
@@ -501,7 +497,7 @@ function CameraStatisticsMenu({camera, loadedVideos, videosLoading, vehicleBreak
 function CameraDetailMenu({
     camera, videos, videosLoading,
     onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
-    onClickUploadVideo, onUploadStart, onProcessingStart, onProcessingComplete
+    onClickUploadVideo, onDeleteVideo, onUploadStart, onProcessingStart, onProcessingComplete
 } : {
     camera: CameraSummary,                                                              // summary object for this camera
     videos: VideoSummary[],                                                             // array of all videos that this camera has
@@ -512,6 +508,7 @@ function CameraDetailMenu({
     onDeleteCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to delete this camera
     onEditCameraTags?: (id: number, newTags: string[]) => void;                         // event to trigger when user requests to edit (add or remove) this camera's tags
     onClickUploadVideo?: (id: number) => void;                                          // event to trigger when user requests to upload a video
+    onDeleteVideo?: (type: "video", id: number) => void;                                // event to trigger when user requests to delete a video
     onUploadStart?: (videoName: string) => void;                                        
     onProcessingStart?: (videoName: string, videoId: number) => void;
     onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
@@ -552,11 +549,9 @@ function CameraDetailMenu({
                 videosLoading={videosLoading}
                 thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
+                onDeleteVideo={onDeleteVideo}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
                 onEditCameraTags={onEditCameraTags}
-                onUploadStart={onUploadStart}
-                onProcessingStart={onProcessingStart}
-                onProcessingComplete={onProcessingComplete}
             />)}
 
             {activeTab == "statistics" && (<CameraStatisticsMenu
@@ -602,7 +597,7 @@ interface SideMenuProps {
     onCardHover?: (type: SummaryType, id: number | null) => void;                               // on hover on map
     onStartDrawing?: (type: SummaryType, subareaType?: SubAreaType, parentId?: number) => void  // called when user requests to start drawing
     onRequestRename?: (type: SummaryType, id: number) => void;                                  // called when user requests to rename an object (area/subarea/camera)
-    onRequestDelete?: (type: SummaryType, id: number) => void;                                  // called when user requests to delete an object (area/subarea/camera)
+    onRequestDelete?: (type: SummaryType | "video", id: number) => void;                        // called when user requests to delete an object (area/subarea/camera)
     onBack?: () => void;                                                                        // called when returning from a previous menu
     
     onEditCameraTags?: (id: number, newTags: string[]) => void;                                 // event to trigger when user requests to edit (add or remove) a camera's tags
@@ -682,13 +677,19 @@ export default function SideMenu({
                     )}
 
                     { /* DEBUG OPTIONS — DISABLE debugButtons WHEN NOT BEING USED */ }
-                    { debugButtons && ( <div className="backButtonContainer" style={{fontFamily: "50%"}}>
-                        <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
-                        <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
-                        <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
-                        <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
-                        <Button variant="outlined" onClick={() => { console.log(locationSummariesLoading, videosLoading) }}> Loadings? </Button>
-                    </div>)}
+                    { debugButtons && (
+                        <>
+                            <div className="backButtonContainer" style={{fontFamily: "50%"}}>
+                                <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
+                                <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
+                                <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
+                                <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
+                            </div>
+                            <div className="backButtonContainer" style={{fontFamily: "50%"}}>
+                                <NotificationDebugButton />    
+                            </div>
+                        </>
+                )}
 
 
                     {currentSelectionMode === "camera" && (
@@ -701,21 +702,8 @@ export default function SideMenu({
                             onDeleteCamera={onRequestDelete}
                             onEditCameraTags={onEditCameraTags}
                             onClickUploadVideo={onCameraUpload}
-                            onFeedTabActive={onFeedTabActive}
-
-                            onUploadStart={(videoName) => showToast(`Uploading "${videoName}"…`, "info")}
-                            
-                            onProcessingStart={(videoName, videoId) => {
-                                showToast(`"${videoName}" uploaded — processing started`, "info");
-                                trackVideoProcessing(videoName, videoId);
-                            }}
-                            onProcessingComplete={(videoName, success, data) => {
-                                showToast(
-                                    success ? `"${videoName}" processed successfully` : `"${videoName}" — ${data?.error || "Processing failed"}`,
-                                    success ? "success" : "error"
-                                );
-                            }}
-                            
+                            onDeleteVideo={onRequestDelete}
+                            onFeedTabActive={onFeedTabActive}                            
                         />
                     )}
                     

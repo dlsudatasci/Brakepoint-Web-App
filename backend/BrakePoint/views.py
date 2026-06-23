@@ -8,6 +8,7 @@ from django.contrib.auth import authenticate
 from django.db.models import Sum
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -735,6 +736,7 @@ def _upload_and_process_video(request):
         calibration_points=calibration_points or [],
         reference_points=reference_points or [],
         reference_distance_meters=reference_distance_meters,
+        start_time_source='failed',
         processing_status='processing',
         processing_started_at=timezone.now()
     )
@@ -747,13 +749,29 @@ def _upload_and_process_video(request):
         temp_path = tmp_file.name
     
     try:
+        from video_inspection import inspect_video
 
         import cv2
         import base64
+        inspection_result = inspect_video(temp_path)
+
+        if inspection_result.get('start_time'):
+            parsed_start_time = parse_datetime(inspection_result['start_time'])
+            if parsed_start_time is not None:
+                if timezone.is_naive(parsed_start_time):
+                    parsed_start_time = timezone.make_aware(parsed_start_time, timezone.get_current_timezone())
+                video_record.start_time = parsed_start_time
+
+        video_record.start_time_source = inspection_result.get('source') or 'failed'
+
+        if inspection_result.get('duration_seconds') is not None:
+            video_record.duration_seconds = inspection_result['duration_seconds']
+
         cap = cv2.VideoCapture(temp_path)
         if cap.isOpened():
             video_record.fps = cap.get(cv2.CAP_PROP_FPS)
-            video_record.duration_seconds = cap.get(cv2.CAP_PROP_FRAME_COUNT) / video_record.fps if video_record.fps > 0 else 0
+            if video_record.duration_seconds is None:
+                video_record.duration_seconds = cap.get(cv2.CAP_PROP_FRAME_COUNT) / video_record.fps if video_record.fps > 0 else 0
             frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             video_record.resolution = f"{frame_width}x{frame_height}"
@@ -1570,3 +1588,62 @@ def get_landing_objects(request):
         print(e)
         return Response({"success": False, "error": e})
         pass
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def inspect_video_metadata(request):
+    """
+    Inspect video file and extract metadata (creation_time, duration).
+    
+    Accepts video_id (GET/POST) or file path and returns:
+    {
+        "start_time": "ISO_8601_STRING_OR_NULL",
+        "duration_seconds": float,
+        "source": "metadata" | "filename" | "failed"
+    }
+    """
+    try:
+        from video_inspection import inspect_video
+        
+        video_id = request.query_params.get('video_id') or request.data.get('video_id')
+        file_path = request.query_params.get('file_path') or request.data.get('file_path')
+        
+        # If video_id provided, get file path from database
+        if video_id:
+            try:
+                video = Video.objects.get(pk=video_id, camera__user=request.user)
+                # If the file is not persisted, return the metadata captured during upload.
+                if video.start_time or video.duration_seconds is not None:
+                    return Response({
+                        "start_time": video.start_time.isoformat() if video.start_time else None,
+                        "duration_seconds": video.duration_seconds,
+                        "source": video.start_time_source or "failed",
+                    })
+
+                if hasattr(video, 'file') and video.file:
+                    file_path = video.file.path
+            except Video.DoesNotExist:
+                return Response(
+                    {"error": "Video not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        if not file_path:
+            return Response(
+                {"error": "Either video_id or file_path is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform inspection
+        inspection_result = inspect_video(file_path)
+        
+        # Return raw JSON response (no wrapping)
+        return Response(inspection_result)
+        
+    except Exception as e:
+        return Response({
+            "start_time": None,
+            "duration_seconds": None,
+            "source": "failed"
+        })

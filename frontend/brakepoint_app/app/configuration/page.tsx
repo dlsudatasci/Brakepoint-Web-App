@@ -656,7 +656,7 @@ function MapPageInner() {
 
                 <Divider sx={{ marginBottom: 2 }} />
 
-                <Table onVideoFileSelect={handleVideoFileSelect} hideUpload={true} cameraId={null} visibleCameraIds={visibleCameraIds} />
+                <Table onVideoFileSelect={handleVideoFileSelect} hideUpload={true} cameraId={null} />
               </>
             ) : (
               <Box
@@ -772,10 +772,6 @@ function MapPageInner() {
                 <Table
                   onVideoFileSelect={handleVideoFileSelect}
                   cameraId={selectedFeedId}
-                  onUploadComplete={handleVideoUploadComplete}
-                  onUploadStart={handleUploadStart}
-                  onProcessingStart={handleProcessingStart}
-                  onProcessingComplete={handleProcessingComplete}
                   onVideoSelect={handleVideoSelect}
                   onMultipleVideoSelect={handleMultipleVideoSelect}
                 />

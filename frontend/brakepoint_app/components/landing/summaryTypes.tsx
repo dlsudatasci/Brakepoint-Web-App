@@ -107,17 +107,6 @@ export type AOISummary = LocationSummary & {
 };
 export type AreaSummary = AOISummary;
 
-// type guards for the above functions
-export function isSubareaSummary(summ: LocationSummary): summ is SubAreaSummary {
-    return summ.summary_type == "subarea"
-}
-export function isCameraSummary(summ: LocationSummary): summ is CameraSummary {
-    return summ.summary_type == "camera"
-}
-export function isAreaSummary(summ: LocationSummary): summ is AOISummary {
-    return summ.summary_type == "area"
-}
-
 const default_values = {
 	lat: 0,
 	lng: 0,
@@ -172,16 +161,27 @@ export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
 
 
 
+
+
 export type VideoSummary = {
-	summaryType: "video"
+	summary_type: "video"
 	id: number;
 	camera: number;
 	filename?: string;
 	file_size_mb?: number;
-	duration_seconds: number;
+	start_time?: string | null;
+	start_time_source?: "metadata" | "filename" | "failed" | string;
 	fps?: number;
 	resolution: string;
 	thumbnail: string;
+	
+    calibration_points?: {x: number, y: number}[];
+    reference_points?:  {x: number, y: number}[];
+    reference_distance_meters?: number;
+    meter_per_pixel?: number;
+
+	duration_seconds: number;
+	duration: string;
 
 	behaviors?: string[];
 	vehicles?: number;
@@ -192,18 +192,62 @@ export type VideoSummary = {
 
 	// signs?: number; // TODO
 	jeepney_hotspot?: boolean;
-	uploaded_at: Date;
 	vehicle_breakdown: VehicleBreakdown;
 
-	processing_status: "completed" | "failed" | "processing";
+	uploaded_at: Date;
+	uploaded_time_string: String,
+	uploaded_time_iso: String,
+	recorded_at: Date;
+	recorded_time_string: String,
+	recorded_time_iso: String,
+	
+	processing_status: "completed" | "failed" | "processing" | "pending";
 
 }
 
-export function convertObjectToVideoSummary(obj: any, additional?: any) {
+// formats a duration expressed in a number (representing seconds) to an hour/mins/seconds display
+export function formatDurationLabel(durationSeconds?: number | null): string {
+  if (typeof durationSeconds !== 'number' || Number.isNaN(durationSeconds) || durationSeconds <= 0) {
+    return 'N/A';
+  }
+
+  if (durationSeconds < 60) {
+    return `${Math.round(durationSeconds)}s`;
+  }
+
+  const totalSeconds = Math.round(durationSeconds);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
+export function convertObjectToVideoSummary(obj: any, additional: any = {}) {
+
+	const uploadedAt = obj.uploaded_at ? new Date(obj.uploaded_at) : additional.uploaded_at ? new Date(additional.uploaded_at) : null;
+	const recordedAt = obj.start_time ? new Date(obj.start_time) : additional.start_time ? new Date(additional.start_time) : null;
+	const validRecordedAt = recordedAt && !isNaN(recordedAt.getTime()) ? recordedAt : null;
+	const validUploadedAt = uploadedAt && !isNaN(uploadedAt.getTime()) ? uploadedAt : null;
+
 	return {
-		summaryType: "video",
-		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
+		summary_type: "video", processing_status: "pending",
+		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0, signs: 0,
+		jeepney_hotspot: false, duration_seconds: 0,
+		calibration_points: [], reference_points: [],
+
 		...obj, ...additional,
+		
+		duration: formatDurationLabel(obj.duration_seconds ?? additional.duration_seconds ?? 0),
+		uploaded_at: uploadedAt, recorded_at: recordedAt,
+		uploaded_time: validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A',
+		uploaded_time_iso: validUploadedAt ? validUploadedAt.toISOString() : null,
+		recorded_time: validRecordedAt ? validRecordedAt.toLocaleString() : (validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A'),
+		recorded_time_iso: validRecordedAt ? validRecordedAt.toISOString() : (validUploadedAt ? validUploadedAt.toISOString() : null),
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
 	} as VideoSummary
 }
@@ -220,4 +264,20 @@ export function convertRecordToArray(record: Record<any, any>) {
 
 export function getLengthOfRecord(record: Record<any, any>) {
 	return Object.keys(record).length
+}
+
+
+
+// type guards for the above functions
+export function isAreaSummary(summ: LocationSummary | VideoSummary): summ is AOISummary {
+    return summ.summary_type == "area"
+}
+export function isSubareaSummary(summ: LocationSummary | VideoSummary): summ is SubAreaSummary {
+    return summ.summary_type == "subarea"
+}
+export function isCameraSummary(summ: LocationSummary | VideoSummary): summ is CameraSummary {
+    return summ.summary_type == "camera"
+}
+export function isVideoSummary(summ: LocationSummary | VideoSummary): summ is VideoSummary {
+    return summ.summary_type == "video"
 }

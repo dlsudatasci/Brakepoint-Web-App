@@ -187,186 +187,183 @@ const availablePresets = SIGN_TAG_PRESETS.filter(p => !newTags.includes(p));
             />
           ))}
         </Box>
-
         
-        <LandingSection type="subheader" labelHeader="Add tags" canHide startHidden>
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={availablePresets}
-            inputValue={inputValue}
-            onInputChange={(_, val) => setInputValue(val)}
-            onChange={(_, val) => {
-              if (typeof val === 'string' && val.trim()) {
-                addTag(val);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && inputValue.trim()) {
-                e.preventDefault();
-                addTag(inputValue);
-              }
-            }}
-            getOptionKey={(option) => option}
+        <Autocomplete
+          freeSolo
+          size="small"
+          options={availablePresets}
+          inputValue={inputValue}
+          onInputChange={(_, val) => setInputValue(val)}
+          onChange={(_, val) => {
+            if (typeof val === 'string' && val.trim()) {
+              addTag(val);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && inputValue.trim()) {
+              e.preventDefault();
+              addTag(inputValue);
+            }
+          }}
+          getOptionKey={(option) => option}
 
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Search or type custom tag..."
-                variant="outlined"
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              placeholder="Search or type custom tag..."
+              variant="outlined"
+              size="small"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  fontSize: '0.85rem',
+                  borderRadius: '8px',
+                },
+              }}
+              InputProps={{
+                ...params.InputProps,
+                endAdornment: (
+                  <>
+                    {params.InputProps.endAdornment}
+                    <Tooltip title="Add tag">
+                      <IconButton
+                        size="small"
+                        onClick={() => { if (inputValue.trim()) addTag(inputValue); }}
+                        sx={{ p: 0.25 }}
+                      >
+                        <AddIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                ),
+              }}
+            />
+          )}
+          renderOption={(props, option) => (
+            <li {...props} key={option}>
+              <Chip
+                label={option}
                 size="small"
                 sx={{
-                  '& .MuiOutlinedInput-root': {
-                    fontSize: '0.85rem',
-                    borderRadius: '8px',
-                  },
-                }}
-                InputProps={{
-                  ...params.InputProps,
-                  endAdornment: (
-                    <>
-                      {params.InputProps.endAdornment}
-                      <Tooltip title="Add tag">
-                        <IconButton
-                          size="small"
-                          onClick={() => { if (inputValue.trim()) addTag(inputValue); }}
-                          sx={{ p: 0.25 }}
-                        >
-                          <AddIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </>
-                  ),
+                  bgcolor: tagColor(option),
+                  color: '#fff',
+                  fontSize: '0.75rem',
+                  height: 22,
+                  mr: 1,
                 }}
               />
-            )}
-            renderOption={(props, option) => (
-              <li {...props} key={option}>
+              {option}
+            </li>
+          )}
+        />
+
+        {availablePresets.length > 0 && (
+          <Box sx={{ mt: 1 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {availablePresets.slice(0, 8).map(preset => (
                 <Chip
-                  label={option}
+                  key={preset}
+                  label={preset}
                   size="small"
+                  variant="outlined"
+                  onClick={() => addTag(preset)}
                   sx={{
-                    bgcolor: tagColor(option),
-                    color: '#fff',
-                    fontSize: '0.75rem',
-                    height: 22,
-                    mr: 1,
+                    fontSize: '0.7rem',
+                    height: 24,
+                    borderColor: tagColor(preset),
+                    color: tagColor(preset),
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: tagColor(preset),
+                      color: '#fff',
+                    },
                   }}
                 />
-                {option}
-              </li>
-            )}
-          />
+              ))}
+              {availablePresets.length > 8 && (
+                <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
+                  +{availablePresets.length - 8} more in search
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        )}
 
-          {availablePresets.length > 0 && (
-            <Box sx={{ mt: 1 }}>
+        {/* Auto-detect from latest video */}
+        { /* 
+        <Box sx={{ mt: 1.5, borderTop: '1px solid #eee', pt: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <Tooltip title="Run Mask R-CNN on the first frame of the most recently uploaded video to auto-detect road features">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={detecting ? <CircularProgress size={13} /> : <AutoFixHighIcon sx={{ fontSize: 15 }} />}
+                  disabled={detecting}
+                  onClick={detectFromLatestVideo}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    borderRadius: '8px',
+                    borderColor: '#455a64',
+                    color: '#455a64',
+                    '&:hover': { borderColor: '#1d1f3f', color: '#1d1f3f' },
+                  }}
+                >
+                  {detecting ? 'Detecting…' : 'Auto-detect from latest video'}
+                </Button>
+              </span>
+            </Tooltip>
+          </Box>
+
+          {detectError && (
+            <Typography variant="caption" sx={{ color: '#b71c1c', fontStyle: 'italic', display: 'block', mt: 0.25 }}>
+              {detectError}
+            </Typography>
+          )}
+
+          {suggestedFeatures.length > 0 && (
+            <Box sx={{ mt: 0.75 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  Detected — click to add:
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={addAllSuggested}
+                  sx={{ textTransform: 'none', fontSize: '0.7rem', p: '1px 6px', minWidth: 0 }}
+                >
+                  Add All
+                </Button>
+              </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {availablePresets.slice(0, 8).map(preset => (
+                {suggestedFeatures.map(feat => (
                   <Chip
-                    key={preset}
-                    label={preset}
+                    key={feat}
+                    label={feat}
                     size="small"
-                    variant="outlined"
-                    onClick={() => addTag(preset)}
+                    onClick={() => addSuggested(feat)}
+                    icon={<AddIcon sx={{ fontSize: '13px !important' }} />}
                     sx={{
                       fontSize: '0.7rem',
                       height: 24,
-                      borderColor: tagColor(preset),
-                      color: tagColor(preset),
+                      bgcolor: '#e8f5e9',
+                      color: '#2e7d32',
+                      border: '1px dashed #2e7d32',
                       cursor: 'pointer',
-                      '&:hover': {
-                        bgcolor: tagColor(preset),
-                        color: '#fff',
-                      },
+                      '&:hover': { bgcolor: '#c8e6c9' },
                     }}
                   />
                 ))}
-                {availablePresets.length > 8 && (
-                  <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
-                    +{availablePresets.length - 8} more in search
-                  </Typography>
-                )}
               </Box>
             </Box>
           )}
+        </Box>
+        */ }
 
-          {/* Auto-detect from latest video */}
-          { /* 
-          <Box sx={{ mt: 1.5, borderTop: '1px solid #eee', pt: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-              <Tooltip title="Run Mask R-CNN on the first frame of the most recently uploaded video to auto-detect road features">
-                <span>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={detecting ? <CircularProgress size={13} /> : <AutoFixHighIcon sx={{ fontSize: 15 }} />}
-                    disabled={detecting}
-                    onClick={detectFromLatestVideo}
-                    sx={{
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                      borderRadius: '8px',
-                      borderColor: '#455a64',
-                      color: '#455a64',
-                      '&:hover': { borderColor: '#1d1f3f', color: '#1d1f3f' },
-                    }}
-                  >
-                    {detecting ? 'Detecting…' : 'Auto-detect from latest video'}
-                  </Button>
-                </span>
-              </Tooltip>
-            </Box>
-
-            {detectError && (
-              <Typography variant="caption" sx={{ color: '#b71c1c', fontStyle: 'italic', display: 'block', mt: 0.25 }}>
-                {detectError}
-              </Typography>
-            )}
-
-            {suggestedFeatures.length > 0 && (
-              <Box sx={{ mt: 0.75 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                    Detected — click to add:
-                  </Typography>
-                  <Button
-                    size="small"
-                    onClick={addAllSuggested}
-                    sx={{ textTransform: 'none', fontSize: '0.7rem', p: '1px 6px', minWidth: 0 }}
-                  >
-                    Add All
-                  </Button>
-                </Box>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {suggestedFeatures.map(feat => (
-                    <Chip
-                      key={feat}
-                      label={feat}
-                      size="small"
-                      onClick={() => addSuggested(feat)}
-                      icon={<AddIcon sx={{ fontSize: '13px !important' }} />}
-                      sx={{
-                        fontSize: '0.7rem',
-                        height: 24,
-                        bgcolor: '#e8f5e9',
-                        color: '#2e7d32',
-                        border: '1px dashed #2e7d32',
-                        cursor: 'pointer',
-                        '&:hover': { bgcolor: '#c8e6c9' },
-                      }}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-          </Box>
-          */ }
-
-          {/* Speed tag hint */}
-          <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#1565c0', fontStyle: 'italic' }}>
-            💡 Speed Limit tags set the speeding threshold for this camera. Only one speed limit can be active at a time.
-          </Typography>
-        </LandingSection>
+        {/* Speed tag hint */}
+        <Typography variant="caption" sx={{ mt: 1, display: 'block', color: '#1565c0', fontStyle: 'italic' }}>
+          💡 Speed Limit tags set the speeding threshold for this camera. Only one speed limit can be active at a time.
+        </Typography>
 
         </LandingSection>
     </Box>

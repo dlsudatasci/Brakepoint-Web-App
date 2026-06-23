@@ -23,7 +23,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 
 import {
-  CameraSummary, VideoSummary
+  CameraSummary, VideoSummary, formatDurationLabel
 } from '@/components/landing/summaryTypes'
 import { CameraAddModal, CameraEditModal } from '@/components/landing/cameraModals'
 import { useNotifications } from "@/contexts/NotificationContext";
@@ -63,7 +63,7 @@ function formatHourLabel(hour: number): string {
 // We re-parse via new Date() which handles locale strings reliably in the same browser
 function parseVideoTime(row: any): { dateKey: string; startHour: number } | null {
   try {
-    const d = new Date(row.uploaded_at);
+    const d = new Date(row.recorded_time_iso || row.uploaded_time_iso || row.uploaded_time);
     if (isNaN(d.getTime())) return null;
     return {
       dateKey: toDateKey(d),
@@ -80,7 +80,50 @@ function parseDurationSeconds(duration: string): number {
   return parseInt(duration.replace(/[^0-9]/g, ''), 10) || 0;
 }
 
-// formats the time range given the start time and a the video's duration
+
+function formatMetadataSource(source?: string | null): string {
+  switch (source) {
+    case 'metadata':
+      return 'Container metadata';
+    case 'filename':
+      return 'Filename pattern';
+    default:
+      return 'Unavailable';
+  }
+}
+
+function buildVideoRow(video: any) {
+  const uploadedAt = video.uploaded_at ? new Date(video.uploaded_at) : null;
+  const recordedAt = video.start_time ? new Date(video.start_time) : null;
+  const validRecordedAt = recordedAt && !isNaN(recordedAt.getTime()) ? recordedAt : null;
+  const validUploadedAt = uploadedAt && !isNaN(uploadedAt.getTime()) ? uploadedAt : null;
+
+  return {
+    id: video.id,
+    camera_id: video.camera,
+    video_name: video.filename,
+    uploaded_time: validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A',
+    uploaded_time_iso: validUploadedAt ? validUploadedAt.toISOString() : null,
+    recorded_time: validRecordedAt ? validRecordedAt.toLocaleString() : (validUploadedAt ? validUploadedAt.toLocaleString() : 'N/A'),
+    recorded_time_iso: validRecordedAt ? validRecordedAt.toISOString() : (validUploadedAt ? validUploadedAt.toISOString() : null),
+    metadata_source: video.start_time_source || 'failed',
+    vehicles: video.vehicles || 0,
+    signs: video.signs || 0,
+    speeding: video.speeding_count || 0,
+    swerving: video.swerving_count || 0,
+    abrupt_stop: video.abrupt_stopping_count || 0,
+    jeepney_hotspot: video.jeepney_hotspot || false,
+    duration_seconds: typeof video.duration_seconds === 'number' ? video.duration_seconds : null,
+    duration: formatDurationLabel(video.duration_seconds),
+    status: video.processing_status || 'pending',
+    sign_classes: video.sign_classes || [],
+    thumbnail: video.thumbnail || null,
+    calibration_points: video.calibration_points || [],
+    reference_points: video.reference_points || [],
+    reference_distance_meters: video.reference_distance_meters,
+  };
+}
+
 function formatBlockTimeRange(startHour: number, durationSeconds: number): string {
   const fmt = (h: number) => {
     const totalMinutes = Math.round(h * 60);
@@ -182,39 +225,24 @@ function SessionBlock({
 interface TableProps {
   cameraId?: number | null;                                                                 // id of the current camera
   camera?: CameraSummary | null;                                                            // Summary object of the current camera
-  loadedVideos?: VideoSummary[] | null;                                                             // all the videos available to this camera as a VideoSummary object
+  loadedVideos?: VideoSummary[] | null;                                                     // all the videos available to this camera as a VideoSummary object
 
   onVideoFileSelect: (url: string, thumbnail?: string) => void;                             // runs when the user selects a video file
   hideUpload?: boolean;                                                                     // hide the upload button?
-  onUploadStart?: (videoName: string) => void;                                              // runs when user starts a video upload
-  onUploadComplete?: () => void;                                                            // runs when a video upload is completed
-  onProcessingStart?: (videoName: string, videoId: number) => void;                         // runs when video processing starts
-  onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;         // runs when video processing has completed
+  onDelete?: (type: "video", id: number) => void;                                           // runs when the user requests to delete a video
   
   onVideoSelect?: (videoData: any) => void;                                                 // runs when user selects a single video
   onMultipleVideoSelect?: (videoDataArray: any[]) => void;                                  // runs when user selects multiple videos
-
-  visibleCameraIds?: number[];                                                              // deprecated — fetch videos from all the camera ids visible from here
   externalModalOpen?: boolean;                                                              // to be deprecated — when set to true (rising edge only), displays the add video modal
   onExternalModalClose?: () => void;                                                        // to be deprecated — runs when user closes a modal
 }
 
 export default function Table({
   cameraId, camera, loadedVideos,
-  onVideoFileSelect, hideUpload = false, onUploadComplete, visibleCameraIds = [], onUploadStart, onProcessingStart, onProcessingComplete, onVideoSelect, onMultipleVideoSelect, externalModalOpen, onExternalModalClose
+  onVideoFileSelect, hideUpload = false, onDelete, onVideoSelect, externalModalOpen, onExternalModalClose
 }: TableProps) {
   const [handleOpenAddModal, setAddModalOpen] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<any[]>([]);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editCalibrationModalOpen, setEditCalibrationModalOpen] = useState(false);
-  const [editCalibrationVideoId, setEditCalibrationVideoId] = useState<number | null>(null);
-  const [editCalibrationData, setEditCalibrationData] = useState<{
-    calibration_points?: { x: number; y: number }[];
-    reference_points?: { x: number; y: number }[];
-    reference_distance_meters?: number;
-    thumbnail?: string | null;
-  }>({});
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<VideoSummary[]>([]);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' }>({
     open: false, message: '', severity: 'success'
   });
@@ -233,102 +261,6 @@ export default function Table({
     }
   }, [externalModalOpen]);
 
-  // Fetch videos for the selected camera or visible cameras on calendar view
-  const fetchVideos = async () => {
-    /*
-    setLoading(true);
-    try {
-      if (cameraId === null && visibleCameraIds.length > 0) {
-        const videoPromises = visibleCameraIds.map(camId =>
-          authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camId}/videos/`)
-            .then(res => res.json())
-        );
-
-        const results = await Promise.all(videoPromises);
-        const allVideos: any[] = [];
-        
-        results.forEach(data => {
-          if (data.success && data.videos) {
-            allVideos.push(...data.videos);
-          }
-        });
-
-        allVideos.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
-
-        const transformedRows = allVideos.map((video: any) => ({
-          id: video.id,
-          camera_id: video.camera,
-          video_name: video.filename,
-          uploaded_time: new Date(video.uploaded_at).toLocaleString(),
-          vehicles: video.vehicles || 0,
-          signs: video.signs || 0,
-          speeding: video.speeding_count || 0,
-          swerving: video.swerving_count || 0,
-          abrupt_stop: video.abrupt_stopping_count || 0,
-          jeepney_hotspot: video.jeepney_hotspot || false,
-          duration: video.duration_seconds ? `${Math.round(video.duration_seconds)}s` : 'N/A',
-          status: video.processing_status || 'pending',
-          sign_classes: video.sign_classes || [],
-          thumbnail: video.thumbnail || null,
-          calibration_points: video.calibration_points || [],
-          reference_points: video.reference_points || [],
-          reference_distance_meters: video.reference_distance_meters,
-        }));
-        setRows(transformedRows);
-        setLoading(false);
-        return;
-      }
-
-      if (cameraId === null) {
-        setRows([]);
-        setLoading(false);
-        return;
-      }
-
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/videos/`);
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.videos) {
-          const transformedRows = data.videos.map((video: any) => ({
-            id: video.id,
-            video_name: video.filename,
-            uploaded_time: new Date(video.uploaded_at).toLocaleString(),
-            vehicles: video.vehicles || 0,
-            signs: video.signs || 0,
-            speeding: video.speeding_count || 0,
-            swerving: video.swerving_count || 0,
-            abrupt_stop: video.abrupt_stopping_count || 0,
-            jeepney_hotspot: video.jeepney_hotspot || false,
-            duration: video.duration_seconds ? `${Math.round(video.duration_seconds)}s` : 'N/A',
-            status: video.processing_status || 'pending',
-            sign_classes: video.sign_classes || [],
-            thumbnail: video.thumbnail || null,
-            calibration_points: video.calibration_points || [],
-            reference_points: video.reference_points || [],
-            reference_distance_meters: video.reference_distance_meters,
-          }));
-          setRows(transformedRows);
-        }
-      } else {
-        console.error('Failed to fetch videos:', response.statusText);
-        setRows([]);
-      }
-    } catch (error) {
-      console.error('Error fetching videos:', error);
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-    */
-  };
-
-  const visibleCameraIdsKey = visibleCameraIds.sort((a, b) => a - b).join(',');
-
-  useEffect(() => {
-    fetchVideos();
-  }, [cameraId, visibleCameraIdsKey]);
-
   // Auto-jump to the date of the most recent video on first load
   useEffect(() => {
     if (loadedVideos.length === 0) return;
@@ -339,47 +271,22 @@ export default function Table({
   }, [loadedVideos]);
 
   // ----------------- Handlers for Add/Edit/Delete actions -----------------
+  // deletes the currently selected object
+  const handleDelete = () => {
+    if (!selectedRow) return;
+    onDelete("video", selectedRow.id ?? -1);
+  }
 
-  const handleAdd = (data: { video_name: string; file_name: File | null; calibration_points: { x: number; y: number }[] }) => {
-    fetchVideos();
-  };
-
-  const handleEdit = () => {
-    if (selectedRows.length !== 1) {
-      alert('Please select exactly one video to edit');
-      return;
-    }
-    setEditModalOpen(true);
-  };
-
-  const handleEditSubmit = async (videoId: number, newName: string) => {
-    try {
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: newName }),
-      });
-
-      if (response.ok) {
-        setSnackbar({ open: true, message: 'Video name updated successfully', severity: 'success' });
-        fetchVideos();
-        if (onUploadComplete) onUploadComplete();
-      } else {
-        const errorData = await response.json();
-        setSnackbar({ open: true, message: errorData.message || 'Failed to update video', severity: 'error' });
-      }
-    } catch (error) {
-      console.error('Error updating video:', error);
-      setSnackbar({ open: true, message: 'Error updating video', severity: 'error' });
-    }
-  };
-
+  
+  /*
   const handleDelete = () => {
     if (selectedRows.length === 0) {
       alert('Please select at least one video to delete');
       return;
     }
-    setDeleteDialogOpen(true);
+
+
+    // setDeleteDialogOpen(true);
   };
 
   const handleEditCalibration = () => {
@@ -460,6 +367,7 @@ export default function Table({
       setDeleteDialogOpen(false);
     }
   };
+  */
 
   // ----------- Calendar Render ----------------
 
@@ -581,56 +489,55 @@ export default function Table({
           )}
         </div>
 
-      </div>
+        {selectedRow && (
+          <Box
+            sx={{
+              mt: 1.5,
+              border: '1px solid #e7e9f3',
+              borderRadius: '12px',
+              p: 1.5,
+              backgroundColor: '#fafbff',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 1,
+            }}
+          >
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Recorded At
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.recorded_time_string || 'N/A'}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Duration
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.duration}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Source
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {formatMetadataSource(selectedRow.start_time_source)}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6a708d', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Uploaded At
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1d1f3f' }}>
+                {selectedRow.uploaded_time_string || 'N/A'}
+              </Typography>
+            </Box>
+          </Box>
+        )}
 
-      {/* ----------- Modals ------- */}
-      {!hideUpload && (
-        <>
-          <CameraAddModal 
-            open={false} 
-            onClose={() => setAddModalOpen(false)} 
-            onSubmit={handleAdd} 
-            onVideoFileSelect={onVideoFileSelect}
-            cameraId={cameraId}
-            onUploadComplete={onUploadComplete}
-            onUploadStart={() => {}}
-            onProcessingStart={onProcessingStart}
-            onProcessingComplete={onProcessingComplete}
-          />
-          <CameraEditModal
-            open={false}
-            onClose={() => setEditModalOpen(false)}
-            onSubmit={handleEditSubmit}
-            videoId={selectedRows.length === 1 ? selectedRows[0].id : null}
-            currentName={selectedRows.length === 1 ? selectedRows[0].video_name : ''}
-          />
-          <CameraAddModal
-            open={false}
-            onClose={() => setEditCalibrationModalOpen(false)}
-            onSubmit={handleEditCalibrationSubmit}
-            onVideoFileSelect={onVideoFileSelect}
-            cameraId={cameraId}
-            editVideoId={editCalibrationVideoId}
-            initialCalibrationPoints={editCalibrationData.calibration_points}
-            initialReferencePoints={editCalibrationData.reference_points}
-            initialReferenceDistance={editCalibrationData.reference_distance_meters}
-            initialThumbnail={editCalibrationData.thumbnail}
-          />
-          <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-            <DialogTitle>Confirm Delete</DialogTitle>
-            <DialogContent>
-              <DialogContentText>
-                Are you sure you want to delete {selectedRows.length} video{selectedRows.length > 1 ? 's' : ''}?
-                This action cannot be undone.
-              </DialogContentText>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setDeleteDialogOpen(false)} color="secondary">Cancel</Button>
-              <Button onClick={handleDeleteConfirm} variant="contained" color="error">Delete</Button>
-            </DialogActions>
-          </Dialog>
-        </>
-      )}
+      </div>
 
       <Snackbar
         open={snackbar.open}

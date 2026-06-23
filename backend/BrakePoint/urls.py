@@ -34,4 +34,5 @@ urlpatterns = [
 	path('api/videos/', views.video_list_api, name='video_list_api'),
     path('api/videos/<int:pk>/', views.video_detail_api, name='video_detail_api'),
     path('api/videos/<int:pk>/progress/', views.video_progress_api, name='video_progress_api'),
+    path('api/videos/inspect-metadata/', views.inspect_video_metadata, name='inspect_video_metadata'),
 ]
