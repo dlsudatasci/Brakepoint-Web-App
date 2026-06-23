@@ -764,7 +764,7 @@ function MapPageInner() {
                     </Typography>
                   )}
 
-                  <CameraTags cameraId={selectedFeedId} />
+                  {/* <CameraTags cameraId={} /> */}
                 </Box>
 
                 <Divider sx={{ marginBottom: 2 }} />
