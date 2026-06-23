@@ -15,7 +15,11 @@ export function isVehicleBreakdown(obj: any): obj is VehicleBreakdown {
 }
 
 // convert both of the vehicle breakdown formats outputted by the AOI to this unified format
-function convertBreakdownToUnifiedFormat(breakdown?: any) {
+function convertBreakdownToUnifiedFormat(obj_breakdown: any, add_breakdown: any = {}) {
+	let breakdown;
+	if (obj_breakdown != undefined && Object.keys(obj_breakdown).length > 0) breakdown = obj_breakdown;
+	else breakdown = add_breakdown;
+
 	const res: VehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0};
 	if (breakdown === undefined) { return res; }
 
@@ -135,7 +139,7 @@ export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 		videos: 0, video_ids: [],
 		...obj, ...additional,
 		summary_type: "camera",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown, additional.vehicle_breakdown),
 		adb: obj.adb ?? obj.occurrences ?? additional.adb ?? 0,
 		parent: (obj.parent ?? additional.parent ?? obj.saved_location ?? additional.saved_location),
 	} as CameraSummary
@@ -147,22 +151,23 @@ export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 		cameras: 0, camera_ids: [],
 		...obj, ...additional,
 		summary_type: "subarea",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown, additional.vehicle_breakdown),
 		sub_area_type: obj.sub_area_type as SubAreaType | null,
 		parent: (obj.parent ?? additional.parent ?? obj.parent_id ?? additional.parent_id),
 	} as SubAreaSummary
 }
 
 export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
-	return {
+	const res = {
 		location: undefined,
 		subareas: 0, subarea_ids: [],
 		...default_values,
 		...obj, ...additional,
 		summary_type: "area",
-		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
+		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown, additional.vehicle_breakdown),
 		parent: -1,
-	} as AOISummary
+	}
+	return res as AOISummary
 }
 
 

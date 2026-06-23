@@ -204,10 +204,11 @@ export default function LandingPage() {
         // get subarea and all stats that can be obtained via them
         const childSubareasIds = subareaIdsByArea[curr.id] ?? []
         const childSubareas = childSubareasIds.map((id) => subareasProcessed[id] ?? null ).filter((x) => x != null)
-        const stats = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0, "vehicles": 0, "adb": 0, "speeding": 0, "swerving": 0, "abrupt_stopping": 0}
+        const stats = {"vehicles": 0, "adb": 0, "speeding": 0, "swerving": 0, "abrupt_stopping": 0}
+        const vehicle_breakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0}
         for (const curr of childSubareas) {
-          for (const vehicle in stats) {
-            stats[vehicle] += curr.vehicle_breakdown[vehicle] ?? 0;
+          for (const vehicle in vehicle_breakdown) {
+            vehicle_breakdown[vehicle] += curr.vehicle_breakdown[vehicle] ?? 0;
           }
           stats.vehicles += curr.vehicles ?? 0;
           stats.adb += curr.adb ?? 0;
@@ -225,7 +226,7 @@ export default function LandingPage() {
           speeding: stats.speeding,
           swerving: stats.swerving,
           abrupt_stopping: stats.abrupt_stopping,
-          vehicle_breakdown: stats
+          vehicle_breakdown: vehicle_breakdown
         })
       }
 
