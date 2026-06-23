@@ -350,6 +350,8 @@ export default function LandingPage() {
     setAllVideos(newVideoList);
 
     // update this object's parent accordingly
+    if (!parent.video_count) parent.video_count = 0; 
+    if (!parent.video_ids) parent.video_ids = [];
     parent.video_count++;
     parent.video_ids = parent.video_ids ? [...parent.video_ids, videoId] : [videoId];
     parent.vehicles += newVideoSummary.vehicles;
@@ -732,7 +734,7 @@ export default function LandingPage() {
 
     // get our parent as a const and throw an error if not within bounds of subarea
     const parent = (type === "subarea") ? getAoiSummaryFromId(parentId) : null; 
-    if (!checkBounds(parent.geometry, ring)) return;
+    if (parent && !checkBounds(parent.geometry, ring)) return;
     
     // set loading state
     setDrawIsLoading(true)
@@ -806,6 +808,8 @@ export default function LandingPage() {
         setAllSubareas(newSubareaList)
 
         // update the parent area
+        if (!parent.subarea_count) parent.subarea_count = 0; 
+        if (!parent.subarea_ids) parent.subarea_ids = [];
         parent.subarea_count += 1;
         parent.subarea_ids = [...parent.subarea_ids, newId];
         const newAreaList = allAoisRef.current;
@@ -872,6 +876,8 @@ export default function LandingPage() {
       setAllCameras(newCameraList)
 
       // update list of subareas
+      if (!parentSubarea.camera_count) parentSubarea.camera_count = 0; 
+      if (!parentSubarea.camera_ids) parentSubarea.camera_ids = [];
       parentSubarea.camera_count++;
       parentSubarea.camera_ids = [...parentSubarea.camera_ids, newId];
       const newSubareaList = allSubareasRef.current;

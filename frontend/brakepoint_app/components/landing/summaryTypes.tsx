@@ -132,6 +132,7 @@ const default_values = {
 export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 	return {
 		...default_values,
+		videos: 0, video_ids: [],
 		...obj, ...additional,
 		summary_type: "camera",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
@@ -143,6 +144,7 @@ export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 	return {
 		...default_values,
+		cameras: 0, camera_ids: [],
 		...obj, ...additional,
 		summary_type: "subarea",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown ?? {}),
@@ -154,6 +156,7 @@ export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
 	return {
 		location: undefined,
+		subareas: 0, subarea_ids: [],
 		...default_values,
 		...obj, ...additional,
 		summary_type: "area",
