@@ -195,11 +195,11 @@ export type VideoSummary = {
 	vehicle_breakdown: VehicleBreakdown;
 
 	uploaded_at: Date;
-	uploaded_time_string: String,
-	uploaded_time_iso: String,
+	uploaded_time_string: string,
+	uploaded_time_iso: string,
 	recorded_at: Date;
-	recorded_time_string: String,
-	recorded_time_iso: String,
+	recorded_time_string: string,
+	recorded_time_iso: string,
 	
 	processing_status: "completed" | "failed" | "processing" | "pending";
 
