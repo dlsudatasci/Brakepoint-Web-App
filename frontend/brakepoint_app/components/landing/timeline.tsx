@@ -83,7 +83,7 @@ export default function Timeline({ videos = [] }: TimelineProps) {
 
   // --- update the list of currently filtered videos ---
   useEffect(() => {
-    let newVideos: VideoSummary[] = videos.filter((vid) => {
+    const newVideos: VideoSummary[] = videos.filter((vid) => {
       const dateOfThis = dayjs(vid.start_time ?? vid.uploaded_at);
       if (startDate && startDate.isAfter(dateOfThis)) return false;
       if (endDate && endDate.isBefore(dateOfThis)) return false;
