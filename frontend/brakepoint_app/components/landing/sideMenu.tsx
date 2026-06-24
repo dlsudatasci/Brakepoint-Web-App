@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Box, Typography, Button, Chip, CircularProgress, Divider, IconButton } from "@mui/material";
 import { useRouter } from "next/navigation";
 import styles from "./menuBar.module.css";
@@ -497,6 +497,19 @@ function CameraDetailMenu({
         onFeedTabActive?.(newMode === "feed");
     }
 
+    // gets initial thumbnail
+    useEffect(() => {
+        if (videos.length == 1) { setThumbnail(videos[0]?.thumbnail ?? null); }
+        else if (videos.length > 1) {
+            const sortedVideos = [...videos].sort((a, b) => b.recorded_at.getTime() - a.recorded_at.getTime());
+            let newThumbnail: string | null;
+            for (let i = sortedVideos.length - 1; (thumbnail == null && i >= 0); i--) {
+                newThumbnail = sortedVideos[i]?.thumbnail ?? null;
+            }
+            setThumbnail(newThumbnail);
+        }
+    }, [videos])
+
     // display page here
     return (
         <Box className="menuContainer main">
@@ -527,9 +540,7 @@ function CameraDetailMenu({
                 onEditCameraTags={onEditCameraTags}
             />)}
 
-            { activeTab === "statistics" &&  ( <Timeline
-                cameraIds={[camera.id]}
-            />)}
+            { activeTab === "statistics" &&  ( <Timeline videos={videos}/>)}
 
             { /*
             {activeTab == "statistics" && (<CameraStatisticsMenu
@@ -608,7 +619,7 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const debugButtons = true
+    const debugButtons = false
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }

@@ -312,7 +312,6 @@ function MonitoringContent() {
             )}
           </Box>
 
-          <Timeline cameraIds={timelineCameraIds} />
         </Box>
       </Box>
     </Box>

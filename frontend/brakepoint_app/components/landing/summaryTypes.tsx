@@ -14,6 +14,15 @@ export function isVehicleBreakdown(obj: any): obj is VehicleBreakdown {
 	return (obj !== undefined && "Bus" in obj && "Car" in obj && "Jeepney" in obj && "Motorcycle" in obj && "Truck" in obj)
 }
 
+export function sumBreakdowns(a?: VehicleBreakdown, b?: VehicleBreakdown) {
+	if (a == undefined) a = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0}
+	if (b == undefined) b = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0}
+	for (const vehicle in a) {
+		a[vehicle] += b[vehicle] ?? 0;
+	}
+	return a;
+}
+
 // convert both of the vehicle breakdown formats outputted by the AOI to this unified format
 function convertBreakdownToUnifiedFormat(obj_breakdown: any, add_breakdown: any = {}) {
 	let breakdown;
@@ -170,7 +179,7 @@ export type VideoSummary = {
 	filename?: string;
 	file_size_mb?: number;
 	start_time?: string | null;
-	start_time_source?: "metadata" | "filename" | "failed" | string;
+	start_time_source?: "metadata" | "filename" | "failed" | "upload_time", string;
 	fps?: number;
 	resolution: string;
 	thumbnail: string;
@@ -229,8 +238,11 @@ export function formatDurationLabel(durationSeconds?: number | null): string {
 
 export function convertObjectToVideoSummary(obj: any, additional: any = {}) {
 
+	console.log(obj.uploaded_at)
+	console.log(additional.uploaded_at)
+	// if no start_time defined, borrow the uploaded_at time to serve as this
+	const recordedAt = new Date(obj.start_time ?? additional.start_time ?? (new Date(obj.uploaded_at ?? additional.uploaded_at).getTime() - (1000 * (obj.duration_seconds ?? additional.duration_seconds)) ))
 	const uploadedAt = obj.uploaded_at ? new Date(obj.uploaded_at) : additional.uploaded_at ? new Date(additional.uploaded_at) : null;
-	const recordedAt = obj.start_time ? new Date(obj.start_time) : additional.start_time ? new Date(additional.start_time) : null;
 	const validRecordedAt = recordedAt && !isNaN(recordedAt.getTime()) ? recordedAt : null;
 	const validUploadedAt = uploadedAt && !isNaN(uploadedAt.getTime()) ? uploadedAt : null;
 
