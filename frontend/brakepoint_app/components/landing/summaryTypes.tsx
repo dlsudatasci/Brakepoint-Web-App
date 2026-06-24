@@ -181,8 +181,8 @@ export type VideoSummary = {
 	start_time?: string | null;
 	start_time_source?: "metadata" | "filename" | "failed" | "upload_time", string;
 	fps?: number;
-	resolution: string;
-	thumbnail: string;
+	resolution?: string;
+	thumbnail?: string;
 	
     calibration_points?: {x: number, y: number}[];
     reference_points?:  {x: number, y: number}[];
@@ -237,9 +237,6 @@ export function formatDurationLabel(durationSeconds?: number | null): string {
 }
 
 export function convertObjectToVideoSummary(obj: any, additional: any = {}) {
-
-	console.log(obj.uploaded_at)
-	console.log(additional.uploaded_at)
 	// if no start_time defined, borrow the uploaded_at time to serve as this
 	const recordedAt = new Date(obj.start_time ?? additional.start_time ?? (new Date(obj.uploaded_at ?? additional.uploaded_at).getTime() - (1000 * (obj.duration_seconds ?? additional.duration_seconds)) ))
 	const uploadedAt = obj.uploaded_at ? new Date(obj.uploaded_at) : additional.uploaded_at ? new Date(additional.uploaded_at) : null;

@@ -342,14 +342,16 @@ export default function LandingPage() {
     // create a new video for appending to our video list
     const newVideoList = allVideosRef.current;
     const newVideoSummary = convertObjectToVideoSummary(videoData)
-    newVideoList[videoData] = newVideoSummary;
+    newVideoList[videoId] = newVideoSummary;
     setAllVideos(newVideoList);
 
     // update this object's parent accordingly
-    if (!parent.video_count) parent.video_count = 0; 
-    if (!parent.video_ids) parent.video_ids = [];
-    parent.video_count++;
-    parent.video_ids = parent.video_ids ? [...parent.video_ids, videoId] : [videoId];
+    if (!parent.video_ids || !parent.video_ids.includes(videoId)) {
+      if (!parent.video_count) parent.video_count = 0; 
+      if (!parent.video_ids) parent.video_ids = [];
+      parent.video_count++;
+      parent.video_ids = parent.video_ids ? [...parent.video_ids, videoId] : [videoId];
+    }
     parent.vehicles += newVideoSummary.vehicles;
     parent.adb += newVideoSummary.occurrences;
     parent.speeding += newVideoSummary.speeding_count;
@@ -1067,8 +1069,6 @@ export default function LandingPage() {
 
   // run when we are starting to upload a video
   const handleRequestUploadVideo = async (id: number) => {
-
-
     setEditId(id);
     setEditObjectType("camera");
     setEditAction("addVideo");
@@ -1104,13 +1104,27 @@ export default function LandingPage() {
         return;
       }
 
+      // parse and add to current list as pending
       const data = await res.json();
       console.log(data);
+
+      addNewVideoData({
+        id: data.id, camera: cameraId, filename: videoName,
+        calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
+        duration_seconds: 0, vehicle_breakdown: {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0},
+        uploaded_at: new Date(), recorded_at: new Date(),
+        processing_status: "pending"
+      });
 
       // else, note that we've finished processing and pass this onto the processing tracker
       // afterwards, pass the video data onto addNewVideoData()
       showToast(`"${videoName}" uploaded — processing started`, "info");
-      trackVideoProcessing(videoName, data.video_id, (data) => { addNewVideoData(data.videos) })
+      trackVideoProcessing(videoName, data.video_id, (processedVideoData) => {
+        // run this bit once the video has been uploaded
+        console.log(processedVideoData);
+        addNewVideoData(processedVideoData);
+        showToast(`Video "${videoName}" has finished processing`, "success");
+      })
     } catch (exception) {
       console.log(exception)
     } finally {}

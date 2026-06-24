@@ -391,7 +391,7 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
             <LandingSection
                 type="header"
                 labelHeader="Cameras"
-                chipCount={subarea.camera_count}
+                chipCount={cameras.length}
                 labelSubheader={ subarea.location }
                 canHide
 
@@ -443,7 +443,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 
             <LandingSection type="header"
                 labelHeader="Videos"
-                chipCount={ !videosLoading ? ( loadedVideos.length ?? 0 ) : (0) }
+                chipCount={ loadedVideos.length ?? 0 }
                 canHide
 
                 icon={ <UploadIcon /> }
@@ -619,7 +619,7 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const debugButtons = false
+    const debugButtons = true
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
