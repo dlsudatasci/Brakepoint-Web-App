@@ -52,11 +52,16 @@ type MetricKey = typeof METRIC_CFG[number]['key'];
 // ===========================================
 // Stats helper
 // ===========================================
+// represents various aggregations and measures for adb counts
+type AdbStatisticsAggregation = { total: number, mean: number, std: number, median: number, min: number, max: number }
+
+// computes various aggregations and measures for a given set of values
 function computeStats(values: (number | null)[]) {
   const valid = values.filter((v): v is number => v !== null);
-  if (valid.length === 0) return { mean: 0, std: 0, min: 0, max: 0, median: 0 }
+  if (valid.length === 0) return { total: 0, mean: 0, std: 0, min: 0, max: 0, median: 0 }
 
-  const mean = valid.reduce((s, v) => s + v, 0) / valid.length;
+  const total = valid.reduce((s, v) => s + v, 0)
+  const mean = total / valid.length;
   const std = Math.sqrt(valid.reduce((s, v) => s + (v - mean) ** 2, 0) / valid.length);
   const sorted = [...valid].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -64,7 +69,7 @@ function computeStats(values: (number | null)[]) {
     ? (sorted[mid - 1] + sorted[mid]) / 2
     : sorted[mid];
 
-  return { mean, std, min: Math.min(...valid), max: Math.max(...valid), median };
+  return { total, mean, std, min: Math.min(...valid), max: Math.max(...valid), median };
 }
 
 // ===========================================
@@ -77,6 +82,15 @@ export default function Timeline({ videos = [] }: TimelineProps) {
   const [endDate, setEndDate] = useState<Dayjs | null>(null);
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([ 'speeding', 'swerving', 'abruptStop', 'vehicles' ]);
   const [filteredVideos, setFilteredVideos] = useState<VideoSummary[]>([])
+
+  // --- statistics!
+  const [totalBreakdown, setTotalBreakdown] = useState<VehicleBreakdown>();
+  const [adbStatistics, setAdbStatistics] = useState<{
+    "vehicles": AdbStatisticsAggregation,
+    "speeding": AdbStatisticsAggregation,
+    "swerving": AdbStatisticsAggregation,
+    "abruptStop": AdbStatisticsAggregation
+  }>()
 
   // Stabilise the array prop so useCallback/useEffect don't loop
   // const cameraIdsKey = JSON.stringify([...cameraIds].sort());
@@ -93,28 +107,20 @@ export default function Timeline({ videos = [] }: TimelineProps) {
     // return an array sorted by date
     newVideos.sort((a, b) => a.recorded_at.getTime() - b.recorded_at.getTime());
     setFilteredVideos(newVideos)
+    
+    // update breakdown statistics accordingly
+    const totalBreakdown: VehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0};
+    for (const curr of newVideos) { sumBreakdowns(totalBreakdown, curr.vehicle_breakdown) }
+    setTotalBreakdown(totalBreakdown)
+
+    setAdbStatistics({
+      speeding: computeStats(newVideos.map(d => d.speeding_count)),
+      swerving: computeStats(newVideos.map(d => d.swerving_count)),
+      abruptStop: computeStats(newVideos.map(d => d.abrupt_stopping_count)),
+      vehicles: computeStats(newVideos.map(d => d.vehicles)),
+    })
+
   }, [startDate, endDate])
-
-  const totalBreakdown = useMemo(() => {
-    const sum: VehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0};
-    for (const curr of filteredVideos) { sumBreakdowns(sum, curr.vehicle_breakdown) }
-    return sum;
-  }, [videos]);
-
-  const statistics = useMemo(() => ({
-    speeding: computeStats(filteredVideos.map(d => d.speeding_count)),
-    swerving: computeStats(filteredVideos.map(d => d.swerving_count)),
-    abruptStop: computeStats(filteredVideos.map(d => d.abrupt_stopping_count)),
-    vehicles: computeStats(filteredVideos.map(d => d.vehicles)),
-  }), [filteredVideos]);
-
-  const vehicleStats = useMemo(() => [
-    { label: 'Car', value: totalBreakdown.Car, color: "yellow" },
-    { label: 'Jeepney', value: totalBreakdown.Jeepney, color: "cyan" },
-    { label: 'Motorcycle', value: totalBreakdown.Motorcycle, color: "green" },
-    { label: 'Bus', value: totalBreakdown.Bus, color: "blue" },
-    { label: 'Truck', value: totalBreakdown.Truck, color: "red" },
-  ], [totalBreakdown]);
 
   // --- helpers ---
   const isOn = (k: string) => selectedMetrics.includes(k);
@@ -186,7 +192,7 @@ export default function Timeline({ videos = [] }: TimelineProps) {
         {filteredVideos.length > 0 && selectedMetrics.length > 0 && (
           <div className="adb-stats-container">
             {METRIC_CFG.map(({ key, label, color }) => {
-              const s = statistics[key as MetricKey];
+              const s = adbStatistics[key as MetricKey];
               if (!s || s.mean == null) return null;
               const isVisible = key === 'vehicles' || isOn(key);
               if (!isVisible) return null;

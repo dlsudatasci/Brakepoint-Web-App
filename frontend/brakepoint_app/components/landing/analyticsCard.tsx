@@ -307,7 +307,7 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
       newData.push({label: label, value: data[label]} as ChartData)
     }
     data = newData;
-  } 
+  }
   
   return (
     <Box className={`ac-container ac-container-${variant}`}>
