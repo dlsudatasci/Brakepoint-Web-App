@@ -466,33 +466,6 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     )
 }
 
-// displays part of the sidebar for the camera statistics tab
-function CameraStatisticsMenu({camera, loadedVideos, videosLoading, vehicleBreakdown} : {
-    camera: CameraSummary,              // summary objecet for this camera
-    loadedVideos: VideoSummary[],       // summary object for all the videos loaded into this camera
-    videosLoading?: boolean,            // whether videos are still being loaded
-    videosError?: boolean,              // whether video loading have posted an error
-    vehicleBreakdown: VehicleBreakdown; // breakdown of vehicles by type
-}) {
-    return (
-        <div className="menuContainer">
-            <Timeline cameraIds={[camera.id]} />
-
-             { /* overview – basic statistics */ }
-            {/* <LandingSection type="header" labelHeader="Overview" canHide> */}
-                <LandingSection type="header" labelHeader="Total vehicle count" canHide>
-                    <AnalyticsCard
-                        variant="bar"
-                        data={vehicleBreakdown ?? []}
-                        compact
-                    />
-                </LandingSection>
-            {/* </LandingSection> */}
-
-        </div>
-    )
-}
-
 // displays the sidebar for a certain camera
 function CameraDetailMenu({
     camera, videos, videosLoading,
@@ -543,7 +516,7 @@ function CameraDetailMenu({
             { /* mode toggle between feed and statistics */ }
             <ModeSegmentedControl currentMode={activeTab} onClick={handleToggleTab} />
 
-            {activeTab == "feed" && (<CameraFeedMenu
+            {activeTab === "feed" && (<CameraFeedMenu
                 camera={camera} 
                 loadedVideos={videos}
                 videosLoading={videosLoading}
@@ -554,11 +527,18 @@ function CameraDetailMenu({
                 onEditCameraTags={onEditCameraTags}
             />)}
 
+            { activeTab === "statistics" &&  ( <Timeline
+                camera={camera}
+                videos={videos}
+            />)}
+
+            { /*
             {activeTab == "statistics" && (<CameraStatisticsMenu
                 camera={camera} loadedVideos={videos}
                 videosLoading={videosLoading}
                 vehicleBreakdown={camera.vehicle_breakdown}
             />)}
+            */ }
         </Box>
     )
 }
