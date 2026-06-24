@@ -296,14 +296,9 @@ export default function LandingPage() {
             
             if (camera.latest_upload === null || camera.latest_upload < currVideo.uploaded_at) {
               camera.latest_upload = currVideo.uploaded_at;
-              camera.latest_upload_id = currVideo.id;
-              camera.thumbnail = currVideo.thumbnail;
             }
 
-            for (const item in currVideo.vehicle_breakdown) {
-              newVehicleBreakdown[item] += currVideo.vehicle_breakdown[item];
-            }
-            camera.vehicle_breakdown = newVehicleBreakdown;
+
           }
 
           newCamerasList[Number(cameraId)] = camera;
@@ -360,15 +355,10 @@ export default function LandingPage() {
     parent.speeding += newVideoSummary.speeding_count;
     parent.swerving += newVideoSummary.swerving_count;
     parent.abrupt_stopping += newVideoSummary.abrupt_stopping_count;
-    for (const item in newVideoSummary.vehicle_breakdown) {
-      parent.vehicle_breakdown[item] += newVideoSummary.vehicle_breakdown[item];
-    }
     
     // update its latest upload only if necessary
     if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
       parent.latest_upload = newVideoSummary.uploaded_at;
-      parent.latest_upload_id = newVideoSummary.id;
-      parent.thumbnail = newVideoSummary.thumbnail;
     }
         
     // and set the newly updated data to our camera list
@@ -377,9 +367,6 @@ export default function LandingPage() {
     setAllCameras(newCameraList);
   }
   //onComplete?: (fullData: any) => void
-
-
-
 
   // Auto-clear draw error after 4 seconds
   useEffect(() => {

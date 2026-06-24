@@ -17,7 +17,7 @@ def extract_creation_time_from_metadata(file_path: str) -> Optional[str]:
                 "ffprobe",
                 "-v", "error",
                 "-select_streams", "v:0",
-                "-show_entries", "format=creation_time",
+                "-show_entries", "stream_tags=creation_time",
                 "-of", "default=noprint_wrappers=1:nokey=1:noprint_wrappers=1",
                 file_path
             ],
