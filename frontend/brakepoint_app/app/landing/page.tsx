@@ -529,8 +529,6 @@ export default function LandingPage() {
         if (!(id in allCamerasRef.current && selectedSubareaRef.current != null && (allSubareasRef.current[selectedSubareaRef.current].camera_ids)?.includes(id))) { return; }
         setSelectedCameraId(id);
         setHighlightedCameraId(null); // deactivate map highlights
-        thisObject = allCamerasRef.current[id]
-        setMapGoTo([thisObject.lng, thisObject.lat])
         break;
     }
   }, [])
@@ -1156,6 +1154,8 @@ export default function LandingPage() {
             getAllSubareaChildrenAsArray(selectedAoiRef.current) :
             currentSelectionModeRef.current === "subarea" ?
             [convertToMapAreaFormat(allSubareasRef.current[selectedSubareaRef.current])] :
+            currentSelectionModeRef.current === "camera" && selectedSubareaRef.current != null ?
+            [convertToMapAreaFormat(allSubareasRef.current[selectedSubareaRef.current])] :
             []
           }
 
@@ -1199,8 +1199,8 @@ export default function LandingPage() {
           activeAoiId={highlightedAoiId}
           
           hideAoiMarkers={selectedAoiId != null}
-          hideSubAreaMarkers={atCameraLevel}
-          disableSubAreaInteraction={atCameraLevel}
+          hideSubAreaMarkers={selectedCameraRef.current != null}
+          disableSubAreaInteraction={selectedCameraRef.current != null}
           hoveredSubAreaId={hoveredSubAreaId}
           activeSubAreaId={highlightedSubareaId}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}

@@ -1687,6 +1687,11 @@ export default function MapView({
       },
     }));
 
+    const selectedCameraPolygonId = selectedCameraIdRef.current != null ? String(selectedCameraIdRef.current) : null;
+    const filteredPolygonFeatures = selectedCameraPolygonId != null
+      ? polygonFeatures.filter((feature) => String(feature.properties.cameraId) === selectedCameraPolygonId)
+      : [];
+
     const pointFeatures: any[] = [];
     polygonPointsRef.current.forEach((pt, i) => {
       pointFeatures.push({
@@ -1700,20 +1705,11 @@ export default function MapView({
         geometry: { type: "Point", coordinates: pt },
       });
     });
-    completedPolygonsRef.current.forEach((p, polygonIndex) => {
-      p.points.forEach((pt, i) => {
-        pointFeatures.push({
-          type: "Feature",
-          properties: { index: i, polygonIndex, isCompleted: true },
-          geometry: { type: "Point", coordinates: pt },
-        });
-      });
-    });
-
+    
     const existingPolygonSrc = map.getSource("polygons") as maplibregl.GeoJSONSource | undefined;
     const existingPointSrc = map.getSource("polygon-points") as maplibregl.GeoJSONSource | undefined;
     if (existingPolygonSrc && existingPointSrc) {
-      existingPolygonSrc.setData({ type: "FeatureCollection", features: polygonFeatures } as any);
+      existingPolygonSrc.setData({ type: "FeatureCollection", features: filteredPolygonFeatures } as any);
       existingPointSrc.setData({ type: "FeatureCollection", features: pointFeatures } as any);
       return;
     }
@@ -1727,7 +1723,7 @@ export default function MapView({
 
     map.addSource("polygons", {
       type: "geojson",
-      data: { type: "FeatureCollection", features: polygonFeatures } as any,
+      data: { type: "FeatureCollection", features: filteredPolygonFeatures } as any,
     });
 
     map.addLayer({
@@ -3140,22 +3136,37 @@ export default function MapView({
     if (!map) return;
     if (!map.getLayer("polygon-fill")) return;
     
+    const isDrawing = toolModeRef.current === "addPoint";
 
-    if (hideCameraPolygonsRef.current || selectedCameraIdRef.current == null) {
+    if (hideCameraPolygonsRef.current) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
+      map.setPaintProperty("polygon-line", "line-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+    } else if (selectedCameraIdRef.current == null) {
+      // No camera selected - hide all road polygons
       map.setPaintProperty("polygon-fill", "fill-opacity", 0);
       map.setPaintProperty("polygon-line", "line-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     } else {
-      // only show the polygon belonging to the selected camera; hide all others
-      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraIdRef.current)], 0.35, 0]);
-      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraIdRef.current)], 1, 0]);
-      map.setPaintProperty("polygon-points", "circle-opacity", 0);
-      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
-      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+      // Camera selected - keep the sub-area polygon visible
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
+      map.setPaintProperty("polygon-line", "line-opacity", 1);
+      // Show points while actively drawing
+      if (isDrawing) {
+        map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
+        map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
+        map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+      } else {
+        map.setPaintProperty("polygon-points", "circle-opacity", 0);
+        map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+        map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+      }
     }
-  }, [completedPolygons, selectedCameraIdRef, hideCameraPolygonsRef]);
+  }, [completedPolygons, selectedCameraIdRef, hideCameraPolygonsRef, toolMode]);
 
   useEffect(() => {
     const map = mapRef.current;
