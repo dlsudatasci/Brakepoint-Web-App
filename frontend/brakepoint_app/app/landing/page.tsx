@@ -113,19 +113,6 @@ export default function LandingPage() {
   selectedAoiIdRef.current = selectedAoiId;
   const selectedSubareaIdRef = useRef<number | null>(null);
   selectedSubareaIdRef.current = selectedSubareaId;
-  const [atCameraLevel, setAtCameraLevel] = useState(false);
-  const [isPlacingCamera, setIsPlacingCamera] = useState(false);
-  const [drawError, setDrawError] = useState<string | null>(null);
-
-  // Edit-dialog state
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  // Direct updater for SideMenu sub-area list
-  // const sideMenuUpdaterRef = useRef<SideMenuUpdater | null>(null);
-
-  // Feed tab active state
-  const [isFeedTabActive, setIsFeedTabActive] = useState(false);
 
   // function to force update the side menu and map from anywhere
   const [currentRefreshTrigger, setCurrentRefreshTrigger] = useState<boolean>(false);
@@ -278,7 +265,7 @@ export default function LandingPage() {
           const childrenVideoIds = videoIdsByCamera[cameraId];
           const childrenVideos = Object.values(videosProcessed).filter((x) => childrenVideoIds.includes(x.id));
 
-          camera.video_count = childrenVideoIds.length;
+          camera.video_count = childrenVideoIds.length ?? 0;
           camera.video_ids = childrenVideoIds;
 
           // reset stats and reload to be very sure they are accurate here
@@ -369,14 +356,6 @@ export default function LandingPage() {
     setAllCameras(newCameraList);
   }
   //onComplete?: (fullData: any) => void
-
-  // Auto-clear draw error after 4 seconds
-  useEffect(() => {
-    const ERROR_LENGTH_SECONDS = 4
-    if (!drawError) return;
-    const t = setTimeout(() => setDrawError(null), ERROR_LENGTH_SECONDS*1000);
-    return () => clearTimeout(t);
-  }, [drawError]);
   
   // checks if this object is present in the [Object]Record map 
   function idIsPresentInMap(type: SummaryType | "video", id: number): boolean {
@@ -583,12 +562,6 @@ export default function LandingPage() {
     } else if (selectedSubareaRef.current != null) {
       // back from SUBAREA
       setSelectedSubareaId(null);
-      
-      setAtCameraLevel(false);
-      // setAtCameraDetailLevel(false);
-      // setSelectedCameraMapId(null);
-      // setSubareaCameraIds(null);
-      // setSubareaBounds(null);
 
     } else if (selectedAoiRef.current != null) {
       // back from AREA
@@ -659,10 +632,13 @@ export default function LandingPage() {
       if (thisObject === null) return;
       // if thisObject has children: deny request
       if (isAreaSummary(thisObject) && thisObject.subarea_count > 0) {
-        setDrawError(`Cannot delete the area ${thisObject.name}; please delete all its subareas firsts`); return;
+        showToast(`Cannot delete the area "${thisObject.name}"; please delete all its subareas first`, "warning"); return;
       }
       if (isSubareaSummary(thisObject) && thisObject.camera_count > 0) {
-        setDrawError(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} ${thisObject.name}; please delete all its cameras first`); return;
+        showToast(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} "${thisObject.name}"; please delete all its cameras first`, "warning"); return;
+      }
+      if (isCameraSummary(thisObject) && thisObject.video_count > 0) {
+        showToast(`Cannot delete the camera "${thisObject.name}"; please delete all its cameras first`, "warning"); return;
       }
       setEditName(thisObject.name);
     } else {
@@ -729,7 +705,10 @@ export default function LandingPage() {
 
     // get our parent as a const and throw an error if not within bounds of subarea
     const parent = (type === "subarea") ? getAoiSummaryFromId(parentId) : null; 
-    if (parent && !checkBounds(parent.geometry, ring)) return;
+    if (parent && !checkBounds(parent.geometry, ring)) {
+      showToast("Subarea must be placed within the area boundaries.", "warning");
+      return;
+    };
     
     // set loading state
     setDrawIsLoading(true)
@@ -813,10 +792,12 @@ export default function LandingPage() {
       }
 
       // done!
+      showToast(`Successfully created a new ${type == "subarea" ? (subareaType.replace("_", " ")) : "area"}` , "success")
       forceTriggerRefresh();
       setDrawIsLoading(false);
 
     } catch (exception) {
+      showToast(`Failed to create new ${type}`, "error")
       console.log(exception)
     } finally {
       // and done! do cleanup
@@ -842,7 +823,7 @@ export default function LandingPage() {
 
     // check if our camera is within our subarea's bounds and quickfail if not
     if (!checkBounds(parentSubarea.geometry, [lng, lat])) {
-      setDrawError("Camera must be placed within the sub-area boundaries.");
+      showToast("Camera must be placed within the subarea boundaries.", "warning");
       return
     };
     
@@ -879,12 +860,14 @@ export default function LandingPage() {
       setAllSubareas(newSubareaList);
 
       // done!
+      showToast(`Successfully created a new camera` , "success")
       forceTriggerRefresh();
       setDrawIsLoading(false);
 
 
 
     } catch (exception) {
+      showToast(`Failed to create new camera`, "error")
       console.log(exception)
     } finally {
       // handle cleanup
@@ -901,7 +884,8 @@ export default function LandingPage() {
     const id = editId;
     const type = editObjectType;
 
-    if (!idIsPresentInMap(type, id)) return; // quickfail
+    const oldName = getLocationSummaryFromId(type, id)?.name;
+    if (!oldName) return; // quickfail if this is null
     
     setEditIsLoading(true);
     try {
@@ -916,8 +900,10 @@ export default function LandingPage() {
 
           // past this point, api success - patch the relevant data in our local copy
           patchObjectInList(type, id, {name: newName});
+          showToast(`Successfully renamed ${type} "${oldName}" to "${newName}"`, "success")
 
     } catch (exception) {
+      showToast(`Failed to rename ${type} "${oldName}"`, "error")
       console.log(exception)
     } finally {
       // cleanup
@@ -943,9 +929,11 @@ export default function LandingPage() {
 
       // patching local copies...
       patchObjectInList("camera", id, {polygon: polygon})
+      showToast(`Successfully set polygon to camera`, "success")
       onSuccess();
 
     } catch (exception) {
+      showToast(`Failed to set polygon`, "error")
       console.log(exception)
     } finally {
 
@@ -961,6 +949,7 @@ export default function LandingPage() {
     const type = editObjectType;
 
     if (!idIsPresentInMap(type, id)) return; // quickfail
+    const oldName = (type === "video" ? getVideoSummaryFromId(id).filename : getLocationSummaryFromId(type, id).name)
     
     setEditIsLoading(true);
     
@@ -1030,7 +1019,10 @@ export default function LandingPage() {
         })
       }
 
+      showToast(`Successfuly deleted ${type} "${oldName}"`, "success")
+
     } catch (exception) {
+      showToast(`Failed to delete ${type} "${oldName}"`)
       console.log(exception)
     } finally {
       // cleanup
@@ -1059,8 +1051,10 @@ export default function LandingPage() {
       
       // patch our local copy if successful
       patchObjectInList("camera", id, {tags: newTags});
+      showToast(`Successfully updated tags of camera "${camera.name}"`, "success")
       
     } catch (exception) {
+      showToast(`Failed to update tags of camera "${camera.name}"`, "error")
       console.log(exception)
     } finally {
 
@@ -1240,8 +1234,6 @@ export default function LandingPage() {
           isDrawingAOI={isDrawingRef.current && drawTypeRef.current === "area"}
           isDrawingSubarea={(isDrawingRef.current && drawTypeRef.current === "subarea") ? drawSubareaTypeRef.current : false}
           isDrawingCamera={isDrawingRef.current && drawTypeRef.current === "camera"}
-
-          onFeedTabActive={setIsFeedTabActive}
         />
       </Box>
 
@@ -1277,28 +1269,6 @@ export default function LandingPage() {
               100% { transform: rotate(360deg); }
             }
           `}</style>
-        </Box>
-      )}
-
-      {/* Draw error toast */}
-      {drawError && (
-        <Box sx={{
-          position: "fixed",
-          bottom: 24,
-          left: "50%",
-          transform: "translateX(-50%)",
-          bgcolor: "#b91c1c",
-          color: "#fff",
-          px: 3,
-          py: 1.5,
-          borderRadius: "10px",
-          fontWeight: 600,
-          fontSize: 14,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
-          zIndex: 10000,
-          pointerEvents: "none",
-        }}>
-          {drawError}
         </Box>
       )}
 

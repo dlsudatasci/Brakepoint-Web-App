@@ -442,7 +442,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
             <CameraTags camera={camera} tagLength={camera.tags.length} onEditCameraTags={onEditCameraTags}/>
 
             <LandingSection type="header"
-                labelHeader="Videos"
+                labelHeader="Timeline"
                 chipCount={ loadedVideos.length ?? 0 }
                 canHide
 

@@ -49,7 +49,7 @@ export default function LocationCard({ type, locationDetails, canClickThrough = 
         <div className="lc-header-container">
           <div className="lc-header">{locationDetails.name}</div>
           { type == "area" && isAreaSummary(locationDetails) && (
-            <div className="lc-subheader">{locationDetails.subarea_count} subarea{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
+            <div className="lc-subheader">{locationDetails.subarea_count ?? 0} subarea{locationDetails.subarea_count == 1 ? "" : "s"} monitored</div>
           )}
         </div>
         

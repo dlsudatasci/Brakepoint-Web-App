@@ -18,7 +18,7 @@ interface Notification {
   progress?: number;
 }
 
-type ToastSeverity = "success" | "info" | "error";
+type ToastSeverity = "success" | "info" | "warning" | "error";
 
 interface ToastState {
   open: boolean;
@@ -81,6 +81,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [hydrated, setHydrated] = useState(false);
 
   const [toast, setToast] = useState<ToastState>({ open: false, message: "", severity: "info" });
+
+  // Auto-clear draw error after 5 seconds
+  const ERROR_LENGTH_SECONDS = 5;
+  const AUTO_HIDE_TOAST = true;
+  useEffect(() => {
+    if (!AUTO_HIDE_TOAST || toast != null || !toast) return;
+    const t = setTimeout(() => hideToast(), ERROR_LENGTH_SECONDS*1000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
 
   const pollersRef = useRef<Map<number, number>>(new Map());
 
