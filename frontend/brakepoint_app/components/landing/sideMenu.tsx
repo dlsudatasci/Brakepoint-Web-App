@@ -499,15 +499,16 @@ function CameraDetailMenu({
 
     // gets initial thumbnail
     useEffect(() => {
-        if (videos.length == 1) { setThumbnail(videos[0]?.thumbnail ?? null); }
-        else if (videos.length > 1) {
-            const sortedVideos = [...videos].sort((a, b) => b.recorded_at.getTime() - a.recorded_at.getTime());
-            let newThumbnail: string | null;
-            for (let i = sortedVideos.length - 1; (thumbnail == null && i >= 0); i--) {
-                newThumbnail = sortedVideos[i]?.thumbnail ?? null;
-            }
-            setThumbnail(newThumbnail);
+        if (videos.length === 0) {
+            setThumbnail(null);
+            return;
         }
+
+        const sortedVideos = [...videos].sort(
+            (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime(),
+        );
+        const latestWithThumbnail = sortedVideos.find((video) => !!video?.thumbnail);
+        setThumbnail(latestWithThumbnail?.thumbnail ?? null);
     }, [videos])
 
     // display page here
