@@ -191,7 +191,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         try {
           const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`, {}, (newResp) => {
             // emergency contingency for a 401 UNAUTHORIZED
-            console.log(newResp)
             if (newResp.status === 401) {
               stopPolling(videoId);
               clearAll()
