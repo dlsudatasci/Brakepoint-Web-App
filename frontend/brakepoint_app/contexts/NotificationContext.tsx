@@ -189,8 +189,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
       const intervalId = window.setInterval(async () => {
         try {
-          const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`);
-          if (!response.ok) return;
+          const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`, {}, (newResp) => {
+            // emergency contingency for a 401 UNAUTHORIZED
+            console.log(newResp)
+            if (newResp.status === 401) {
+              stopPolling(videoId);
+              clearAll()
+            }
+          });
+          if (!response.ok) {
+            // if 404 NOT FOUND stop processing immediately
+            if (false && response.status === 404) {
+              stopPolling(videoId);
+              completeProcessing(notifId, false)
+            }
+            return;
+          };
 
           const data = await response.json();
           if (!data?.success) return;
