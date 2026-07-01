@@ -1012,7 +1012,22 @@ export default function LandingPage() {
         if (isSinglePolygon) {
           nextPolygons = [existingPolygon as [number, number][]];
         } else {
-          nextPolygons = existingPolygon as [number, number][][];
+          const isPolygonCollection = (existingPolygon as any[]).every(
+            (poly) =>
+              Array.isArray(poly) &&
+              poly.every(
+                (pt: any) =>
+                  Array.isArray(pt) &&
+                  pt.length === 2 &&
+                  typeof pt[0] === "number" &&
+                  typeof pt[1] === "number",
+              ),
+          );
+          if (isPolygonCollection) {
+            nextPolygons = (existingPolygon as any[]).map(
+              (poly) => poly as [number, number][],
+            );
+          }
         }
       }
 
