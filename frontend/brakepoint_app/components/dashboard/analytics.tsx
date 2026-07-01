@@ -361,7 +361,7 @@ export default function Analytics() {
                 <Box sx={{ minHeight: { xs: 720, md: "100%" }, width: "100%", borderRadius: 2, overflow: "hidden" }}>
                   <Map
                     mode="dashboard"
-                    refreshTrigger={0}
+                    refreshTrigger={false}
                     dashboardMarkers={dashboardMarkers}
                     onDashboardMarkerClick={handleMarkerClick}
                     goToBounds={allSubAreasBounds && filteredSubAreas.length > 1 ? allSubAreasBounds : null}

@@ -23,6 +23,10 @@
   border-radius: 8px;
 }
 
+.landing-map .maplibregl-ctrl-geocoder {
+  left: 520px;
+}
+
 .maplibregl-ctrl-geocoder .suggestions {
   border-radius: 8px;
 }
@@ -34,17 +38,53 @@ input[type="search"]::-webkit-search-cancel-button {
 /* -------------------------------------------------------------------------- */
 /* Cursor modes                                                               */
 /* -------------------------------------------------------------------------- */
+/* Open Hand (Default) */
+.maplibregl-canvas {
+  cursor: url("/cursors/grab.svg")
+  12 12, 
+  grab
+  /* grab !important; */
+}
 
-.map-crosshair {
+/* Closed Hand */
+.maplibregl-canvas:active {
+  cursor: url("/cursors/grabbing.svg") 
+  12 12, 
+  grabbing
+  /* grabbing !important; */
+}
+
+.map-cursor,
+.aoi-label-pin {
   cursor:
-    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="black" stroke-width="2"/><circle cx="12" cy="12" r="8" fill="none" stroke="white" stroke-width="1"/><line x1="12" y1="0" x2="12" y2="24" stroke="black" stroke-width="2"/><line x1="12" y1="0" x2="12" y2="24" stroke="white" stroke-width="1"/><line x1="0" y1="12" x2="24" y2="12" stroke="black" stroke-width="2"/><line x1="0" y1="12" x2="24" y2="12" stroke="white" stroke-width="1"/></svg>')
+    url('/cursors/cursor.svg')
       12 12,
     crosshair !important;
 }
 
+.map-pointer {
+  cursor:
+    url('/cursors/pointer.svg')
+      12 12,
+    crosshair !important;
+}
+
+.map-crosshair {
+  cursor:
+    url('/cursors/crosshair.svg')
+      12 12,
+    crosshair !important;
+}
+
+.map-cam-crosshair {
+  cursor: url("/cursors/grabbing-camera.svg") 
+  20 20, 
+  crosshair !important;
+}
+
 .map-remove {
   cursor:
-    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red" stroke="white" stroke-width="2"/><line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="3"/></svg>')
+    url('/cursors/cursor-delete.svg')
       12 12,
     pointer !important;
 }
@@ -94,6 +134,143 @@ input[type="search"]::-webkit-search-cancel-button {
   white-space: nowrap;
   text-overflow: unset;
   padding: 0 6px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* AOI and sub-area polygon centroid label pins                               */
+/* -------------------------------------------------------------------------- */
+
+.aoi-label-pin,
+.sub-area-label-pin {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.aoi-label-pin {
+  background: #06b6d4;
+  color: #fff;
+}
+
+.aoi-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.sub-area-label-pin {
+  background: #1e40af;
+  color: #fff;
+}
+
+.sub-area-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.aoi-label-pin::after,
+.sub-area-label-pin::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+}
+
+.hide-subarea-labels .sub-area-label-pin {
+  display: none !important;
+}
+
+.aoi-label-pin::after {
+  border-top: 10px solid #06b6d4;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.aoi-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside AOI marker pill */
+.aoi-pin-name {
+  pointer-events: none;
+}
+
+.aoi-pin-btn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0 0 0 5px;
+  color: inherit;
+  opacity: 0.75;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.aoi-label-pin--selected .aoi-pin-btn {
+  display: inline-flex;
+}
+
+.aoi-pin-btn:hover {
+  opacity: 1;
+}
+
+.aoi-pin-btn--delete:hover {
+  color: #fca5a5;
+}
+
+.sub-area-label-pin::after {
+  border-top: 10px solid #1e40af;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.sub-area-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside sub-area marker pill */
+.sub-area-pin-name {
+  pointer-events: none;
+}
+
+.sub-area-pin-btn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0 0 0 5px;
+  color: inherit;
+  opacity: 0.75;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sub-area-label-pin--selected .sub-area-pin-btn {
+  display: inline-flex;
+}
+
+.sub-area-pin-btn:hover {
+  opacity: 1;
+}
+
+.sub-area-pin-btn--delete:hover {
+  color: #fca5a5;
 }
 
 .dash-popup {
@@ -323,6 +500,9 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .explore-status,
 .map-hint {
+  position: fixed;
+  left: calc(475px + (100vw - 475px) / 2);
+  transform: translateX(-50%);
   z-index: 1190;
   padding: 8px 18px;
   border-radius: 10px;
@@ -355,6 +535,22 @@ input[type="search"]::-webkit-search-cancel-button {
   font-weight: 700;
 }
 
+.map-hint__actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.map-hint__actions:first-of-type {
+  margin-top: 8px;
+}
+
+.map-hint__actions > * {
+  pointer-events: auto;
+}
 .explore-error {
   top: 168px;
   z-index: 1190;

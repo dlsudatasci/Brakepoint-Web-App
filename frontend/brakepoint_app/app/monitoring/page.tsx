@@ -226,7 +226,7 @@ function MonitoringContent() {
           onVisibleCamerasChange={handleVisibleCamerasChange}
           onCamerasLoaded={handleCamerasLoaded}
           selectedCameraId={selectedFeedId}
-          refreshTrigger={camerasRefreshTrigger}
+          refreshTrigger={false}
           goTo={goToTarget}
         />
       </Box>
@@ -312,7 +312,6 @@ function MonitoringContent() {
             )}
           </Box>
 
-          <Timeline cameraIds={timelineCameraIds} />
         </Box>
       </Box>
     </Box>

@@ -604,14 +604,14 @@ function MapPageInner() {
         <Map
           mode="map"
           onCameraClick={handleCameraClick}
-          onCameraAdd={handleNewCameraAdded}
+          onCameraAdd={() => {}} // handleNewCameraAdded
           onVisibleCamerasChange={handleVisibleCamerasChange}
           onCamerasLoaded={handleCamerasLoaded}
           selectedCameraId={selectedFeedId}
-          refreshTrigger={camerasRefreshTrigger}
+          refreshTrigger={false} // camerasRefreshTrigger
           goTo={goTo}
           goToBounds={goToBounds}
-          onMapReady={handleMapReady}
+          onMapReady={() => {}} // handleMapReady
           showMapillarySigns
         />
       </Box>
@@ -656,7 +656,7 @@ function MapPageInner() {
 
                 <Divider sx={{ marginBottom: 2 }} />
 
-                <Table onVideoFileSelect={handleVideoFileSelect} hideUpload={true} cameraId={null} visibleCameraIds={visibleCameraIds} />
+                <Table onVideoFileSelect={handleVideoFileSelect} hideUpload={true} cameraId={null} />
               </>
             ) : (
               <Box
@@ -764,7 +764,7 @@ function MapPageInner() {
                     </Typography>
                   )}
 
-                  <CameraTags cameraId={selectedFeedId} />
+                  {/* <CameraTags cameraId={} /> */}
                 </Box>
 
                 <Divider sx={{ marginBottom: 2 }} />
@@ -772,10 +772,6 @@ function MapPageInner() {
                 <Table
                   onVideoFileSelect={handleVideoFileSelect}
                   cameraId={selectedFeedId}
-                  onUploadComplete={handleVideoUploadComplete}
-                  onUploadStart={handleUploadStart}
-                  onProcessingStart={handleProcessingStart}
-                  onProcessingComplete={handleProcessingComplete}
                   onVideoSelect={handleVideoSelect}
                   onMultipleVideoSelect={handleMultipleVideoSelect}
                 />
