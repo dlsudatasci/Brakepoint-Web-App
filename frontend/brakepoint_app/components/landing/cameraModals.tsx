@@ -87,6 +87,12 @@ interface CameraAddModalProps {
   onUploadComplete?: () => void;
   onProcessingStart?: (videoName: string, videoId: number) => void;
   onProcessingComplete?: (videoName: string, success: boolean, data?: any) => void;
+  onCalibrationSaved?: (
+    cameraId: number,
+    calibrationPoints: {x: number, y: number}[],
+    referencePoints: {x: number, y: number}[],
+    referenceDistance: number,
+  ) => void;
 
   initialCalibrationPoints?: { x: number; y: number }[];
   initialReferencePoints?: { x: number; y: number }[];
@@ -97,7 +103,7 @@ interface CameraAddModalProps {
 
 // ─── AddModal (unchanged from original) ──────────────────────────────────────
 
-export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, cameraId, onUploadComplete, onUploadStart, onProcessingStart, onProcessingComplete, initialCalibrationPoints, initialReferencePoints, initialReferenceDistance, editVideoId, initialThumbnail }: CameraAddModalProps) {
+export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, cameraId, onUploadComplete, onUploadStart, onProcessingStart, onProcessingComplete, onCalibrationSaved, initialCalibrationPoints, initialReferencePoints, initialReferenceDistance, editVideoId, initialThumbnail }: CameraAddModalProps) {
   const [video_name, setVideoName] = React.useState('');
   const [file_name, setFile] = React.useState<File | null>(null);
   const [showCalibration, setShowCalibration] = React.useState(false);
@@ -123,6 +129,11 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const thumbnailImageRef = React.useRef<HTMLImageElement | null>(null);
+  const hasSavedCalibration = Boolean(
+    initialCalibrationPoints && initialCalibrationPoints.length === 4 &&
+    initialReferencePoints && initialReferencePoints.length === 2 &&
+    initialReferenceDistance && initialReferenceDistance > 0
+  );
 
   // Reset all state when dialog closes (cancel should start fresh)
   React.useEffect(() => {
@@ -184,7 +195,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       if (selected.type.startsWith('video/')) {
         const url = URL.createObjectURL(selected);
         setVideoUrl(url);
-        setShowCalibration(true);
+        setShowCalibration(isEditMode || !hasSavedCalibration);
         onVideoFileSelect(url); 
       }      
       if (selected.type.startsWith('image/')) {
@@ -699,20 +710,24 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
   };
 
   const handleSubmit = async () => {
-    // Validation for both modes
-    if (calibrationPoints.length !== 4) {
-      alert('Please select 4 calibration points for perspective transform');
-      return;
-    }
+    const shouldValidateManualCalibration = isEditMode || !hasSavedCalibration;
 
-    if (referencePoints.length !== 2) {
-      alert('Please select 2 reference points for scale calculation (e.g., road marking edges)');
-      return;
-    }
+    // Require manual point selection only when calibrating/recalibrating.
+    if (shouldValidateManualCalibration) {
+      if (calibrationPoints.length !== 4) {
+        alert('Please select 4 calibration points for perspective transform');
+        return;
+      }
 
-    if (!referenceDistance || referenceDistance <= 0) {
-      alert('Please provide a valid reference distance in meters');
-      return;
+      if (referencePoints.length !== 2) {
+        alert('Please select 2 reference points for scale calculation (e.g., road marking edges)');
+        return;
+      }
+
+      if (!referenceDistance || referenceDistance <= 0) {
+        alert('Please provide a valid reference distance in meters');
+        return;
+      }
     }
 
     // Edit mode: update calibration via PATCH
@@ -768,6 +783,13 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
           return;
         }
 
+        onCalibrationSaved?.(
+          cameraId,
+          calibrationPoints,
+          originalReferencePoints,
+          referenceDistance,
+        );
+
         if (onProcessingComplete) {
           onProcessingComplete('Calibration Update', true, { message: 'Calibration updated successfully' });
         }
@@ -796,9 +818,21 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       return;
     }
 
-    const originalReferencePoints = homographyInv
-      ? referencePoints.map(p => transformPoint(homographyInv, p))
+    const activeCalibrationPoints = hasSavedCalibration
+      ? (initialCalibrationPoints ?? [])
+      : calibrationPoints;
+
+    const activeReferencePoints = hasSavedCalibration
+      ? (initialReferencePoints ?? [])
       : referencePoints;
+
+    const activeReferenceDistance = hasSavedCalibration
+      ? Number(initialReferenceDistance)
+      : referenceDistance;
+
+    const originalReferencePoints = hasSavedCalibration
+      ? activeReferencePoints
+      : (homographyInv ? referencePoints.map(p => transformPoint(homographyInv, p)) : referencePoints);
 
     const savedFile = file_name;
     const uploadingVideoName = (video_name != "" ? video_name : file_name.name);
@@ -808,7 +842,15 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
 
     // pass our details to the page.tsx which will handle the actual API call
     // console.log("Sending file:", savedFile)
-    onUploadStart( savedFile, uploadingVideoName, cameraId, calibrationPoints, originalReferencePoints, referenceDistance, uploadThumbnail )
+    onUploadStart(
+      savedFile,
+      uploadingVideoName,
+      cameraId,
+      activeCalibrationPoints,
+      originalReferencePoints,
+      activeReferenceDistance,
+      uploadThumbnail
+    )
 
     setVideoName('');
     setFile(null);
@@ -1038,12 +1080,24 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
           <Button onClick={handleBackToUpload} color="secondary">Back</Button>
         )}
         <Button 
-          onClick={showCalibration ? handleSubmit : undefined} 
+          onClick={showCalibration ? handleSubmit : () => {
+            if (!file_name) {
+              alert('Please provide a file');
+              return;
+            }
+            if (hasSavedCalibration) {
+              handleSubmit();
+              return;
+            }
+            setShowCalibration(true);
+          }} 
           variant="contained" 
           color="primary"
-          disabled={showCalibration && !(calibrationPoints.length === 4 && referencePoints.length === 2)}
+          disabled={(showCalibration && !(calibrationPoints.length === 4 && referencePoints.length === 2)) || (!showCalibration && !file_name)}
         >
-          {showCalibration ? 'Upload & Process' : 'Next'}
+          {showCalibration
+            ? (isEditMode ? 'Save Calibration' : 'Upload & Process')
+            : (hasSavedCalibration ? 'Upload & Process' : 'Next')}
         </Button>
       </DialogActions>
 

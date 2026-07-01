@@ -525,6 +525,22 @@ input[type="search"]::-webkit-search-cancel-button {
   font-weight: 700;
 }
 
+.map-hint__actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.map-hint__actions:first-of-type {
+  margin-top: 8px;
+}
+
+.map-hint__actions > * {
+  pointer-events: auto;
+}
 .explore-error {
   top: 168px;
   z-index: 1190;

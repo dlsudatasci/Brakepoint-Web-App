@@ -105,6 +105,8 @@ export default function LandingPage() {
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
   const [editIsLoading, setEditIsLoading] = useState<boolean>(false);
+  const [recalibrateVideoId, setRecalibrateVideoId] = useState<number | null>(null);
+  const [recalibrateThumbnail, setRecalibrateThumbnail] = useState<string | null>(null);
 
   // legacy states — move above when currently being used
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
@@ -606,7 +608,76 @@ export default function LandingPage() {
     setEditIsLoading(false);
     setEditObjectType(null)
     setEditName("");
+    setRecalibrateVideoId(null);
+    setRecalibrateThumbnail(null);
   };
+
+  const getLatestVideoForCamera = (cameraId: number): VideoSummary | null => {
+    const videos = convertRecordToArray(allVideosRef.current)
+      .filter((v) => v.camera === cameraId)
+      .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
+    return videos.length > 0 ? videos[0] : null;
+  };
+
+  const handleRecalibrateCamera = async (cameraId: number) => {
+    const camera = getCameraSummaryFromId(cameraId);
+    if (!camera) return;
+
+    const latestVideo = getLatestVideoForCamera(cameraId);
+    if (!latestVideo) {
+      showToast(`Cannot recalibrate camera "${camera.name}" because it has no uploaded videos yet`, "warning");
+      return;
+    }
+
+    if (!latestVideo.thumbnail) {
+      showToast(`Cannot recalibrate camera "${camera.name}" because the latest video has no first-frame thumbnail`, "warning");
+      return;
+    }
+
+    setEditId(cameraId);
+    setEditObjectType("camera");
+    setEditAction("recalibrate");
+    setRecalibrateVideoId(latestVideo.id);
+    setRecalibrateThumbnail(latestVideo.thumbnail);
+  };
+
+  const handleSaveCameraCalibration = async (
+    cameraId: number,
+    calibrationPoints: {x: number, y: number}[],
+    referencePoints: {x: number, y: number}[],
+    referenceDistance: number,
+  ) => {
+    const camera = getCameraSummaryFromId(cameraId);
+    if (!camera) return;
+
+    try {
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/calibration/`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          calibration_points: calibrationPoints,
+          reference_points: referencePoints,
+          reference_distance_meters: referenceDistance,
+        }),
+      }).then((r) => r.json());
+
+      if (!res.success) {
+        showToast(res.error || `Failed to save recalibration for camera "${camera.name}"`, "error");
+        return;
+      }
+
+      patchObjectInList("camera", cameraId, {
+        is_calibrated: true,
+        calibration_points: calibrationPoints,
+        reference_points: referencePoints,
+        reference_distance_meters: referenceDistance,
+      });
+      showToast(`Calibration updated for camera "${camera.name}"`, "success");
+    } catch (exception) {
+      console.log(exception);
+      showToast(`Failed to save recalibration for camera "${camera.name}"`, "error");
+    }
+  }
 
   const handleStartEditingName = (type: SummaryType, id: number) => {
     if (!idIsPresentInMap(type, id)) return; // quickfail
@@ -941,7 +1012,22 @@ export default function LandingPage() {
         if (isSinglePolygon) {
           nextPolygons = [existingPolygon as [number, number][]];
         } else {
-          nextPolygons = existingPolygon as unknown as [number, number][][];
+          const isPolygonCollection = (existingPolygon as any[]).every(
+            (poly) =>
+              Array.isArray(poly) &&
+              poly.every(
+                (pt: any) =>
+                  Array.isArray(pt) &&
+                  pt.length === 2 &&
+                  typeof pt[0] === "number" &&
+                  typeof pt[1] === "number",
+              ),
+          );
+          if (isPolygonCollection) {
+            nextPolygons = (existingPolygon as any[]).map(
+              (poly) => poly as [number, number][],
+            );
+          }
         }
       }
 
@@ -1153,6 +1239,14 @@ export default function LandingPage() {
       const data = await res.json();
       console.log(data);
 
+      // Persist camera calibration in local state after a successful upload.
+      patchObjectInList("camera", cameraId, {
+        is_calibrated: true,
+        calibration_points: calibrationPoints,
+        reference_points: originalReferencePoints,
+        reference_distance_meters: referenceDistance,
+      });
+
       addNewVideoData({
         id: data.id, camera: cameraId, filename: videoName,
         calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
@@ -1282,6 +1376,7 @@ export default function LandingPage() {
 
           onEditCameraTags={handleEditCameraTags}
           onAutoDetectRoadFeatures={handleAutoDetectRoadFeatureTags}
+          onRecalibrateCamera={handleRecalibrateCamera}
 
           isDrawingAOI={isDrawingRef.current && drawTypeRef.current === "area"}
           isDrawingSubarea={(isDrawingRef.current && drawTypeRef.current === "subarea") ? drawSubareaTypeRef.current : false}
@@ -1401,11 +1496,17 @@ export default function LandingPage() {
 
       { /* Camera add video modal */ }
       <CameraAddModal
-        open = { editAction === "addVideo" && editObjectType === "camera" }
+        open = { (editAction === "addVideo" || editAction === "recalibrate") && editObjectType === "camera" }
         cameraId = { editId }
         onClose = { handleEditClose }
         onSubmit={ () => {} }
         onVideoFileSelect={ () => {} }
+        initialCalibrationPoints={editId ? getCameraSummaryFromId(editId)?.calibration_points : undefined}
+        initialReferencePoints={editId ? getCameraSummaryFromId(editId)?.reference_points : undefined}
+        initialReferenceDistance={editId ? getCameraSummaryFromId(editId)?.reference_distance_meters : undefined}
+        editVideoId={editAction === "recalibrate" ? recalibrateVideoId : null}
+        initialThumbnail={editAction === "recalibrate" ? recalibrateThumbnail : null}
+        onCalibrationSaved={handleSaveCameraCalibration}
 
         onUploadStart={ handleUploadStart }
       />

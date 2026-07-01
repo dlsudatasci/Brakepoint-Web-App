@@ -1,14 +1,58 @@
-﻿name: Deploy Production
+name: Deploy Staging
 
 on:
   push:
     branches:
-      - main
+      - staging
 
 jobs:
-  deploy:
-    name: SSH deploy to ALTDSI-INT01-Prod
+  validate:
+    name: Pre-deploy validation
     runs-on: ubuntu-latest
+
+    env:
+      SECRET_KEY: "ci-staging-predeploy-secret"
+      DEBUG: "True"
+      DJANGO_SETTINGS_MODULE: BrakePoint_Project.test_settings
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements-test.txt
+
+      - name: Django sanity check
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/brakepoint_app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/brakepoint_app
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend/brakepoint_app
+        run: npm run build
+
+  deploy:
+    name: SSH deploy to ALTDSI-INT01-Stag
+    runs-on: ubuntu-latest
+    needs: validate
 
     steps:
       - name: Deploy via SSH
@@ -16,8 +60,8 @@ jobs:
         with:
           host: altdsidccf.dlsu.edu.ph
           username: root
-          key: ${{ secrets.PROD_SSH_KEY }}
-          port: 13011
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: 15011
           script: |
             set -euo pipefail
 
@@ -28,9 +72,9 @@ jobs:
 
             cd "$PROJECT"
 
-            echo "=== Pulling latest code (main) ==="
-            git fetch origin main
-            git reset --hard origin/main
+            echo "=== Pulling latest code (staging) ==="
+            git fetch origin staging
+            git reset --hard origin/staging
 
             echo "=== Updating backend ==="
             "$VENV/pip" install -r backend/requirements.txt --quiet
@@ -58,7 +102,6 @@ jobs:
             fi
 
             echo "=== Restarting backend service ==="
-            # Stop service, then loop-kill until port 8000 is fully released
             systemctl stop "$BACKEND_SVC" || true
             timeout 30 bash -c '
               while fuser 8000/tcp 2>/dev/null; do
@@ -93,11 +136,11 @@ jobs:
         run: |
           sleep 10
           curl --fail --max-time 30 --retry 5 --retry-delay 5 \
-            http://altdsidccf.dlsu.edu.ph:13010 \
+            http://altdsidccf.dlsu.edu.ph:15010 \
             -o /dev/null -w "HTTP %{http_code}\n"
 
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::Deploy failed - check logs above."
-          echo "::error::To roll back: ssh -p 13011 root@altdsidccf.dlsu.edu.ph 'cd /root/Brakepoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"
+          echo "::error::To roll back: ssh -p 15011 root@altdsidccf.dlsu.edu.ph 'cd /root/Brakepoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"

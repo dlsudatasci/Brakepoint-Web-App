@@ -114,6 +114,50 @@ function asPolygonCollection(
   return isPolygon ? (value as [number, number][][]) : [];
 }
 
+function distanceSq(a: [number, number], b: [number, number]): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+function nearestEdgeInsertIndex(points: [number, number][], point: [number, number]): number {
+  if (points.length < 2) return points.length;
+
+  let bestSegmentIndex = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const abLenSq = abx * abx + aby * aby;
+
+    if (abLenSq === 0) {
+      const d = distanceSq(point, a);
+      if (d < bestDist) {
+        bestDist = d;
+        bestSegmentIndex = i;
+      }
+      continue;
+    }
+
+    const apx = point[0] - a[0];
+    const apy = point[1] - a[1];
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+    const projection: [number, number] = [a[0] + t * abx, a[1] + t * aby];
+    const d = distanceSq(point, projection);
+
+    if (d < bestDist) {
+      bestDist = d;
+      bestSegmentIndex = i;
+    }
+  }
+
+  const insertAfter = bestSegmentIndex + 1;
+  return insertAfter > points.length ? points.length : insertAfter;
+}
+
 // a single TerraDraw feature
 // obtained from TerraDraw.getSnapshot()
 type TerraDrawFeature = {
@@ -585,6 +629,8 @@ export default function MapView({
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
   const [completedPolygons, setCompletedPolygons] = useState<CompletedPolygon[]>([]);
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
+  const [editingCompletedPolygonIndex, setEditingCompletedPolygonIndex] = useState<number | null>(null);
+  const [isSavingEditedPolygon, setIsSavingEditedPolygon] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
@@ -654,6 +700,7 @@ export default function MapView({
   const loadAbortRef = useRef<AbortController | null>(null);
   const toolModeRef = useLatestRef(toolMode);
   const selectedPolygonIndexRef = useLatestRef(selectedPolygonIndex);
+  const editingCompletedPolygonIndexRef = useLatestRef(editingCompletedPolygonIndex);
   const completedPolygonsRef = useLatestRef(completedPolygons);
   const polygonPointsRef = useLatestRef(polygonPoints);
   const primaryFocusAreaRef = useLatestRef(primaryFocusArea);
@@ -1696,12 +1743,17 @@ export default function MapView({
     safeRemoveLayer("polygon-guide");
     safeRemoveSource("polygon-guide");
 
+    const selectedIdx = selectedPolygonIndexRef.current;
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    const isPointEditMode = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
+
     const polygonFeatures = completedPolygonsRef.current.map((p, idx) => ({
       type: "Feature" as const,
       properties: {
         polygonIndex: idx,
         cameraId: p.cameraId ?? null,
         occurrences: p.occurrences ?? 0,
+        isSelected: idx === selectedIdx,
       },
       geometry: {
         type: "Polygon" as const,
@@ -1720,6 +1772,7 @@ export default function MapView({
         type: "Feature",
         properties: {
           index: i,
+          polygonIndex: null,
           isCompleted: false,
           isFirst: i === 0,
           canClose: i === 0 && polygonPointsRef.current.length >= 3,
@@ -1727,6 +1780,25 @@ export default function MapView({
         geometry: { type: "Point", coordinates: pt },
       });
     });
+
+    if (isPointEditMode && selectedIdx != null && editingIdx == null && polygonPointsRef.current.length === 0) {
+      const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+      if (selectedPolygon) {
+        selectedPolygon.points.forEach((pt, i) => {
+          pointFeatures.push({
+            type: "Feature",
+            properties: {
+              index: i,
+              polygonIndex: selectedIdx,
+              isCompleted: true,
+              isFirst: false,
+              canClose: false,
+            },
+            geometry: { type: "Point", coordinates: pt },
+          });
+        });
+      }
+    }
     
     const existingPolygonSrc = map.getSource("polygons") as maplibregl.GeoJSONSource | undefined;
     const existingPointSrc = map.getSource("polygon-points") as maplibregl.GeoJSONSource | undefined;
@@ -1767,10 +1839,15 @@ export default function MapView({
       source: "polygons",
       paint: {
         "line-color": [
-          "interpolate", ["linear"], ["get", "occurrences"],
-          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          "case",
+          ["==", ["get", "isSelected"], true],
+          "#f97316",
+          [
+            "interpolate", ["linear"], ["get", "occurrences"],
+            0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          ],
         ] as any,
-        "line-width": 2,
+        "line-width": ["case", ["==", ["get", "isSelected"], true], 3.5, 2],
       },
     });
 
@@ -1785,7 +1862,7 @@ export default function MapView({
       source: "polygon-points",
       paint: {
         "circle-radius": ["case", ["==", ["get", "canClose"], true], 8, ["==", ["get", "isFirst"], true], 7, 5],
-        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#5c6bc0"],
+        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#f97316"],
         "circle-stroke-width": ["case", ["==", ["get", "canClose"], true], 3, 2],
         "circle-stroke-color": "#ffffff",
         "circle-opacity": 0.95,
@@ -1805,7 +1882,7 @@ export default function MapView({
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     }
-  }, [completedPolygonsRef, polygonPointsRef]);
+  }, [completedPolygonsRef, editingCompletedPolygonIndexRef, polygonPointsRef, selectedPolygonIndexRef, toolModeRef]);
 
   const clearGuideline = useCallback(() => {
     const map = mapRef.current;
@@ -1927,6 +2004,14 @@ export default function MapView({
   useEffect(() => {
     if (toolMode !== "addPoint") clearGuideline();
   }, [clearGuideline, toolMode]);
+
+  useEffect(() => {
+    if (toolMode === "addPoint" || toolMode === "removePoint") return;
+    if (editingCompletedPolygonIndexRef.current == null) return;
+
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+  }, [editingCompletedPolygonIndexRef, toolMode]);
 
   // AOI rectangle drawing — independent of explore mode
   useEffect(() => {
@@ -2531,6 +2616,42 @@ export default function MapView({
     return res.ok;
   }, []);
 
+  const savePolygonCollectionToCamera = useCallback(async (cameraId: number | string, polygons: [number, number][][]) => {
+    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ polygon: polygons }),
+    });
+
+    return res.ok;
+  }, []);
+
+  const editCompletedPolygon = useCallback(async (polygonIndex: number, nextPoints: [number, number][]) => {
+    const currentPolygons = completedPolygonsRef.current;
+    const target = currentPolygons[polygonIndex];
+    if (!target) return false;
+
+    const nextPolygons = currentPolygons.map((polygon, idx) =>
+      idx === polygonIndex ? { ...polygon, points: nextPoints } : polygon,
+    );
+
+    setCompletedPolygons(nextPolygons);
+
+    if (target.cameraId == null) return true;
+
+    const groupedPolygons = nextPolygons
+      .filter((polygon) => String(polygon.cameraId) === String(target.cameraId))
+      .map((polygon) => polygon.points);
+
+    const ok = await savePolygonCollectionToCamera(target.cameraId, groupedPolygons);
+    if (!ok) {
+      setCompletedPolygons(currentPolygons);
+      return false;
+    }
+
+    return true;
+  }, [completedPolygonsRef, savePolygonCollectionToCamera]);
+
   const addCameraFromData = useCallback(
     (cameraLat: number, cameraLng: number, id: number | string) => {
       const map = mapRef.current;
@@ -3132,7 +3253,7 @@ export default function MapView({
     if (!map) return;
     if (!map.getLayer("polygon-fill")) return;
     
-    const isDrawing = toolModeRef.current === "addPoint";
+    const isPointEditing = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
 
     if (hideCameraPolygonsRef.current) {
       map.setPaintProperty("polygon-fill", "fill-opacity", 0);
@@ -3151,8 +3272,8 @@ export default function MapView({
       // Camera selected - keep the sub-area polygon visible
       map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
       map.setPaintProperty("polygon-line", "line-opacity", 1);
-      // Show points while actively drawing
-      if (isDrawing) {
+      // Show points while drawing or editing polygon vertices
+      if (isPointEditing) {
         map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
         map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
         map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
@@ -3170,6 +3291,20 @@ export default function MapView({
 
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
+
+      if ((activeTool === "addPoint" || activeTool === "removePoint") && mode === "map" && !hideCameraPolygonsRef.current) {
+        const polygonHit = map.queryRenderedFeatures(e.point, {
+          layers: ["polygon-fill"],
+        });
+
+        if (polygonHit.length > 0) {
+          const polygonIndex = Number(polygonHit[0].properties?.polygonIndex);
+          if (!Number.isNaN(polygonIndex) && polygonIndex !== selectedPolygonIndexRef.current) {
+            setSelectedPolygonIndex(polygonIndex);
+            return;
+          }
+        }
+      }
 
       if (activeTool === "none" && isEditMode && mode === "map" && !hideCameraPolygonsRef.current) {
         const features = map.queryRenderedFeatures(e.point, {
@@ -3208,6 +3343,33 @@ export default function MapView({
 
       // creates a new polygon point 
       if (activeTool === "addPoint") {
+        if (editingCompletedPolygonIndexRef.current != null) {
+          const hit = map.queryRenderedFeatures(e.point, {
+            layers: ["polygon-points", "polygon-points-clickable"],
+          });
+
+          if (hit.length > 0) {
+            const props: any = hit[0].properties ?? {};
+            const idx = Number(props.index);
+            const canClose = props.canClose === true || props.canClose === "true";
+
+            if (!Number.isNaN(idx) && idx === 0 && canClose) {
+              await saveEditedPolygon();
+              return;
+            }
+          }
+
+          const clickedPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+          setPolygonPoints((prev) => {
+            if (prev.length < 2) return [...prev, clickedPoint];
+            const insertIndex = nearestEdgeInsertIndex(prev, clickedPoint);
+            const nextPoints = [...prev];
+            nextPoints.splice(insertIndex, 0, clickedPoint);
+            return nextPoints;
+          });
+          return;
+        }
+
         if (polygonPointsRef.current.length >= 3) {
           const hit = map.queryRenderedFeatures(e.point, {
             layers: ["polygon-points", "polygon-points-clickable"],
@@ -3274,7 +3436,9 @@ export default function MapView({
           const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
           if (!isCompleted && !Number.isNaN(idx)) {
-            setPolygonPoints((prev) => prev.filter((_, i) => i !== idx));
+            const minimum = editingCompletedPolygonIndexRef.current != null ? 3 : 1;
+            setPolygonPoints((prev) => (prev.length <= minimum ? prev : prev.filter((_, i) => i !== idx)));
+            return;
           }
         }
       }
@@ -3292,7 +3456,18 @@ export default function MapView({
       map.off("click", handleMapClick);
       map.off("mousemove", handleMouseMove);
     };
-  }, [onCameraAdd, clearGuideline, isEditMode, mode, renderGuideline, toolModeRef, polygonPointsRef]);
+  }, [
+    onCameraAdd,
+    clearGuideline,
+    completedPolygonsRef,
+    editingCompletedPolygonIndexRef,
+    isEditMode,
+    mode,
+    renderGuideline,
+    selectedPolygonIndexRef,
+    toolModeRef,
+    polygonPointsRef,
+  ]);
 
   useEffect(() => {
     const selected = selectedCameraId != null ? String(selectedCameraId) : null;
@@ -3710,14 +3885,65 @@ export default function MapView({
     setCompletedPolygons((prev) => prev.filter((_, i) => i !== idx));
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, [completedPolygonsRef, selectedPolygonIndexRef]);
 
   const cancelPolygonModal = useCallback(() => {
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, []);
+
+  const startEditingPolygon = useCallback(() => {
+    const selectedIdx = selectedPolygonIndexRef.current;
+    if (selectedIdx == null) return;
+
+    const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+    if (!selectedPolygon || selectedPolygon.points.length < 3) return;
+
+    setShowPolygonModal(false);
+    setEditingCompletedPolygonIndex(selectedIdx);
+    setPolygonPoints([...selectedPolygon.points]);
+    setToolMode("addPoint");
+  }, [completedPolygonsRef, selectedPolygonIndexRef]);
+
+  const cancelEditingPolygon = useCallback(() => {
+    setIsSavingEditedPolygon(false);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+    clearGuideline();
+    setToolMode("none");
+  }, [clearGuideline]);
+
+  const saveEditedPolygon = useCallback(async () => {
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    if (editingIdx == null) return;
+
+    const nextPoints = polygonPointsRef.current;
+    if (nextPoints.length < 3) return;
+
+    if (isSavingEditedPolygon) return;
+
+    setIsSavingEditedPolygon(true);
+
+    try {
+      const ok = await editCompletedPolygon(editingIdx, nextPoints);
+      if (!ok) return;
+
+      setEditingCompletedPolygonIndex(null);
+      setPolygonPoints([]);
+      clearGuideline();
+      setToolMode("none");
+      setShowSuccessNotification(true);
+      window.setTimeout(() => setShowSuccessNotification(false), 1500);
+    } finally {
+      setIsSavingEditedPolygon(false);
+    }
+  }, [clearGuideline, editCompletedPolygon, editingCompletedPolygonIndexRef, isSavingEditedPolygon, polygonPointsRef]);
 
   return (
     <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
@@ -3841,14 +4067,44 @@ export default function MapView({
 
       {isEditMode && mode === "map" && (
         <>
-          {toolMode === "addPoint" && (
+          {(toolMode === "addPoint" || toolMode === "removePoint") && (
             <div className="map-hint">
-              {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
-              {polygonPoints.length === 1 && "Click to add more points"}
-              {polygonPoints.length === 2 && "Click to add at least one more point"}
-              {polygonPoints.length >= 3 && (
+              {editingCompletedPolygonIndex != null ? (
                 <>
-                  Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                  <div>Edit mode: switch to delete point mode to remove vertices, or click the green starting point / Save Polygon to close it.</div>
+                  <div className="map-hint__actions">
+                    <button
+                      onClick={() => setToolMode("addPoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--addPoint ${toolMode === "addPoint" ? "is-active" : ""}`}
+                    >
+                      Add Point
+                    </button>
+                    <button
+                      onClick={() => setToolMode("removePoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--removePoint ${toolMode === "removePoint" ? "is-active" : ""}`}
+                    >
+                      Delete Point
+                    </button>
+                  </div>
+                  <div className="map-hint__actions">
+                    <button onClick={saveEditedPolygon} className="polygon-modal__btn polygon-modal__btn--primary" disabled={isSavingEditedPolygon || polygonPoints.length < 3}>
+                      {isSavingEditedPolygon ? "Saving..." : "Save Polygon"}
+                    </button>
+                    <button onClick={cancelEditingPolygon} className="polygon-modal__btn polygon-modal__btn--ghost">
+                      Cancel Edit
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
+                  {polygonPoints.length === 1 && "Click to add more points"}
+                  {polygonPoints.length === 2 && "Click to add at least one more point"}
+                  {polygonPoints.length >= 3 && (
+                    <>
+                      Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -3866,6 +4122,10 @@ export default function MapView({
         <div className="polygon-modal">
           <h3 className="polygon-modal__title">Polygon Options</h3>
           <div className="polygon-modal__actions">
+            <button onClick={startEditingPolygon} className="polygon-modal__btn polygon-modal__btn--primary">
+              Edit Polygon
+            </button>
+
             <button onClick={deletePolygon} className="polygon-modal__btn polygon-modal__btn--danger">
               Delete Polygon
             </button>
