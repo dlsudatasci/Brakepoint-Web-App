@@ -1078,6 +1078,40 @@ export default function LandingPage() {
     }
   }
 
+  const handleAutoDetectRoadFeatureTags = async (id: number) => {
+    const camera = getCameraSummaryFromId(id);
+    if (!camera) return;
+
+    try {
+      showToast("Running traffic sign detection on latest video...", "info");
+
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/detect-road-features/`, {
+        method: "POST",
+      }).then((r) => r.json());
+
+      if (!res.success) {
+        showToast(res.error || `Failed to auto-detect road features for camera \"${camera.name}\"`, "error");
+        return;
+      }
+
+      const detectedTags = Array.isArray(res.road_features)
+        ? res.road_features.filter((tag) => typeof tag === "string" && tag.trim().length > 0)
+        : [];
+
+      if (detectedTags.length === 0) {
+        showToast(`No traffic signs detected for camera \"${camera.name}\"`, "warning");
+        return;
+      }
+
+      const mergedTags = Array.from(new Set([...(camera.tags ?? []), ...detectedTags]));
+      await handleEditCameraTags(id, mergedTags);
+      showToast(`Auto-filled ${detectedTags.length} road feature tag(s) from latest video`, "success");
+    } catch (exception) {
+      console.log(exception);
+      showToast(`Failed to auto-detect road features for camera \"${camera.name}\"`, "error");
+    }
+  }
+
   // run when we are starting to upload a video
   const handleRequestUploadVideo = async (id: number) => {
     setEditId(id);
@@ -1247,6 +1281,7 @@ export default function LandingPage() {
           onCameraUpload={handleRequestUploadVideo}
 
           onEditCameraTags={handleEditCameraTags}
+          onAutoDetectRoadFeatures={handleAutoDetectRoadFeatureTags}
 
           isDrawingAOI={isDrawingRef.current && drawTypeRef.current === "area"}
           isDrawingSubarea={(isDrawingRef.current && drawTypeRef.current === "subarea") ? drawSubareaTypeRef.current : false}

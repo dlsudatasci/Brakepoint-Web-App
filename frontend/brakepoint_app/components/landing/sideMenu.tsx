@@ -411,13 +411,14 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
     camera: CameraSummary,                                      // summary objecet for this camera
     loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
     videosLoading?: boolean,                                    // whether videos are still being loaded
     videosError?: boolean,                                      // whether video loading have posted an error
     thumbnail?: string;                                         // the thumbnail to display
     onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
+    onAutoDetectRoadFeatures?: (id: number) => void;            // event to trigger model-based auto-fill of camera road feature tags
     onClickUploadVideo?: () => void,                            // event to trigger when user clicks on Upload Video button
     onDeleteVideo?: (type: "video", id: number) => void;        // event to trigger when user requests to delete a video
     onThumbnailUpdate?: (thumb: string) => void;                // callback when thumbnail updates
@@ -439,7 +440,12 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
             </div>
 
-            <CameraTags camera={camera} tagLength={camera.tags.length} onEditCameraTags={onEditCameraTags}/>
+            <CameraTags
+                camera={camera}
+                tagLength={camera.tags.length}
+                onEditCameraTags={onEditCameraTags}
+                onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
+            />
 
             <LandingSection type="header"
                 labelHeader="Timeline"
@@ -469,7 +475,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 // displays the sidebar for a certain camera
 function CameraDetailMenu({
     camera, videos, videosLoading,
-    onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
+    onFeedTabActive, onRenameCamera, onAutoDetectRoadFeatures, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
     onClickUploadVideo, onDeleteVideo, onUploadStart, onProcessingStart, onProcessingComplete
 } : {
     camera: CameraSummary,                                                              // summary object for this camera
@@ -477,6 +483,7 @@ function CameraDetailMenu({
     videosLoading: boolean,                                                             // whether videos are still loading; displays a loading graphic over menu
     onFeedTabActive?: (active: boolean) => void;                                        // event to trigger when user enters the feed tab
     onRenameCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to rename this camera
+    onAutoDetectRoadFeatures?: (id: number) => void;                                    // event to trigger when user requests auto-detect road feature tags
     onRecalibrateCamera?: (id: number) => void;                                         // event to trigger when user requests to delete this camera
     onDeleteCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to delete this camera
     onEditCameraTags?: (id: number, newTags: string[]) => void;                         // event to trigger when user requests to edit (add or remove) this camera's tags
@@ -539,6 +546,7 @@ function CameraDetailMenu({
                 onDeleteVideo={onDeleteVideo}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
                 onEditCameraTags={onEditCameraTags}
+                onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
             />)}
 
             { activeTab === "statistics" &&  ( <Timeline videos={videos}/>)}
@@ -592,6 +600,7 @@ interface SideMenuProps {
     onBack?: () => void;                                                                        // called when returning from a previous menu
     
     onEditCameraTags?: (id: number, newTags: string[]) => void;                                 // event to trigger when user requests to edit (add or remove) a camera's tags
+    onAutoDetectRoadFeatures?: (id: number) => void;                                             // triggers model-based auto-fill of road feature tags
     onCameraUpload?: (id: number) => void;                                                      // triggers when user clicks to upload a new video for a camera
     onRecalibrateCamera?: (id: number) => void;                                                 // triggers when user clicks to recalibrate a camera
 
@@ -603,7 +612,7 @@ export default function SideMenu({
     locationSummariesLoading = true, videosLoading = true,
     canClickToAreas = true, isDrawingAOI = false,
     canClickToSubareas = true, isDrawingSubarea = false,
-    canClickToCameras = true, onCameraUpload, onRecalibrateCamera, isDrawingCamera, onEditCameraTags,
+    canClickToCameras = true, onCameraUpload, onAutoDetectRoadFeatures, onRecalibrateCamera, isDrawingCamera, onEditCameraTags,
     onFeedTabActive,
     canStartDrawing = true, allAois, allSubareas, allCameras, allVideos, selectedAOI, selectedSubarea, selectedCamera, currentSelectionMode,
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
@@ -689,6 +698,7 @@ export default function SideMenu({
                             videos={convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id)}
                             videosLoading={videosLoading}
                             onRenameCamera={onRequestRename}
+                            onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
                             onRecalibrateCamera={onRecalibrateCamera}
                             onDeleteCamera={onRequestDelete}
                             onEditCameraTags={onEditCameraTags}

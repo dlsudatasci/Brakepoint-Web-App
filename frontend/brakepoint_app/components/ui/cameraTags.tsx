@@ -56,9 +56,10 @@ interface CameraTagsProps {
   tagLength: number;
   compact?: boolean; 
   onEditCameraTags?: (id: number, newTags: string[]) => void;
+  onAutoDetectRoadFeatures?: (id: number) => void;
 }
 
-export default function CameraTags({ camera, tagLength, compact = false, onEditCameraTags }: CameraTagsProps) {
+export default function CameraTags({ camera, tagLength, compact = false, onEditCameraTags, onAutoDetectRoadFeatures }: CameraTagsProps) {
   // const [tags, setTags] = useState<string[]>(camera.tags);
   const [newTags, setNewTags] = useState<string[]>(camera.tags);
   const [inputValue, setInputValue] = useState('');
@@ -186,6 +187,29 @@ const availablePresets = SIGN_TAG_PRESETS.filter(p => !newTags.includes(p));
               }}
             />
           ))}
+        </Box>
+
+        <Box sx={{ mt: 1, mb: 1 }}>
+          <Tooltip title="Run the traffic sign model on the first frame snapshot of the latest uploaded video and auto-fill tags">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AutoFixHighIcon sx={{ fontSize: 15 }} />}
+                onClick={() => { onAutoDetectRoadFeatures?.(camera.id); }}
+                sx={{
+                  textTransform: 'none',
+                  fontSize: '0.75rem',
+                  borderRadius: '8px',
+                  borderColor: '#455a64',
+                  color: '#455a64',
+                  '&:hover': { borderColor: '#1d1f3f', color: '#1d1f3f' },
+                }}
+              >
+                Auto-fill from latest video
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
         
         <Autocomplete

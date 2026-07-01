@@ -776,10 +776,9 @@ def _upload_and_process_video(request):
             frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             video_record.resolution = f"{frame_width}x{frame_height}"
             
-            # Generate thumbnail (frame 1)
+            # Generate thumbnail from the first frame.
             try:
-                seek_time = min(1.0, video_record.duration_seconds * 0.1) if video_record.duration_seconds > 0 else 1.0
-                cap.set(cv2.CAP_PROP_POS_MSEC, seek_time * 1000)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = cap.read()
                 if ret and frame is not None:
                     max_width = 640
@@ -1146,7 +1145,7 @@ def detect_road_elements(request, pk: int):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def detect_road_features_latest(request, pk: int):
-    """Run Mask R-CNN on the thumbnail of the camera's most recently uploaded video."""
+    """Run Mask R-CNN on the first-frame snapshot of the camera's most recently uploaded video."""
     try:
         camera = Camera.objects.get(pk=pk, user=request.user)
     except Camera.DoesNotExist:
@@ -1157,7 +1156,7 @@ def detect_road_features_latest(request, pk: int):
 
     latest_video = camera.latest_video
     if not latest_video or not latest_video.thumbnail:
-        return Response({"success": False, "error": "No video with a thumbnail found for this camera"}, status=404)
+        return Response({"success": False, "error": "No latest video snapshot found for this camera"}, status=404)
 
     import base64
     thumbnail_b64 = latest_video.thumbnail
@@ -1172,7 +1171,13 @@ def detect_road_features_latest(request, pk: int):
 
     try:
         detected = detect_signs_on_image_bytes(image_bytes)
-        return Response({"success": True, "road_features": detected, "video_id": latest_video.id, "video_name": latest_video.filename})
+        return Response({
+            "success": True,
+            "road_features": detected,
+            "video_id": latest_video.id,
+            "video_name": latest_video.filename,
+            "source": "latest_video_first_frame"
+        })
     except Exception as e:
         traceback.print_exc()
         return Response({"success": False, "error": str(e)}, status=500)
