@@ -1,13 +1,13 @@
-﻿name: Deploy Production
+name: Deploy Staging
 
 on:
   push:
     branches:
-      - main
+      - staging
 
 jobs:
   deploy:
-    name: SSH deploy to ALTDSI-INT01-Prod
+    name: SSH deploy to ALTDSI-INT01-Stag
     runs-on: ubuntu-latest
 
     steps:
@@ -16,8 +16,8 @@ jobs:
         with:
           host: altdsidccf.dlsu.edu.ph
           username: root
-          key: ${{ secrets.PROD_SSH_KEY }}
-          port: 13011
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: 15011
           script: |
             set -euo pipefail
 
@@ -28,9 +28,9 @@ jobs:
 
             cd "$PROJECT"
 
-            echo "=== Pulling latest code (main) ==="
-            git fetch origin main
-            git reset --hard origin/main
+            echo "=== Pulling latest code (staging) ==="
+            git fetch origin staging
+            git reset --hard origin/staging
 
             echo "=== Updating backend ==="
             "$VENV/pip" install -r backend/requirements.txt --quiet
@@ -58,7 +58,6 @@ jobs:
             fi
 
             echo "=== Restarting backend service ==="
-            # Stop service, then loop-kill until port 8000 is fully released
             systemctl stop "$BACKEND_SVC" || true
             timeout 30 bash -c '
               while fuser 8000/tcp 2>/dev/null; do
@@ -93,11 +92,11 @@ jobs:
         run: |
           sleep 10
           curl --fail --max-time 30 --retry 5 --retry-delay 5 \
-            http://altdsidccf.dlsu.edu.ph:13010 \
+            http://altdsidccf.dlsu.edu.ph:15010 \
             -o /dev/null -w "HTTP %{http_code}\n"
 
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::Deploy failed - check logs above."
-          echo "::error::To roll back: ssh -p 13011 root@altdsidccf.dlsu.edu.ph 'cd /root/Brakepoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"
+          echo "::error::To roll back: ssh -p 15011 root@altdsidccf.dlsu.edu.ph 'cd /root/Brakepoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"
