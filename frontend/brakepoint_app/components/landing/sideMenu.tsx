@@ -128,6 +128,16 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
 // puts out a percentage as a string value
 const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
 
+function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
+    if (!resolution) return null;
+    const match = resolution.match(/^(\d+)x(\d+)$/i);
+    if (!match) return null;
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+}
+
 // displays the back button for a menu
 function BackButton({onBack, label} : {onBack: () => void, label: string}) {
     return <div className="backButtonContainer">
@@ -425,6 +435,32 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 }) {
     const [openUploadModal, setOpenUploadModal] = useState(false);
 
+    const calibrationOverlay = useMemo(() => {
+        if (!thumbnail || !camera.calibration_points || camera.calibration_points.length < 4) return null;
+
+        const latestVideo = [...loadedVideos].sort(
+            (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime(),
+        )[0];
+        const parsedResolution = parseVideoResolution(latestVideo?.resolution);
+        if (!parsedResolution) return null;
+
+        const calibrationPoints = camera.calibration_points
+            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+            .slice(0, 4);
+        if (calibrationPoints.length < 4) return null;
+
+        const referencePoints = (camera.reference_points ?? [])
+            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+            .slice(0, 2);
+
+        return {
+            width: parsedResolution.width,
+            height: parsedResolution.height,
+            calibrationPoints,
+            referencePoints,
+        };
+    }, [thumbnail, camera.calibration_points, camera.reference_points, loadedVideos]);
+
     const handleUploadClick = () => {
         setOpenUploadModal(true);
         onClickUploadVideo?.();  // still notify parent if needed
@@ -437,7 +473,74 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail == null || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
                 { !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
-                { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
+                { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && (
+                    <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+                        <img
+                            src={thumbnail}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
+                        />
+
+                        {calibrationOverlay && (
+                            <svg
+                                viewBox={`0 0 ${calibrationOverlay.width} ${calibrationOverlay.height}`}
+                                preserveAspectRatio="none"
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    width: "100%",
+                                    height: "100%",
+                                    pointerEvents: "none",
+                                    borderRadius: "inherit",
+                                }}
+                            >
+                                <polygon
+                                    points={calibrationOverlay.calibrationPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                                    fill="rgba(245, 124, 0, 0.45)"
+                                    stroke="rgba(230, 81, 0, 0.95)"
+                                    strokeWidth={Math.max(2, calibrationOverlay.width * 0.003)}
+                                />
+
+                                {calibrationOverlay.calibrationPoints.map((p, idx) => (
+                                    <g key={`cal-${idx}`}>
+                                        <circle
+                                            cx={p.x}
+                                            cy={p.y}
+                                            r={Math.max(5, calibrationOverlay.width * 0.008)}
+                                            fill="rgba(230, 81, 0, 0.95)"
+                                            stroke="#ffffff"
+                                            strokeWidth={Math.max(1.5, calibrationOverlay.width * 0.002)}
+                                        />
+                                    </g>
+                                ))}
+
+                                {calibrationOverlay.referencePoints.length === 2 && (
+                                    <g>
+                                        <line
+                                            x1={calibrationOverlay.referencePoints[0].x}
+                                            y1={calibrationOverlay.referencePoints[0].y}
+                                            x2={calibrationOverlay.referencePoints[1].x}
+                                            y2={calibrationOverlay.referencePoints[1].y}
+                                            stroke="#ff8f00"
+                                            strokeWidth={Math.max(2, calibrationOverlay.width * 0.003)}
+                                            strokeDasharray="6 4"
+                                        />
+                                        {calibrationOverlay.referencePoints.map((p, idx) => (
+                                            <circle
+                                                key={`ref-${idx}`}
+                                                cx={p.x}
+                                                cy={p.y}
+                                                r={Math.max(4, calibrationOverlay.width * 0.007)}
+                                                    fill="#00ff2f"
+                                                stroke="#ffffff"
+                                                strokeWidth={Math.max(1.5, calibrationOverlay.width * 0.002)}
+                                            />
+                                        ))}
+                                    </g>
+                                )}
+                            </svg>
+                        )}
+                    </Box>
+                ) }
             </div>
 
             <CameraTags
@@ -542,7 +645,7 @@ function CameraDetailMenu({
                 loadedVideos={videos}
                 videosLoading={videosLoading}
                 thumbnail={thumbnail}
-                onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
+                onClickUploadVideo={() => {onClickUploadVideo?.(camera.id)}}
                 onDeleteVideo={onDeleteVideo}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
                 onEditCameraTags={onEditCameraTags}
