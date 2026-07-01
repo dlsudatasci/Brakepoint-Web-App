@@ -941,7 +941,7 @@ export default function LandingPage() {
         if (isSinglePolygon) {
           nextPolygons = [existingPolygon as [number, number][]];
         } else {
-          nextPolygons = existingPolygon as [number, number][][];
+          nextPolygons = existingPolygon as unknown as [number, number][][];
         }
       }
 

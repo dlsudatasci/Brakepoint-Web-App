@@ -463,7 +463,6 @@ class createPolygonEditButtons implements maplibregl.IControl {
 
 
 
-
 // definition of types for the props for Map
 type MapProps = {
   mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
@@ -2174,7 +2173,7 @@ export default function MapView({
       };
       const enterHandler = (e: any) => {
         if (disableSubAreaInteractionRef.current) return;
-        map.getCanvas().style.cursor = "pointer";
+        //map.getCanvas().style.cursor = "pointer";
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaHoverRef.current?.(Number(id));
       };
@@ -3069,14 +3068,6 @@ export default function MapView({
                 "icon-ignore-placement": true,
               },
             }, belowLayer);
-
-            map.on("mouseenter", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "pointer";
-            });
-
-            map.on("mouseleave", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "";
-            });
           });
         }
       } else {
@@ -3326,6 +3317,71 @@ export default function MapView({
     }
   }, [visibleCameraIds]);
 
+
+
+  // commented out — would've turned the cursor to a pointer iff hovering oevr area and selectionMode == all, or hovering over subarea and selectionMode == any
+  // ended up with a too buggy implementation and was removed for now
+  /*
+  useEffect(() => {
+    console.log("init!")
+    const map = mapRef.current;
+    if (!map) return;
+
+    /*
+    if (currentSelectionMode === "all") {
+      events.onAoiEnter?.unsubscribe();
+      events.onAoiLeave?.unsubscribe();
+      map.off("mouseenter", onAoiEnter);
+      map.off("mouseleave", onAoiLeave);
+      events.onAoiEnter = map.on("mouseenter", "aoi-fill", onAoiEnter)
+      events.onAoiLeave = map.on("mouseleave", "aoi-fill", onAoiLeave)
+    } else if (currentSelectionMode === "area") {
+      events.onSubEnter?.unsubscribe();
+      events.onSubLeave?.unsubscribe();
+      map.off("mouseenter", onSubEnter);
+      map.off("mouseleave", onSubLeave);
+      events.onSubEnter = map.on("mouseenter", "sub-area-fill", onSubEnter)
+      events.onSubLeave = map.on("mouseleave", "sub-area-fill", onSubLeave)
+    }
+
+    mapRef.current = map;
+
+    // events for the custom cursor for entering AoIs and subareas
+    map.on('mouseenter', "aoi-fill", (e: any) => {
+      console.log("enter-aoi: ", selectionMode, true, cursorIsOverSubarea)
+      setCursorIsOverArea(true);
+      handleAoiHoverCursorChange(canvas, true, cursorIsOverSubarea);
+    })
+
+    map.on('mouseenter', "sub-area-fill", (e: any) => {
+      console.log("enter-sub: ", selectionMode, true, true)
+      setCursorIsOverSubarea(true);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, true);
+    })
+
+    map.on('mouseleave', "aoi-fill", (e: any) => {
+      console.log("leave-aoi: ", selectionMode, false, cursorIsOverSubarea)
+      setCursorIsOverArea(false);
+      handleAoiHoverCursorChange(canvas, false, cursorIsOverSubarea);
+    })
+
+    map.on('mouseleave', "sub-area-fill", (e: any) => {
+      console.log("leave-sub: ", selectionMode, true, false)
+      setCursorIsOverSubarea(false);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, false);
+    })
+
+    // events for the custom cursor for entering and leaving a Mapillary icon
+    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, cursorIsOverSubarea);
+    })
+  }, [])
+  */
+
+  // handle the main cursor logic for tool mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3334,31 +3390,13 @@ export default function MapView({
     canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', "aoi-fill", (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', "aoi-fill", (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    if (!isEditMode) return;
+    if (!isEditMode && !isDrawingAOI) return;
 
     if (toolMode === "addCamera") {
       canvas.classList.add("map-cam-crosshair");
     }
 
-    if (toolMode === "addPoint") {
+    if (isDrawingAOI || toolMode === "addPoint") {
       canvas.classList.add("map-crosshair");
     }
 
@@ -3366,7 +3404,8 @@ export default function MapView({
       canvas.classList.add("map-remove");
     }
 
-  }, [isEditMode, toolMode]);
+  }, [isEditMode, toolMode, isDrawingAOI, currentSelectionMode]);
+
 
   useEffect(() => {
     if (mode !== "explore") return;
