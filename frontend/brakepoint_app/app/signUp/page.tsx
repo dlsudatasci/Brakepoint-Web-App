@@ -61,6 +61,12 @@ export default function SignUpPage() {
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!email.trim()) {
+      setError("Email is required.");
+      setSuccess("");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     setSuccess("");
@@ -71,7 +77,7 @@ export default function SignUpPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email: email.trim(), password }),
       });
 
       if (response.ok) {

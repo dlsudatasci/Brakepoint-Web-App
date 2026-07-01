@@ -928,7 +928,24 @@ export default function LandingPage() {
       if (!res.ok) { console.log(await res.text()); return false; }
 
       // patching local copies...
-      patchObjectInList("camera", id, {polygon: polygon})
+      const existingPolygon = camera.polygon;
+      let nextPolygons: [number, number][][] = [];
+      if (Array.isArray(existingPolygon) && existingPolygon.length > 0) {
+        const first = existingPolygon[0] as any;
+        const isSinglePolygon =
+          Array.isArray(first) &&
+          first.length === 2 &&
+          typeof first[0] === "number" &&
+          typeof first[1] === "number";
+
+        if (isSinglePolygon) {
+          nextPolygons = [existingPolygon as [number, number][]];
+        } else {
+          nextPolygons = existingPolygon as [number, number][][];
+        }
+      }
+
+      patchObjectInList("camera", id, {polygon: [...nextPolygons, polygon]})
       showToast(`Successfully set polygon to camera`, "success")
       onSuccess();
 

@@ -48,7 +48,7 @@ type MapMode = "explore" | "map" | "heatmap" | "dashboard";
       — removePoint:  removes a polygon on click
       — assignCamera: assigns a camera to a polygon area
 */
-type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" | "assignCamera";
+type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint";
 
 // location and details of a single camera
 // obtained from api/cameras; class Camera in models.py
@@ -56,7 +56,7 @@ type Camera = {
   id: number | string;
   lat: number;
   lng: number;
-  polygon?: [number, number][];
+  polygon?: [number, number][] | [number, number][][];
   occurrences?: number;
 };
 
@@ -89,6 +89,30 @@ type CompletedPolygon = {
   cameraId: number | string | null;
   occurrences?: number;
 };
+
+function asPolygonCollection(
+  value: [number, number][] | [number, number][][] | undefined | null,
+): [number, number][][] {
+  if (!Array.isArray(value) || value.length === 0) return [];
+
+  const first = value[0] as any;
+  const isPair =
+    Array.isArray(first) &&
+    first.length === 2 &&
+    typeof first[0] === "number" &&
+    typeof first[1] === "number";
+
+  if (isPair) return [value as [number, number][]];
+
+  const isPolygon =
+    Array.isArray(first) &&
+    Array.isArray(first[0]) &&
+    first[0].length === 2 &&
+    typeof first[0][0] === "number" &&
+    typeof first[0][1] === "number";
+
+  return isPolygon ? (value as [number, number][][]) : [];
+}
 
 // a single TerraDraw feature
 // obtained from TerraDraw.getSnapshot()
@@ -670,7 +694,6 @@ export default function MapView({
   const lat = 14.5995;
   const zoom = 10;
 
-  const isAssigningCamera = toolMode === "assignCamera";
   const isDrawingPrimary = explorePhase === "drawing-primary";
   const isDrawingSub = explorePhase === "drawing-sub";
   const isDrawingFocusArea = isDrawingPrimary || isDrawingSub;
@@ -2558,24 +2581,6 @@ export default function MapView({
           return;
         }
 
-        if (toolModeRef.current === "assignCamera") {
-          const polyIdx = selectedPolygonIndexRef.current;
-          if (polyIdx == null) return;
-
-          const poly = completedPolygonsRef.current[polyIdx];
-          if (!poly) return;
-
-          //const ok = await savePolygonToCamera(id, poly.points);
-          //if (!ok) return;
-
-          setCompletedPolygons((prev) => prev.map((p, i) => (i === polyIdx ? { ...p, cameraId: id } : p)));
-
-          setToolMode("none");
-          setShowPolygonModal(false);
-          setSelectedPolygonIndex(null);
-          return;
-        }
-
         onObjectClickRef.current?.("camera", Number(id));
       });
 
@@ -2659,12 +2664,12 @@ export default function MapView({
     // add our new cameras to the list
     cameraItems.forEach((cam: Camera) => addCameraFromData(cam.lat, cam.lng, cam.id));
 
-    const polygons: CompletedPolygon[] = cameraItems.filter((cam: Camera) => cam.polygon && cam.polygon.length > 0).map(
-      (cam: Camera) => ({
-        points: cam.polygon as [number, number][],
+    const polygons: CompletedPolygon[] = cameraItems.flatMap((cam: Camera) =>
+      asPolygonCollection(cam.polygon).map((poly) => ({
+        points: poly,
         cameraId: cam.id,
-        occurrences: cam.occurrences ?? 0
-      })
+        occurrences: cam.occurrences ?? 0,
+      })),
     );
     setCompletedPolygons(polygons);
     renderPolygonLayers();
@@ -3184,6 +3189,18 @@ export default function MapView({
           const idx = Number(features[0].properties?.polygonIndex);
           if (!Number.isNaN(idx)) {
             setSelectedPolygonIndex(idx);
+
+            const selectedCameraId = selectedCameraIdRef.current;
+            const poly = completedPolygonsRef.current[idx];
+            if (selectedCameraId != null && poly && poly.cameraId == null) {
+              const ok = await savePolygonToCamera(selectedCameraId, poly.points);
+              if (ok) {
+                setCompletedPolygons((prev) =>
+                  prev.map((p, i) => (i === idx ? { ...p, cameraId: selectedCameraId } : p)),
+                );
+              }
+            }
+
             setShowPolygonModal(true);
           }
         }
@@ -3226,9 +3243,7 @@ export default function MapView({
 
                 // update completed polygon storage to instantly display this polygon
                 // though it /will/ reload again anyway when leaving and returning :>
-                // setCompletedPolygons((prev) => [...prev.filter((x) => x.cameraId !== cameraId), newPoly])
                 let newCompletedPolygons = completedPolygonsRef.current;
-                newCompletedPolygons = newCompletedPolygons.filter((x) => x.cameraId !== cameraId)
                 newCompletedPolygons = [...newCompletedPolygons, newPoly];
                 setCompletedPolygons(newCompletedPolygons);
 
@@ -3349,11 +3364,6 @@ export default function MapView({
 
     if (toolMode === "removeCamera" || toolMode === "removePoint") {
       canvas.classList.add("map-remove");
-    }
-
-    if (toolMode === "assignCamera") {
-      // canvas.style.cursor = "pointer";
-      canvas.classList.add("map-pointer")
     }
 
   }, [isEditMode, toolMode]);
@@ -3641,12 +3651,6 @@ export default function MapView({
     }
   }, [dashboardMarkers, mode, onDashboardMarkerClick]);
 
-  const beginAssignCamera = useCallback(() => {
-    if (selectedPolygonIndexRef.current == null) return;
-    setShowPolygonModal(false);
-    setToolMode("assignCamera");
-  }, [selectedPolygonIndexRef]);
-
   const deletePolygon = useCallback(async () => {
     const idx = selectedPolygonIndexRef.current;
     if (idx == null) return;
@@ -3819,16 +3823,10 @@ export default function MapView({
         </div>
       )}
 
-      {isAssigningCamera && <div className="assign-camera-banner">Click on the camera you want this polygon assigned to</div>}
-
       {showPolygonModal && (
         <div className="polygon-modal">
           <h3 className="polygon-modal__title">Polygon Options</h3>
           <div className="polygon-modal__actions">
-            <button onClick={beginAssignCamera} className="polygon-modal__btn polygon-modal__btn--primary">
-              Assign to Camera
-            </button>
-
             <button onClick={deletePolygon} className="polygon-modal__btn polygon-modal__btn--danger">
               Delete Polygon
             </button>

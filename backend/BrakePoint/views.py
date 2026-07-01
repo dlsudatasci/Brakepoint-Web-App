@@ -989,17 +989,49 @@ def camera_polygon_api(request, pk: int):
     
     polygon_data = request.data.get('polygon')
 
-    if polygon_data is None:
+    def _is_coord_pair(point):
+        return (
+            isinstance(point, (list, tuple))
+            and len(point) == 2
+            and isinstance(point[0], (int, float))
+            and isinstance(point[1], (int, float))
+        )
+
+    def _is_single_polygon(value):
+        return isinstance(value, list) and len(value) > 0 and all(_is_coord_pair(point) for point in value)
+
+    def _is_polygon_collection(value):
+        return isinstance(value, list) and len(value) > 0 and all(_is_single_polygon(poly) for poly in value)
+
+    if polygon_data is None or polygon_data == []:
         camera.polygon = []
         camera.save()
-        return Response({"success": True, "message": "Polygon cleared"})
-    
+        return Response({"success": True, "message": "Polygon cleared", "polygon": camera.polygon})
+
     if not isinstance(polygon_data, list):
         return Response({"success": False, "error": "Polygon must be a list"}, status=400)
-    
-    camera.polygon = polygon_data
+
+    existing = camera.polygon or []
+    if _is_single_polygon(existing):
+        existing_polygons = [existing]
+    elif _is_polygon_collection(existing):
+        existing_polygons = list(existing)
+    else:
+        existing_polygons = []
+
+    if _is_single_polygon(polygon_data):
+        existing_polygons.append(polygon_data)
+        camera.polygon = existing_polygons
+    elif _is_polygon_collection(polygon_data):
+        camera.polygon = polygon_data
+    else:
+        return Response(
+            {"success": False, "error": "Polygon must be a list of [lng, lat] pairs or a list of polygons"},
+            status=400,
+        )
+
     camera.save()
-    
+
     return Response({"success": True, "polygon": camera.polygon})
 
 @api_view(['GET', 'PUT', 'DELETE'])
