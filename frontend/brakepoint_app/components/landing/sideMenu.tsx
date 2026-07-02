@@ -468,10 +468,6 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 
     // handle scaling calibration overlay to the thumbnail
     const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
-    useEffect(() => {
-        console.log(thumbnailObject);
-        console.log("wh: ", thumbnailObject?.naturalWidth, thumbnailObject?.naturalHeight)
-    }, [thumbnailObject]) 
 
     return (
         <div className="menuContainer">
