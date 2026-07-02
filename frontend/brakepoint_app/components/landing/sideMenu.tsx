@@ -466,6 +466,13 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
         onClickUploadVideo?.();  // still notify parent if needed
     };
 
+    // handle scaling calibration overlay to the thumbnail
+    const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
+    useEffect(() => {
+        console.log(thumbnailObject);
+        console.log("wh: ", thumbnailObject?.naturalWidth, thumbnailObject?.naturalHeight)
+    }, [thumbnailObject]) 
+
     return (
         <div className="menuContainer">
             { /* thumbnail */ }
@@ -476,13 +483,17 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && (
                     <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
                         <img
-                            src={thumbnail}
+                            id="image-thumbnail" src={thumbnail}
+                            ref={(e) => {
+                                // updates the width and height for the overlay
+                                setThumbnailObject(e)
+                            }}
                             style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
                         />
 
                         {calibrationOverlay && (
                             <svg
-                                viewBox={`0 0 ${calibrationOverlay.width} ${calibrationOverlay.height}`}
+                                viewBox={`0 0 ${thumbnailObject?.naturalWidth ?? 640} ${thumbnailObject?.naturalHeight ?? 320}`}
                                 preserveAspectRatio="none"
                                 style={{
                                     position: "absolute",
