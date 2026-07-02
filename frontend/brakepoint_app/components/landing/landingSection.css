@@ -21,7 +21,7 @@
 
 .landingSection > .landingSectionHeader > .landingSectionHeaderLabel > h1 {
 	line-height: 110%;
-	font-size: 200%;
+	font-size: 140%;
 	font-weight: 600;
 	margin: 0;
 	align-self: center;
@@ -35,8 +35,8 @@
 
 .landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-title > h1 {
 	line-height: 100%;
-	font-size: 250%;
-	font-weight: 750;
+	font-size: 190%;
+	font-weight: 730;
 }
 
 .landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-header > h1 {
@@ -44,15 +44,15 @@
 }
 
 .landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-subheader > h1 {
-	font-weight: 450;
-	font-size: 133%;
+	font-size: 130%;
+	font-weight: 500;
 }
 
 .chip-counter {
 	display: inline-block;
 	font-size: 75%;
 
-	border: 4px solid #161b4c;
+	border: 3.1px solid #161b4c;
 	padding: 0em 0.75em;
 	border-radius: 1000px;
 }

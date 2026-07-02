@@ -2,7 +2,7 @@
   background-color: rgb(236, 237, 245);
   min-height: 100vh;
   min-width: 350px;
-  width: clamp(500px, 15vw, 480px);
+  width: clamp(445px, 15vw, 500px);
   padding: 1.5em;
   display: flex;
   flex-direction: column;
@@ -15,7 +15,8 @@
 .menuHeader {
   background-color: #161b4c;
   color: rgb(236, 237, 245);
-  width: calc(100% + 4em); 
+  width: calc(100% + 4em);
+  height: 10.5em;
   margin-left: -2.5em; 
   margin-top: -4em;     
   padding: 4em 2.5em 1em;
@@ -24,7 +25,7 @@
 }
 
 .buttonContainer {
-  margin-top:32px;
+  margin-top:2em;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -37,17 +38,16 @@
   border-radius: 16px;
   color: rgb(236, 237, 245) !important;
   text-align: left;
-  font-size:18px !important;
+  font-size: 1.125em !important; /* was 18px !important */
 }
 
 .menuButton :global(.MuiButton-startIcon) {
-  margin-right: 32px;
+  margin-right: 2em; /* was 32px */
   color: rgb(236, 237, 245);
-
 }
 
 .menuButton:global(.MuiButton-root) {
-  padding: 16px;
+  padding: 1em; /* was 16px */
 }
 
 .menuButton:global(.MuiButton-root):hover {

@@ -38,6 +38,14 @@ const HOUR_START = 1;
 const HOUR_END = 24;
 const HOUR_HEIGHT = 56; // px per hour
 
+type PositionedBlock = {
+  row: any;
+  startHour: number;
+  endHour: number;
+  col: number;
+  colCount: number;
+};
+
 // returns the date under the format of YYYY-MM-DD
 function toDateKey(date: Date): string {
   return date.toISOString().split('T')[0];
@@ -72,6 +80,66 @@ function parseVideoTime(row: any): { dateKey: string; startHour: number } | null
   } catch {
     return null;
   }
+}
+
+// Assigns non-overlapping columns to blocks that share overlapping time ranges
+function layoutDayBlocks(
+  blocks: { row: any; dateKey: string; startHour: number }[]
+): PositionedBlock[] {
+  const withEnd = blocks
+    .map(b => ({
+      row: b.row,
+      startHour: b.startHour,
+      endHour: b.startHour + Math.max((b.row.duration_seconds || 0) / 3600, 0.75),
+    }))
+    .sort((a, b) => a.startHour - b.startHour);
+
+  const positioned: PositionedBlock[] = [];
+  let cluster: typeof withEnd = [];
+  let clusterEnd = -Infinity;
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+    const columns: number[] = []; // each entry = that column's current endHour
+    const clusterPositioned: PositionedBlock[] = [];
+
+    for (const b of cluster) {
+      let placedCol = -1;
+      for (let i = 0; i < columns.length; i++) {
+        if (columns[i] <= b.startHour) {
+          columns[i] = b.endHour;
+          placedCol = i;
+          break;
+        }
+      }
+      if (placedCol === -1) {
+        columns.push(b.endHour);
+        placedCol = columns.length - 1;
+      }
+      clusterPositioned.push({ ...b, col: placedCol, colCount: 0 });
+    }
+
+    const colCount = columns.length;
+    clusterPositioned.forEach(b => { b.colCount = colCount; });
+    positioned.push(...clusterPositioned);
+
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const b of withEnd) {
+    if (cluster.length === 0 || b.startHour < clusterEnd) {
+      cluster.push(b);
+      clusterEnd = Math.max(clusterEnd, b.endHour);
+    } else {
+      flushCluster();
+      cluster.push(b);
+      clusterEnd = b.endHour;
+    }
+  }
+  flushCluster();
+
+  return positioned;
 }
 
 // parses a duration formatted as a string to a number
@@ -143,10 +211,12 @@ function formatBlockTimeRange(startHour: number, durationSeconds: number): strin
 
 // creates a single block for the calendar to represent a video
 function SessionBlock({
-  row, startHour, selected, onClick, onPlay,
+  row, startHour, col, colCount, selected, onClick, onPlay,
 }: {
   row: VideoSummary;
   startHour: number;
+  col: number;
+  colCount: number;
   selected: boolean;
   onClick: () => void;
   onPlay: (e: React.MouseEvent) => void;
@@ -163,10 +233,29 @@ function SessionBlock({
     row.processing_status === 'failed'     ? '#f44336' :
     row.processing_status === 'processing' ? '#ff9800' : '#888';
 
+   const EDGE = 5;   
+   const GAP = 0;    
+
+  const widthPercent = 100 / colCount;
+  const leftPercent = col * widthPercent;
+
+  const leftStyle = colCount === 1
+    ? `${EDGE}px`
+    : `calc(${leftPercent}% + ${EDGE / colCount + (col > 0 ? GAP / 2 : 0)}px)`;
+
+  const widthStyle = colCount === 1
+    ? `calc(100% - ${EDGE * 2}px)`
+    : `calc(${widthPercent}% - ${(EDGE * 2) / colCount + GAP}px)`;
+
   return (
     <div
       className={`cal-block${selected ? ' cal-block--selected' : ''}`}
-      style={{ top: `${top}px`, height: `${height}px` }}
+      style={{
+        top: `${top}px`,
+        height: `${height}px`,
+        left: leftStyle,
+        width: widthStyle,
+      }}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -375,9 +464,11 @@ export default function Table({
   const hours = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
   const gridHeight = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
-  const todayBlocks = loadedVideos
-    .map(row => { const t = parseVideoTime(row); return t ? { row, ...t } : null; })
-    .filter((b): b is { row: any; dateKey: string; startHour: number } => b !== null && b.dateKey === dateKey);
+  const todayBlocks = layoutDayBlocks(
+    loadedVideos
+      .map(row => { const t = parseVideoTime(row); return t ? { row, ...t } : null; })
+      .filter((b): b is { row: any; dateKey: string; startHour: number } => b !== null && b.dateKey === dateKey)
+  );
 
   return (
     <Box>
@@ -467,11 +558,13 @@ export default function Table({
                   <div className="cal-empty cal-empty--inline">No videos recorded for this day</div>
                 )}
 
-                {todayBlocks.map(({ row, startHour }) => (
+                {todayBlocks.map(({ row, startHour, col, colCount }) => (
                   <SessionBlock
                     key={row.id}
                     row={row}
                     startHour={startHour}
+                    col={col}
+                    colCount={colCount}
                     selected={selectedRow?.id === row.id}
                     onClick={() => {
                       const newSelection = selectedRow?.id === row.id ? [] : [row];
