@@ -736,7 +736,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
         ? referencePoints.map(p => transformPoint(homographyInv, p))
         : referencePoints;
 
-      const savedVideoUrl = videoUrl;
+      const currCalibrationPoints = calibrationPoints;
+      const currReferenceDistance = referenceDistance;
 
       setShowCalibration(false);
       setCalibrationPoints([]);
@@ -749,61 +750,12 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       setHomographyInv(null);
       onClose();
 
-      try {
-        console.log('[calibration-edit] Updating calibration for video', editVideoId);
-        const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${editVideoId}/`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            calibration_points: calibrationPoints,
-            reference_points: originalReferencePoints,
-            reference_distance_meters: referenceDistance,
-          }),
-        });
-
-        if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          console.error('[calibration-edit] Non-JSON response:', response.status, contentType);
-          if (onProcessingComplete) {
-            onProcessingComplete('Calibration Update', false, { error: `Server error (${response.status})` });
-          }
-          return;
-        }
-
-        const data = await response.json();
-        console.log('[calibration-edit] Response data:', data);
-
-        if (!response.ok) {
-          console.error('[calibration-edit] Update failed:', response.status, data);
-          if (onProcessingComplete) {
-            onProcessingComplete('Calibration Update', false, { error: data.error || data.detail || 'Update failed' });
-          }
-          return;
-        }
-
-        onCalibrationSaved?.(
-          cameraId,
-          calibrationPoints,
-          originalReferencePoints,
-          referenceDistance,
-        );
-
-        if (onProcessingComplete) {
-          onProcessingComplete('Calibration Update', true, { message: 'Calibration updated successfully' });
-        }
-
-        if (onUploadComplete) {
-          onUploadComplete();
-        }
-      } catch (err) {
-        if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-        console.error('[calibration-edit] Error caught:', err);
-        if (onProcessingComplete) {
-          onProcessingComplete('Calibration Update', false, { error: String(err) || 'Failed to update calibration' });
-        }
-      }
+      onCalibrationSaved(
+        cameraId,
+        currCalibrationPoints,
+        originalReferencePoints,
+        currReferenceDistance
+      )
       return;
     }
 
@@ -864,74 +816,6 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
     setWarpDimensions({ width: 0, height: 0 });
     setHomographyInv(null);
     onClose();
-    /*
-
-    const formData = new FormData();
-    formData.append('file', savedFile);
-    formData.append('video_name', uploadingVideoName);
-    formData.append('camera_id', cameraId.toString());
-    formData.append('calibration_points', JSON.stringify(calibrationPoints));
-    formData.append('reference_points', JSON.stringify(originalReferencePoints));
-    formData.append('reference_distance_meters', referenceDistance.toString());
-    if (uploadThumbnail) {
-      formData.append('thumbnail', uploadThumbnail);
-    }
-
-    // if (onUploadStart) onUploadStart(uploadingVideoName);
-
-    try {
-      console.log('[upload] Sending upload request...', formData);
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-
-      console.log('[upload] Response status:', response.status);
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        console.error('[upload] Non-JSON response:', response.status, contentType);
-        if (onProcessingComplete) {
-          onProcessingComplete(uploadingVideoName, false, { error: `Server error (${response.status})` });
-        }
-        return;
-      }
-
-      const data = await response.json();
-      console.log('[upload] Response data:', data);
-
-      if (!response.ok) {
-        console.error('[upload] Upload failed:', response.status, data);
-        if (onProcessingComplete) {
-          onProcessingComplete(uploadingVideoName, false, { error: data.error || data.detail || 'Upload failed' });
-        }
-        return;
-      }
-
-      if (data.video_id && onProcessingStart) {
-        onProcessingStart(uploadingVideoName, data.video_id);
-      }
-
-      onSubmit({ 
-        video_name: uploadingVideoName, 
-        file_name: savedFile, 
-        calibration_points: savedCalibrationPoints,
-        reference_distance_meters: savedReferenceDistance
-      });
-
-      if (onUploadComplete) {
-        onUploadComplete();
-      }
-    } catch (err) {
-      if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-      console.error('[upload] Upload error caught:', err);
-      if (onProcessingComplete) {
-        onProcessingComplete(uploadingVideoName, false, { error: String(err) || 'Failed to process video' });
-      }
-    }
-      */
 
   };
 
