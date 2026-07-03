@@ -91,6 +91,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     pollersRef.current.delete(videoId);
   }, []);
 
+  const clearAll = useCallback(() => {
+    pollersRef.current.forEach((intervalId) => window.clearInterval(intervalId));
+    pollersRef.current.clear();
+    setNotifications([]);
+  }, []);
+
   useEffect(() => {
     const stored = localStorage.getItem("brakepoint_notifications");
     const loaded = safeParseNotifications(stored);
@@ -281,12 +287,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  }, []);
-
-  const clearAll = useCallback(() => {
-    pollersRef.current.forEach((intervalId) => window.clearInterval(intervalId));
-    pollersRef.current.clear();
-    setNotifications([]);
   }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;

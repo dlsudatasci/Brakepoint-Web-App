@@ -128,6 +128,16 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
 // puts out a percentage as a string value
 const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
 
+function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
+    if (!resolution) return null;
+    const match = resolution.match(/^(\d+)x(\d+)$/i);
+    if (!match) return null;
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+}
+
 // displays the back button for a menu
 function BackButton({onBack, label} : {onBack: () => void, label: string}) {
     return <div className="backButtonContainer">
@@ -411,23 +421,66 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
     camera: CameraSummary,                                      // summary objecet for this camera
     loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
     videosLoading?: boolean,                                    // whether videos are still being loaded
     videosError?: boolean,                                      // whether video loading have posted an error
     thumbnail?: string;                                         // the thumbnail to display
     onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
+    onAutoDetectRoadFeatures?: (id: number) => void;            // event to trigger model-based auto-fill of camera road feature tags
     onClickUploadVideo?: () => void,                            // event to trigger when user clicks on Upload Video button
     onDeleteVideo?: (type: "video", id: number) => void;        // event to trigger when user requests to delete a video
     onThumbnailUpdate?: (thumb: string) => void;                // callback when thumbnail updates
 }) {
     const [openUploadModal, setOpenUploadModal] = useState(false);
 
+    const calibrationOverlay = useMemo(() => {
+        if (!thumbnail || !camera.calibration_points || camera.calibration_points.length < 4) return null;
+
+        const latestVideo = [...loadedVideos].sort(
+            (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime(),
+        )[0];
+        const parsedResolution = parseVideoResolution(latestVideo?.resolution);
+        if (!parsedResolution) return null;
+
+        const calibrationPoints = camera.calibration_points
+            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+            .slice(0, 4);
+        if (calibrationPoints.length < 4) return null;
+
+        const referencePoints = (camera.reference_points ?? [])
+            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+            .slice(0, 2);
+
+        return {
+            width: parsedResolution.width,
+            height: parsedResolution.height,
+            calibrationPoints,
+            referencePoints,
+        };
+    }, [thumbnail, camera.calibration_points, camera.reference_points, loadedVideos]);
+
     const handleUploadClick = () => {
         setOpenUploadModal(true);
         onClickUploadVideo?.();  // still notify parent if needed
     };
+
+    // handle scaling calibration overlay to the thumbnail
+    const thumbnailChanging = useRef<boolean>(false);
+    const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
+    const [thumbnailWidth, setThumbnailWidth] = useState<number>(null);
+    const [thumbnailHeight, setThumbnailHeight] = useState<number>(null);
+    const THUMBNAIL_WAIT_TIME_MS = 33
+
+    // updates the width and height for the overlay after a few ms
+    // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
+    useEffect(() => {
+        setTimeout(() => {
+            setThumbnailHeight(thumbnailObject?.naturalWidth);
+            setThumbnailHeight(thumbnailObject?.naturalHeight);
+        }, THUMBNAIL_WAIT_TIME_MS)
+    }, [thumbnailObject]) 
 
     return (
         <div className="menuContainer">
@@ -436,10 +489,85 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { videosLoading && ( <CircularProgress size={24} sx={{ color: "#1d1f3f" }} /> ) }
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail == null || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
                 { !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
-                { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && ( <img src={thumbnail}></img> ) }
+                { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && (
+                    <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+                        <img
+                            id="image-thumbnail" src={thumbnail}
+                            ref={(e) => {
+                                setThumbnailObject(e);
+                            }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
+                        />
+
+                        {calibrationOverlay && (
+                            <svg
+                                viewBox={`0 0 ${thumbnailWidth ?? 640} ${thumbnailHeight ?? 320}`}
+                                preserveAspectRatio="none"
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    width: "100%",
+                                    height: "100%",
+                                    pointerEvents: "none",
+                                    borderRadius: "inherit",
+                                }}
+                            >
+                                <polygon
+                                    points={calibrationOverlay.calibrationPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                                    fill="rgba(245, 124, 0, 0.45)"
+                                    stroke="rgba(230, 81, 0, 0.95)"
+                                    strokeWidth={Math.max(2, calibrationOverlay.width * 0.003)}
+                                />
+
+                                {calibrationOverlay.calibrationPoints.map((p, idx) => (
+                                    <g key={`cal-${idx}`}>
+                                        <circle
+                                            cx={p.x}
+                                            cy={p.y}
+                                            r={Math.max(5, calibrationOverlay.width * 0.008)}
+                                            fill="rgba(230, 81, 0, 0.95)"
+                                            stroke="#ffffff"
+                                            strokeWidth={Math.max(1.5, calibrationOverlay.width * 0.002)}
+                                        />
+                                    </g>
+                                ))}
+
+                                {calibrationOverlay.referencePoints.length === 2 && (
+                                    <g>
+                                        <line
+                                            x1={calibrationOverlay.referencePoints[0].x}
+                                            y1={calibrationOverlay.referencePoints[0].y}
+                                            x2={calibrationOverlay.referencePoints[1].x}
+                                            y2={calibrationOverlay.referencePoints[1].y}
+                                            stroke="#ff8f00"
+                                            strokeWidth={Math.max(2, calibrationOverlay.width * 0.003)}
+                                            strokeDasharray="6 4"
+                                        />
+                                        {calibrationOverlay.referencePoints.map((p, idx) => (
+                                            <circle
+                                                key={`ref-${idx}`}
+                                                cx={p.x}
+                                                cy={p.y}
+                                                r={Math.max(4, calibrationOverlay.width * 0.007)}
+                                                    fill="#00ff2f"
+                                                stroke="#ffffff"
+                                                strokeWidth={Math.max(1.5, calibrationOverlay.width * 0.002)}
+                                            />
+                                        ))}
+                                    </g>
+                                )}
+                            </svg>
+                        )}
+                    </Box>
+                ) }
             </div>
 
-            <CameraTags camera={camera} tagLength={camera.tags.length} onEditCameraTags={onEditCameraTags}/>
+            <CameraTags
+                camera={camera}
+                tagLength={camera.tags.length}
+                onEditCameraTags={onEditCameraTags}
+                onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
+            />
 
             <LandingSection type="header"
                 labelHeader="Timeline"
@@ -469,7 +597,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 // displays the sidebar for a certain camera
 function CameraDetailMenu({
     camera, videos, videosLoading,
-    onFeedTabActive, onRenameCamera, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
+    onFeedTabActive, onRenameCamera, onAutoDetectRoadFeatures, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
     onClickUploadVideo, onDeleteVideo, onUploadStart, onProcessingStart, onProcessingComplete
 } : {
     camera: CameraSummary,                                                              // summary object for this camera
@@ -477,6 +605,7 @@ function CameraDetailMenu({
     videosLoading: boolean,                                                             // whether videos are still loading; displays a loading graphic over menu
     onFeedTabActive?: (active: boolean) => void;                                        // event to trigger when user enters the feed tab
     onRenameCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to rename this camera
+    onAutoDetectRoadFeatures?: (id: number) => void;                                    // event to trigger when user requests auto-detect road feature tags
     onRecalibrateCamera?: (id: number) => void;                                         // event to trigger when user requests to delete this camera
     onDeleteCamera?: (type: SummaryType, id: number) => void;                           // event to trigger when user requests to delete this camera
     onEditCameraTags?: (id: number, newTags: string[]) => void;                         // event to trigger when user requests to edit (add or remove) this camera's tags
@@ -535,10 +664,11 @@ function CameraDetailMenu({
                 loadedVideos={videos}
                 videosLoading={videosLoading}
                 thumbnail={thumbnail}
-                onClickUploadVideo={() => {onClickUploadVideo(camera.id)}}
+                onClickUploadVideo={() => {onClickUploadVideo?.(camera.id)}}
                 onDeleteVideo={onDeleteVideo}
                 onThumbnailUpdate={(thumb) => setThumbnail(thumb)}
                 onEditCameraTags={onEditCameraTags}
+                onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
             />)}
 
             { activeTab === "statistics" &&  ( <Timeline videos={videos}/>)}
@@ -592,6 +722,7 @@ interface SideMenuProps {
     onBack?: () => void;                                                                        // called when returning from a previous menu
     
     onEditCameraTags?: (id: number, newTags: string[]) => void;                                 // event to trigger when user requests to edit (add or remove) a camera's tags
+    onAutoDetectRoadFeatures?: (id: number) => void;                                             // triggers model-based auto-fill of road feature tags
     onCameraUpload?: (id: number) => void;                                                      // triggers when user clicks to upload a new video for a camera
     onRecalibrateCamera?: (id: number) => void;                                                 // triggers when user clicks to recalibrate a camera
 
@@ -603,7 +734,7 @@ export default function SideMenu({
     locationSummariesLoading = true, videosLoading = true,
     canClickToAreas = true, isDrawingAOI = false,
     canClickToSubareas = true, isDrawingSubarea = false,
-    canClickToCameras = true, onCameraUpload, onRecalibrateCamera, isDrawingCamera, onEditCameraTags,
+    canClickToCameras = true, onCameraUpload, onAutoDetectRoadFeatures, onRecalibrateCamera, isDrawingCamera, onEditCameraTags,
     onFeedTabActive,
     canStartDrawing = true, allAois, allSubareas, allCameras, allVideos, selectedAOI, selectedSubarea, selectedCamera, currentSelectionMode,
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
@@ -689,6 +820,7 @@ export default function SideMenu({
                             videos={convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id)}
                             videosLoading={videosLoading}
                             onRenameCamera={onRequestRename}
+                            onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
                             onRecalibrateCamera={onRecalibrateCamera}
                             onDeleteCamera={onRequestDelete}
                             onEditCameraTags={onEditCameraTags}

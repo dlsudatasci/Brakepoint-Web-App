@@ -12,6 +12,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import HighlightAltIcon from '@mui/icons-material/HighlightAlt';
 import MenuIcon from '@mui/icons-material/Menu';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 
 
@@ -25,17 +26,24 @@ type EditContextProps = {
 	isOpen: boolean;							// whether this context menu is open
 
 	onClickEditName?: () => void;				// if not undefined, enables option to edit name; triggers when this is clicked
+	onClickAutoDetectRoadFeatures?: () => void;	// if not undefined, enables option to auto-detect road features from latest video
 	onClickRecalibratePolygons?: () => void;	// if not undefined, enables option to recalibrate polygons; triggers when this is clicked
 	onClickDeleteObject?: () => void;			// if not undefined, enables option to delete object; triggers when this is clicked
 	onClose?: () => void;						// triggers when this context menu is closed, including when one of the options are clicked
 }
 
-export function EditContext({anchorEl, isOpen, onClickEditName, onClickRecalibratePolygons, onClickDeleteObject, onClose}: EditContextProps) {
+export function EditContext({anchorEl, isOpen, onClickEditName, onClickAutoDetectRoadFeatures, onClickRecalibratePolygons, onClickDeleteObject, onClose}: EditContextProps) {
 	return (
 		<Menu id="header-context-menu" anchorEl={anchorEl} open={isOpen} onClose={onClose} anchorOrigin={{vertical: "top", horizontal: "right"}} >
 			{onClickEditName && (
 				<MenuItem onClick={ () => { onClickEditName(); onClose(); } }>
 					<ListItemIcon> <EditIcon /> </ListItemIcon> Edit name
+				</MenuItem>
+			)}
+
+			{onClickAutoDetectRoadFeatures && (
+				<MenuItem onClick={ () => { onClickAutoDetectRoadFeatures(); onClose(); } }>
+					<ListItemIcon> <AutoFixHighIcon /> </ListItemIcon> Auto-fill road feature tags
 				</MenuItem>
 			)}
 
@@ -79,6 +87,7 @@ type LandingSectionProps = {
 
 	hasContextMenu?: boolean;					// include the context menu?
 	onClickEditName?: () => void;				// if not undefined, enables option to edit name; triggers when this is clicked
+	onClickAutoDetectRoadFeatures?: () => void;	// if not undefined, enables option to auto-detect road features from latest video
 	onClickRecalibratePolygons?: () => void;	// if not undefined, enables option to recalibrate polygons; triggers when this is clicked
 	onClickDeleteObject?: () => void;			// if not undefined, enables option to delete object; triggers when this is clicked
 
@@ -91,7 +100,7 @@ export default function LandingSection({
 	labelHeader, labelSubheader, chipCount,
 	canHide = false, startHidden = false,
 	canAdd = false, canStartDrawing = true, isAddButtonActive = false, onClickAdd = () => {},
-	hasContextMenu = false, onClickEditName, onClickRecalibratePolygons, onClickDeleteObject,
+	hasContextMenu = false, onClickEditName, onClickAutoDetectRoadFeatures, onClickRecalibratePolygons, onClickDeleteObject,
 	children
 }: LandingSectionProps) {
 	const [isHidden, setIsHidden] = useState(startHidden);
@@ -107,7 +116,7 @@ export default function LandingSection({
 
 	// things that would set these variables to false regarding of whether this is actually set
 	if (type == "title" || !children) { canHide = false }
-	if (!onClickEditName && !onClickRecalibratePolygons && !onClickDeleteObject) { hasContextMenu = false }
+	if (!onClickEditName && !onClickAutoDetectRoadFeatures && !onClickRecalibratePolygons && !onClickDeleteObject) { hasContextMenu = false }
 
 	return (
 		<div className="landingSection">
@@ -158,6 +167,7 @@ export default function LandingSection({
 					anchorEl = {anchor}
 					isOpen = {Boolean(anchor)}
 					onClickEditName={onClickEditName}
+					onClickAutoDetectRoadFeatures={onClickAutoDetectRoadFeatures}
 					onClickRecalibratePolygons={onClickRecalibratePolygons}
 					onClickDeleteObject={onClickDeleteObject}
 					onClose={handleContextMenuClose}

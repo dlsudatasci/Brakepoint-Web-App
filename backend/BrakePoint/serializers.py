@@ -38,10 +38,19 @@ class SavedLocationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["user", "created_at"]
 class SignupSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=True, allow_blank=False)
     password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
         fields = ['username','email','password']
+
+    def validate_email(self, value):
+        email = value.strip()
+        if not email:
+            raise serializers.ValidationError("This field may not be blank.")
+        return email
+
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],

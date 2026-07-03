@@ -36,60 +36,6 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cursor modes                                                               */
-/* -------------------------------------------------------------------------- */
-/* Open Hand (Default) */
-.maplibregl-canvas {
-  cursor: url("/cursors/grab.svg")
-  12 12, 
-  grab
-  /* grab !important; */
-}
-
-/* Closed Hand */
-.maplibregl-canvas:active {
-  cursor: url("/cursors/grabbing.svg") 
-  12 12, 
-  grabbing
-  /* grabbing !important; */
-}
-
-.map-cursor,
-.aoi-label-pin {
-  cursor:
-    url('/cursors/cursor.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-pointer {
-  cursor:
-    url('/cursors/pointer.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-crosshair {
-  cursor:
-    url('/cursors/crosshair.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-cam-crosshair {
-  cursor: url("/cursors/grabbing-camera.svg") 
-  20 20, 
-  crosshair !important;
-}
-
-.map-remove {
-  cursor:
-    url('/cursors/cursor-delete.svg')
-      12 12,
-    pointer !important;
-}
-
-/* -------------------------------------------------------------------------- */
 /* Dashboard markers                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -294,6 +240,50 @@ input[type="search"]::-webkit-search-cancel-button {
 .dash-popup__coords {
   font-size: 12px;
   opacity: 0.75;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cursor modes                                                               */
+/* -------------------------------------------------------------------------- */
+/* Open Hand (Default) */
+.maplibregl-canvas {
+  cursor: url("/cursors/grab.svg") 10 0,
+  grab
+}
+
+/* Closed Hand */
+.maplibregl-canvas:active {
+  cursor: url("/cursors/grabbing.svg") 10 0,
+  grabbing
+}
+
+.map-cursor {
+  cursor:
+    url('/cursors/cursor.svg') 2 0,
+    default
+}
+
+.map-pointer {
+  cursor:
+    url('/cursors/pointer.svg') 7 0,
+    pointer;
+}
+
+.map-cam-crosshair {
+  cursor: url("/cursors/grabbing-camera.svg") 8 0,
+  crosshair !important;
+}
+
+.map-remove {
+  cursor:
+    url('/cursors/cursor-delete.svg') 1 0,
+    cursor !important;
+}
+
+.map-crosshair {
+  cursor:
+    url('/cursors/crosshair.svg') 10 10,
+    progress !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -535,6 +525,22 @@ input[type="search"]::-webkit-search-cancel-button {
   font-weight: 700;
 }
 
+.map-hint__actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.map-hint__actions:first-of-type {
+  margin-top: 8px;
+}
+
+.map-hint__actions > * {
+  pointer-events: auto;
+}
 .explore-error {
   top: 168px;
   z-index: 1190;

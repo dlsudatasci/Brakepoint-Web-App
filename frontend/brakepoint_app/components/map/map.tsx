@@ -48,7 +48,7 @@ type MapMode = "explore" | "map" | "heatmap" | "dashboard";
       — removePoint:  removes a polygon on click
       — assignCamera: assigns a camera to a polygon area
 */
-type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" | "assignCamera";
+type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint";
 
 // location and details of a single camera
 // obtained from api/cameras; class Camera in models.py
@@ -56,7 +56,7 @@ type Camera = {
   id: number | string;
   lat: number;
   lng: number;
-  polygon?: [number, number][];
+  polygon?: [number, number][] | [number, number][][];
   occurrences?: number;
 };
 
@@ -89,6 +89,74 @@ type CompletedPolygon = {
   cameraId: number | string | null;
   occurrences?: number;
 };
+
+function asPolygonCollection(
+  value: [number, number][] | [number, number][][] | undefined | null,
+): [number, number][][] {
+  if (!Array.isArray(value) || value.length === 0) return [];
+
+  const first = value[0] as any;
+  const isPair =
+    Array.isArray(first) &&
+    first.length === 2 &&
+    typeof first[0] === "number" &&
+    typeof first[1] === "number";
+
+  if (isPair) return [value as [number, number][]];
+
+  const isPolygon =
+    Array.isArray(first) &&
+    Array.isArray(first[0]) &&
+    first[0].length === 2 &&
+    typeof first[0][0] === "number" &&
+    typeof first[0][1] === "number";
+
+  return isPolygon ? (value as [number, number][][]) : [];
+}
+
+function distanceSq(a: [number, number], b: [number, number]): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+function nearestEdgeInsertIndex(points: [number, number][], point: [number, number]): number {
+  if (points.length < 2) return points.length;
+
+  let bestSegmentIndex = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const abLenSq = abx * abx + aby * aby;
+
+    if (abLenSq === 0) {
+      const d = distanceSq(point, a);
+      if (d < bestDist) {
+        bestDist = d;
+        bestSegmentIndex = i;
+      }
+      continue;
+    }
+
+    const apx = point[0] - a[0];
+    const apy = point[1] - a[1];
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+    const projection: [number, number] = [a[0] + t * abx, a[1] + t * aby];
+    const d = distanceSq(point, projection);
+
+    if (d < bestDist) {
+      bestDist = d;
+      bestSegmentIndex = i;
+    }
+  }
+
+  const insertAfter = bestSegmentIndex + 1;
+  return insertAfter > points.length ? points.length : insertAfter;
+}
 
 // a single TerraDraw feature
 // obtained from TerraDraw.getSnapshot()
@@ -439,7 +507,6 @@ class createPolygonEditButtons implements maplibregl.IControl {
 
 
 
-
 // definition of types for the props for Map
 type MapProps = {
   mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
@@ -562,6 +629,8 @@ export default function MapView({
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
   const [completedPolygons, setCompletedPolygons] = useState<CompletedPolygon[]>([]);
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
+  const [editingCompletedPolygonIndex, setEditingCompletedPolygonIndex] = useState<number | null>(null);
+  const [isSavingEditedPolygon, setIsSavingEditedPolygon] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
@@ -631,6 +700,7 @@ export default function MapView({
   const loadAbortRef = useRef<AbortController | null>(null);
   const toolModeRef = useLatestRef(toolMode);
   const selectedPolygonIndexRef = useLatestRef(selectedPolygonIndex);
+  const editingCompletedPolygonIndexRef = useLatestRef(editingCompletedPolygonIndex);
   const completedPolygonsRef = useLatestRef(completedPolygons);
   const polygonPointsRef = useLatestRef(polygonPoints);
   const primaryFocusAreaRef = useLatestRef(primaryFocusArea);
@@ -670,7 +740,6 @@ export default function MapView({
   const lat = 14.5995;
   const zoom = 10;
 
-  const isAssigningCamera = toolMode === "assignCamera";
   const isDrawingPrimary = explorePhase === "drawing-primary";
   const isDrawingSub = explorePhase === "drawing-sub";
   const isDrawingFocusArea = isDrawingPrimary || isDrawingSub;
@@ -1674,12 +1743,17 @@ export default function MapView({
     safeRemoveLayer("polygon-guide");
     safeRemoveSource("polygon-guide");
 
+    const selectedIdx = selectedPolygonIndexRef.current;
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    const isPointEditMode = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
+
     const polygonFeatures = completedPolygonsRef.current.map((p, idx) => ({
       type: "Feature" as const,
       properties: {
         polygonIndex: idx,
         cameraId: p.cameraId ?? null,
         occurrences: p.occurrences ?? 0,
+        isSelected: idx === selectedIdx,
       },
       geometry: {
         type: "Polygon" as const,
@@ -1698,6 +1772,7 @@ export default function MapView({
         type: "Feature",
         properties: {
           index: i,
+          polygonIndex: null,
           isCompleted: false,
           isFirst: i === 0,
           canClose: i === 0 && polygonPointsRef.current.length >= 3,
@@ -1705,6 +1780,25 @@ export default function MapView({
         geometry: { type: "Point", coordinates: pt },
       });
     });
+
+    if (isPointEditMode && selectedIdx != null && editingIdx == null && polygonPointsRef.current.length === 0) {
+      const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+      if (selectedPolygon) {
+        selectedPolygon.points.forEach((pt, i) => {
+          pointFeatures.push({
+            type: "Feature",
+            properties: {
+              index: i,
+              polygonIndex: selectedIdx,
+              isCompleted: true,
+              isFirst: false,
+              canClose: false,
+            },
+            geometry: { type: "Point", coordinates: pt },
+          });
+        });
+      }
+    }
     
     const existingPolygonSrc = map.getSource("polygons") as maplibregl.GeoJSONSource | undefined;
     const existingPointSrc = map.getSource("polygon-points") as maplibregl.GeoJSONSource | undefined;
@@ -1745,10 +1839,15 @@ export default function MapView({
       source: "polygons",
       paint: {
         "line-color": [
-          "interpolate", ["linear"], ["get", "occurrences"],
-          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          "case",
+          ["==", ["get", "isSelected"], true],
+          "#f97316",
+          [
+            "interpolate", ["linear"], ["get", "occurrences"],
+            0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          ],
         ] as any,
-        "line-width": 2,
+        "line-width": ["case", ["==", ["get", "isSelected"], true], 3.5, 2],
       },
     });
 
@@ -1763,7 +1862,7 @@ export default function MapView({
       source: "polygon-points",
       paint: {
         "circle-radius": ["case", ["==", ["get", "canClose"], true], 8, ["==", ["get", "isFirst"], true], 7, 5],
-        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#5c6bc0"],
+        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#f97316"],
         "circle-stroke-width": ["case", ["==", ["get", "canClose"], true], 3, 2],
         "circle-stroke-color": "#ffffff",
         "circle-opacity": 0.95,
@@ -1783,7 +1882,7 @@ export default function MapView({
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     }
-  }, [completedPolygonsRef, polygonPointsRef]);
+  }, [completedPolygonsRef, editingCompletedPolygonIndexRef, polygonPointsRef, selectedPolygonIndexRef, toolModeRef]);
 
   const clearGuideline = useCallback(() => {
     const map = mapRef.current;
@@ -1905,6 +2004,14 @@ export default function MapView({
   useEffect(() => {
     if (toolMode !== "addPoint") clearGuideline();
   }, [clearGuideline, toolMode]);
+
+  useEffect(() => {
+    if (toolMode === "addPoint" || toolMode === "removePoint") return;
+    if (editingCompletedPolygonIndexRef.current == null) return;
+
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+  }, [editingCompletedPolygonIndexRef, toolMode]);
 
   // AOI rectangle drawing — independent of explore mode
   useEffect(() => {
@@ -2151,7 +2258,7 @@ export default function MapView({
       };
       const enterHandler = (e: any) => {
         if (disableSubAreaInteractionRef.current) return;
-        map.getCanvas().style.cursor = "pointer";
+        //map.getCanvas().style.cursor = "pointer";
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaHoverRef.current?.(Number(id));
       };
@@ -2509,6 +2616,42 @@ export default function MapView({
     return res.ok;
   }, []);
 
+  const savePolygonCollectionToCamera = useCallback(async (cameraId: number | string, polygons: [number, number][][]) => {
+    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ polygon: polygons }),
+    });
+
+    return res.ok;
+  }, []);
+
+  const editCompletedPolygon = useCallback(async (polygonIndex: number, nextPoints: [number, number][]) => {
+    const currentPolygons = completedPolygonsRef.current;
+    const target = currentPolygons[polygonIndex];
+    if (!target) return false;
+
+    const nextPolygons = currentPolygons.map((polygon, idx) =>
+      idx === polygonIndex ? { ...polygon, points: nextPoints } : polygon,
+    );
+
+    setCompletedPolygons(nextPolygons);
+
+    if (target.cameraId == null) return true;
+
+    const groupedPolygons = nextPolygons
+      .filter((polygon) => String(polygon.cameraId) === String(target.cameraId))
+      .map((polygon) => polygon.points);
+
+    const ok = await savePolygonCollectionToCamera(target.cameraId, groupedPolygons);
+    if (!ok) {
+      setCompletedPolygons(currentPolygons);
+      return false;
+    }
+
+    return true;
+  }, [completedPolygonsRef, savePolygonCollectionToCamera]);
+
   const addCameraFromData = useCallback(
     (cameraLat: number, cameraLng: number, id: number | string) => {
       const map = mapRef.current;
@@ -2555,24 +2698,6 @@ export default function MapView({
 
         if (toolModeRef.current === "removeCamera") {
           removeCamera(id);
-          return;
-        }
-
-        if (toolModeRef.current === "assignCamera") {
-          const polyIdx = selectedPolygonIndexRef.current;
-          if (polyIdx == null) return;
-
-          const poly = completedPolygonsRef.current[polyIdx];
-          if (!poly) return;
-
-          //const ok = await savePolygonToCamera(id, poly.points);
-          //if (!ok) return;
-
-          setCompletedPolygons((prev) => prev.map((p, i) => (i === polyIdx ? { ...p, cameraId: id } : p)));
-
-          setToolMode("none");
-          setShowPolygonModal(false);
-          setSelectedPolygonIndex(null);
           return;
         }
 
@@ -2659,12 +2784,12 @@ export default function MapView({
     // add our new cameras to the list
     cameraItems.forEach((cam: Camera) => addCameraFromData(cam.lat, cam.lng, cam.id));
 
-    const polygons: CompletedPolygon[] = cameraItems.filter((cam: Camera) => cam.polygon && cam.polygon.length > 0).map(
-      (cam: Camera) => ({
-        points: cam.polygon as [number, number][],
+    const polygons: CompletedPolygon[] = cameraItems.flatMap((cam: Camera) =>
+      asPolygonCollection(cam.polygon).map((poly) => ({
+        points: poly,
         cameraId: cam.id,
-        occurrences: cam.occurrences ?? 0
-      })
+        occurrences: cam.occurrences ?? 0,
+      })),
     );
     setCompletedPolygons(polygons);
     renderPolygonLayers();
@@ -3064,14 +3189,6 @@ export default function MapView({
                 "icon-ignore-placement": true,
               },
             }, belowLayer);
-
-            map.on("mouseenter", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "pointer";
-            });
-
-            map.on("mouseleave", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "";
-            });
           });
         }
       } else {
@@ -3136,7 +3253,7 @@ export default function MapView({
     if (!map) return;
     if (!map.getLayer("polygon-fill")) return;
     
-    const isDrawing = toolModeRef.current === "addPoint";
+    const isPointEditing = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
 
     if (hideCameraPolygonsRef.current) {
       map.setPaintProperty("polygon-fill", "fill-opacity", 0);
@@ -3155,8 +3272,8 @@ export default function MapView({
       // Camera selected - keep the sub-area polygon visible
       map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
       map.setPaintProperty("polygon-line", "line-opacity", 1);
-      // Show points while actively drawing
-      if (isDrawing) {
+      // Show points while drawing or editing polygon vertices
+      if (isPointEditing) {
         map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
         map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
         map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
@@ -3175,6 +3292,20 @@ export default function MapView({
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
 
+      if ((activeTool === "addPoint" || activeTool === "removePoint") && mode === "map" && !hideCameraPolygonsRef.current) {
+        const polygonHit = map.queryRenderedFeatures(e.point, {
+          layers: ["polygon-fill"],
+        });
+
+        if (polygonHit.length > 0) {
+          const polygonIndex = Number(polygonHit[0].properties?.polygonIndex);
+          if (!Number.isNaN(polygonIndex) && polygonIndex !== selectedPolygonIndexRef.current) {
+            setSelectedPolygonIndex(polygonIndex);
+            return;
+          }
+        }
+      }
+
       if (activeTool === "none" && isEditMode && mode === "map" && !hideCameraPolygonsRef.current) {
         const features = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-fill"],
@@ -3184,6 +3315,18 @@ export default function MapView({
           const idx = Number(features[0].properties?.polygonIndex);
           if (!Number.isNaN(idx)) {
             setSelectedPolygonIndex(idx);
+
+            const selectedCameraId = selectedCameraIdRef.current;
+            const poly = completedPolygonsRef.current[idx];
+            if (selectedCameraId != null && poly && poly.cameraId == null) {
+              const ok = await savePolygonToCamera(selectedCameraId, poly.points);
+              if (ok) {
+                setCompletedPolygons((prev) =>
+                  prev.map((p, i) => (i === idx ? { ...p, cameraId: selectedCameraId } : p)),
+                );
+              }
+            }
+
             setShowPolygonModal(true);
           }
         }
@@ -3200,6 +3343,33 @@ export default function MapView({
 
       // creates a new polygon point 
       if (activeTool === "addPoint") {
+        if (editingCompletedPolygonIndexRef.current != null) {
+          const hit = map.queryRenderedFeatures(e.point, {
+            layers: ["polygon-points", "polygon-points-clickable"],
+          });
+
+          if (hit.length > 0) {
+            const props: any = hit[0].properties ?? {};
+            const idx = Number(props.index);
+            const canClose = props.canClose === true || props.canClose === "true";
+
+            if (!Number.isNaN(idx) && idx === 0 && canClose) {
+              await saveEditedPolygon();
+              return;
+            }
+          }
+
+          const clickedPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+          setPolygonPoints((prev) => {
+            if (prev.length < 2) return [...prev, clickedPoint];
+            const insertIndex = nearestEdgeInsertIndex(prev, clickedPoint);
+            const nextPoints = [...prev];
+            nextPoints.splice(insertIndex, 0, clickedPoint);
+            return nextPoints;
+          });
+          return;
+        }
+
         if (polygonPointsRef.current.length >= 3) {
           const hit = map.queryRenderedFeatures(e.point, {
             layers: ["polygon-points", "polygon-points-clickable"],
@@ -3226,9 +3396,7 @@ export default function MapView({
 
                 // update completed polygon storage to instantly display this polygon
                 // though it /will/ reload again anyway when leaving and returning :>
-                // setCompletedPolygons((prev) => [...prev.filter((x) => x.cameraId !== cameraId), newPoly])
                 let newCompletedPolygons = completedPolygonsRef.current;
-                newCompletedPolygons = newCompletedPolygons.filter((x) => x.cameraId !== cameraId)
                 newCompletedPolygons = [...newCompletedPolygons, newPoly];
                 setCompletedPolygons(newCompletedPolygons);
 
@@ -3268,7 +3436,9 @@ export default function MapView({
           const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
           if (!isCompleted && !Number.isNaN(idx)) {
-            setPolygonPoints((prev) => prev.filter((_, i) => i !== idx));
+            const minimum = editingCompletedPolygonIndexRef.current != null ? 3 : 1;
+            setPolygonPoints((prev) => (prev.length <= minimum ? prev : prev.filter((_, i) => i !== idx)));
+            return;
           }
         }
       }
@@ -3286,7 +3456,18 @@ export default function MapView({
       map.off("click", handleMapClick);
       map.off("mousemove", handleMouseMove);
     };
-  }, [onCameraAdd, clearGuideline, isEditMode, mode, renderGuideline, toolModeRef, polygonPointsRef]);
+  }, [
+    onCameraAdd,
+    clearGuideline,
+    completedPolygonsRef,
+    editingCompletedPolygonIndexRef,
+    isEditMode,
+    mode,
+    renderGuideline,
+    selectedPolygonIndexRef,
+    toolModeRef,
+    polygonPointsRef,
+  ]);
 
   useEffect(() => {
     const selected = selectedCameraId != null ? String(selectedCameraId) : null;
@@ -3311,6 +3492,71 @@ export default function MapView({
     }
   }, [visibleCameraIds]);
 
+
+
+  // commented out — would've turned the cursor to a pointer iff hovering oevr area and selectionMode == all, or hovering over subarea and selectionMode == any
+  // ended up with a too buggy implementation and was removed for now
+  /*
+  useEffect(() => {
+    console.log("init!")
+    const map = mapRef.current;
+    if (!map) return;
+
+    /*
+    if (currentSelectionMode === "all") {
+      events.onAoiEnter?.unsubscribe();
+      events.onAoiLeave?.unsubscribe();
+      map.off("mouseenter", onAoiEnter);
+      map.off("mouseleave", onAoiLeave);
+      events.onAoiEnter = map.on("mouseenter", "aoi-fill", onAoiEnter)
+      events.onAoiLeave = map.on("mouseleave", "aoi-fill", onAoiLeave)
+    } else if (currentSelectionMode === "area") {
+      events.onSubEnter?.unsubscribe();
+      events.onSubLeave?.unsubscribe();
+      map.off("mouseenter", onSubEnter);
+      map.off("mouseleave", onSubLeave);
+      events.onSubEnter = map.on("mouseenter", "sub-area-fill", onSubEnter)
+      events.onSubLeave = map.on("mouseleave", "sub-area-fill", onSubLeave)
+    }
+
+    mapRef.current = map;
+
+    // events for the custom cursor for entering AoIs and subareas
+    map.on('mouseenter', "aoi-fill", (e: any) => {
+      console.log("enter-aoi: ", selectionMode, true, cursorIsOverSubarea)
+      setCursorIsOverArea(true);
+      handleAoiHoverCursorChange(canvas, true, cursorIsOverSubarea);
+    })
+
+    map.on('mouseenter', "sub-area-fill", (e: any) => {
+      console.log("enter-sub: ", selectionMode, true, true)
+      setCursorIsOverSubarea(true);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, true);
+    })
+
+    map.on('mouseleave', "aoi-fill", (e: any) => {
+      console.log("leave-aoi: ", selectionMode, false, cursorIsOverSubarea)
+      setCursorIsOverArea(false);
+      handleAoiHoverCursorChange(canvas, false, cursorIsOverSubarea);
+    })
+
+    map.on('mouseleave', "sub-area-fill", (e: any) => {
+      console.log("leave-sub: ", selectionMode, true, false)
+      setCursorIsOverSubarea(false);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, false);
+    })
+
+    // events for the custom cursor for entering and leaving a Mapillary icon
+    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, cursorIsOverSubarea);
+    })
+  }, [])
+  */
+
+  // handle the main cursor logic for tool mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3319,31 +3565,13 @@ export default function MapView({
     canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', "aoi-fill", (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', "aoi-fill", (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    if (!isEditMode) return;
+    if (!isEditMode && !isDrawingAOI) return;
 
     if (toolMode === "addCamera") {
       canvas.classList.add("map-cam-crosshair");
     }
 
-    if (toolMode === "addPoint") {
+    if (isDrawingAOI || toolMode === "addPoint") {
       canvas.classList.add("map-crosshair");
     }
 
@@ -3351,12 +3579,8 @@ export default function MapView({
       canvas.classList.add("map-remove");
     }
 
-    if (toolMode === "assignCamera") {
-      // canvas.style.cursor = "pointer";
-      canvas.classList.add("map-pointer")
-    }
+  }, [isEditMode, toolMode, isDrawingAOI, currentSelectionMode]);
 
-  }, [isEditMode, toolMode]);
 
   useEffect(() => {
     if (mode !== "explore") return;
@@ -3641,12 +3865,6 @@ export default function MapView({
     }
   }, [dashboardMarkers, mode, onDashboardMarkerClick]);
 
-  const beginAssignCamera = useCallback(() => {
-    if (selectedPolygonIndexRef.current == null) return;
-    setShowPolygonModal(false);
-    setToolMode("assignCamera");
-  }, [selectedPolygonIndexRef]);
-
   const deletePolygon = useCallback(async () => {
     const idx = selectedPolygonIndexRef.current;
     if (idx == null) return;
@@ -3667,14 +3885,65 @@ export default function MapView({
     setCompletedPolygons((prev) => prev.filter((_, i) => i !== idx));
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, [completedPolygonsRef, selectedPolygonIndexRef]);
 
   const cancelPolygonModal = useCallback(() => {
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, []);
+
+  const startEditingPolygon = useCallback(() => {
+    const selectedIdx = selectedPolygonIndexRef.current;
+    if (selectedIdx == null) return;
+
+    const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+    if (!selectedPolygon || selectedPolygon.points.length < 3) return;
+
+    setShowPolygonModal(false);
+    setEditingCompletedPolygonIndex(selectedIdx);
+    setPolygonPoints([...selectedPolygon.points]);
+    setToolMode("addPoint");
+  }, [completedPolygonsRef, selectedPolygonIndexRef]);
+
+  const cancelEditingPolygon = useCallback(() => {
+    setIsSavingEditedPolygon(false);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+    clearGuideline();
+    setToolMode("none");
+  }, [clearGuideline]);
+
+  const saveEditedPolygon = useCallback(async () => {
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    if (editingIdx == null) return;
+
+    const nextPoints = polygonPointsRef.current;
+    if (nextPoints.length < 3) return;
+
+    if (isSavingEditedPolygon) return;
+
+    setIsSavingEditedPolygon(true);
+
+    try {
+      const ok = await editCompletedPolygon(editingIdx, nextPoints);
+      if (!ok) return;
+
+      setEditingCompletedPolygonIndex(null);
+      setPolygonPoints([]);
+      clearGuideline();
+      setToolMode("none");
+      setShowSuccessNotification(true);
+      window.setTimeout(() => setShowSuccessNotification(false), 1500);
+    } finally {
+      setIsSavingEditedPolygon(false);
+    }
+  }, [clearGuideline, editCompletedPolygon, editingCompletedPolygonIndexRef, isSavingEditedPolygon, polygonPointsRef]);
 
   return (
     <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
@@ -3798,14 +4067,44 @@ export default function MapView({
 
       {isEditMode && mode === "map" && (
         <>
-          {toolMode === "addPoint" && (
+          {(toolMode === "addPoint" || toolMode === "removePoint") && (
             <div className="map-hint">
-              {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
-              {polygonPoints.length === 1 && "Click to add more points"}
-              {polygonPoints.length === 2 && "Click to add at least one more point"}
-              {polygonPoints.length >= 3 && (
+              {editingCompletedPolygonIndex != null ? (
                 <>
-                  Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                  <div>Edit mode: switch to delete point mode to remove vertices, or click the green starting point / Save Polygon to close it.</div>
+                  <div className="map-hint__actions">
+                    <button
+                      onClick={() => setToolMode("addPoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--addPoint ${toolMode === "addPoint" ? "is-active" : ""}`}
+                    >
+                      Add Point
+                    </button>
+                    <button
+                      onClick={() => setToolMode("removePoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--removePoint ${toolMode === "removePoint" ? "is-active" : ""}`}
+                    >
+                      Delete Point
+                    </button>
+                  </div>
+                  <div className="map-hint__actions">
+                    <button onClick={saveEditedPolygon} className="polygon-modal__btn polygon-modal__btn--primary" disabled={isSavingEditedPolygon || polygonPoints.length < 3}>
+                      {isSavingEditedPolygon ? "Saving..." : "Save Polygon"}
+                    </button>
+                    <button onClick={cancelEditingPolygon} className="polygon-modal__btn polygon-modal__btn--ghost">
+                      Cancel Edit
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
+                  {polygonPoints.length === 1 && "Click to add more points"}
+                  {polygonPoints.length === 2 && "Click to add at least one more point"}
+                  {polygonPoints.length >= 3 && (
+                    <>
+                      Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -3819,14 +4118,12 @@ export default function MapView({
         </div>
       )}
 
-      {isAssigningCamera && <div className="assign-camera-banner">Click on the camera you want this polygon assigned to</div>}
-
       {showPolygonModal && (
         <div className="polygon-modal">
           <h3 className="polygon-modal__title">Polygon Options</h3>
           <div className="polygon-modal__actions">
-            <button onClick={beginAssignCamera} className="polygon-modal__btn polygon-modal__btn--primary">
-              Assign to Camera
+            <button onClick={startEditingPolygon} className="polygon-modal__btn polygon-modal__btn--primary">
+              Edit Polygon
             </button>
 
             <button onClick={deletePolygon} className="polygon-modal__btn polygon-modal__btn--danger">

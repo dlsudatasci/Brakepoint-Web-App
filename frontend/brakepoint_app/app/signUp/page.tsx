@@ -61,6 +61,12 @@ export default function SignUpPage() {
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!email.trim()) {
+      setError("Email is required.");
+      setSuccess("");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     setSuccess("");
@@ -71,7 +77,7 @@ export default function SignUpPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email: email.trim(), password }),
       });
 
       if (response.ok) {
@@ -82,25 +88,37 @@ export default function SignUpPage() {
           router.push('/logIn');
         }, 2000);
       } else {
+        // try to parse the error
         const contentType = response.headers.get("content-type") || "";
-        let parsedError: unknown = null;
 
-        if (contentType.includes("application/json")) {
-          parsedError = await response.json();
+        if (response.status > 499) {
+          // handle 5XX errors differently. not the user's fault
+          setError("Something went wrong. Please try again later.");
+          console.error("Signup error:", response);
+          return;
+
         } else {
-          parsedError = await response.text();
+          
+          // for user errors
+          let parsedError: unknown = null;
+
+          if (contentType.includes("application/json")) {
+            parsedError = await response.json();
+          } else {
+            parsedError = await response.text();
+          }
+
+          const normalizedError =
+            typeof parsedError === "object" && parsedError !== null
+              ? normalizeErrorMessage(
+                  (parsedError as Record<string, unknown>).error ??
+                  (parsedError as Record<string, unknown>).errors ??
+                  parsedError,
+                )
+              : normalizeErrorMessage(parsedError);
+
+          setError(normalizedError);
         }
-
-        const normalizedError =
-          typeof parsedError === "object" && parsedError !== null
-            ? normalizeErrorMessage(
-                (parsedError as Record<string, unknown>).error ??
-                (parsedError as Record<string, unknown>).errors ??
-                parsedError,
-              )
-            : normalizeErrorMessage(parsedError);
-
-        setError(normalizedError);
       }
     } catch (err) {
       setError("Something went wrong. Please try again later.");
