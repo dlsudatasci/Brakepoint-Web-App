@@ -467,7 +467,20 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     };
 
     // handle scaling calibration overlay to the thumbnail
+    const thumbnailChanging = useRef<boolean>(false);
     const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
+    const [thumbnailWidth, setThumbnailWidth] = useState<number>(null);
+    const [thumbnailHeight, setThumbnailHeight] = useState<number>(null);
+    const THUMBNAIL_WAIT_TIME_MS = 33
+
+    // updates the width and height for the overlay after a few ms
+    // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
+    useEffect(() => {
+        setTimeout(() => {
+            setThumbnailHeight(thumbnailObject?.naturalWidth);
+            setThumbnailHeight(thumbnailObject?.naturalHeight);
+        }, THUMBNAIL_WAIT_TIME_MS)
+    }, [thumbnailObject]) 
 
     return (
         <div className="menuContainer">
@@ -481,15 +494,14 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                         <img
                             id="image-thumbnail" src={thumbnail}
                             ref={(e) => {
-                                // updates the width and height for the overlay
-                                setThumbnailObject(e)
+                                setThumbnailObject(e);
                             }}
                             style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
                         />
 
                         {calibrationOverlay && (
                             <svg
-                                viewBox={`0 0 ${thumbnailObject?.naturalWidth ?? 640} ${thumbnailObject?.naturalHeight ?? 320}`}
+                                viewBox={`0 0 ${thumbnailWidth ?? 640} ${thumbnailHeight ?? 320}`}
                                 preserveAspectRatio="none"
                                 style={{
                                     position: "absolute",
