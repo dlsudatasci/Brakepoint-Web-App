@@ -10,8 +10,38 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const router = useRouter();
+
+  const normalizeErrorMessage = (input: unknown): string => {
+    if (!input) return "Signup failed. Please try again.";
+    if (typeof input === "string") return input;
+    if (Array.isArray(input)) {
+      const parts = input
+        .map((item) => normalizeErrorMessage(item))
+        .filter(Boolean);
+      return parts.length ? parts.join(" ") : "Signup failed. Please try again.";
+    }
+    if (typeof input === "object") {
+      const entries = Object.entries(input as Record<string, unknown>);
+      const parts = entries.flatMap(([field, value]) => {
+        if (Array.isArray(value)) {
+          return value.map((v) => `${field}: ${String(v)}`);
+        }
+        if (typeof value === "string") {
+          return [`${field}: ${value}`];
+        }
+        if (value && typeof value === "object") {
+          const nested = normalizeErrorMessage(value);
+          return nested ? [`${field}: ${nested}`] : [];
+        }
+        return [];
+      });
+      return parts.length ? parts.join(" ") : "Signup failed. Please try again.";
+    }
+    return "Signup failed. Please try again.";
+  };
 
   useEffect(() => {
       const token = localStorage.getItem('access_token');
@@ -29,6 +59,15 @@ export default function SignUpPage() {
 
    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!email.trim()) {
+      setError("Email is required.");
+      setSuccess("");
+      return;
+    }
+
+    setIsSubmitting(true);
     setError("");
     setSuccess("");
 
@@ -38,7 +77,7 @@ export default function SignUpPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email: email.trim(), password }),
       });
 
       if (response.ok) {
@@ -49,12 +88,43 @@ export default function SignUpPage() {
           router.push('/logIn');
         }, 2000);
       } else {
-        const errData = await response.json();
-        setError(errData.error || "Signup failed. Please try again.");
+        // try to parse the error
+        const contentType = response.headers.get("content-type") || "";
+
+        if (response.status > 499) {
+          // handle 5XX errors differently. not the user's fault
+          setError("Something went wrong. Please try again later.");
+          console.error("Signup error:", response);
+          return;
+
+        } else {
+          
+          // for user errors
+          let parsedError: unknown = null;
+
+          if (contentType.includes("application/json")) {
+            parsedError = await response.json();
+          } else {
+            parsedError = await response.text();
+          }
+
+          const normalizedError =
+            typeof parsedError === "object" && parsedError !== null
+              ? normalizeErrorMessage(
+                  (parsedError as Record<string, unknown>).error ??
+                  (parsedError as Record<string, unknown>).errors ??
+                  parsedError,
+                )
+              : normalizeErrorMessage(parsedError);
+
+          setError(normalizedError);
+        }
       }
     } catch (err) {
       setError("Something went wrong. Please try again later.");
       console.error("Signup error:", err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -129,9 +199,10 @@ export default function SignUpPage() {
             type="submit"
             fullWidth
             variant="contained"
+            disabled={isSubmitting}
             sx={{ mt: 2, mb: 1, backgroundColor: "#161b4cff" }}
           >
-            Sign Up
+            {isSubmitting ? "Creating account..." : "Sign Up"}
           </Button>
         </Box>
 

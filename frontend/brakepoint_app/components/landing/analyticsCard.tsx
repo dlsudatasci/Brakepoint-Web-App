@@ -29,10 +29,15 @@ export type ChartData = {
 const BAR_COLORS = ["#e63946", "#f4b961", "#4f8ef7", "#a855f7", "#06b6d4", "#10b981"];
 
 export function StackedBar({ data }: { data: ChartData[] }) {
-  const cleaned = useMemo(
-    () => data.filter((d) => Number.isFinite(d.value) && d.value > 0),
-    [data],
-  );
+  const cleaned = useMemo(() => {
+    // normalize
+    const arr: ChartData[] = Array.isArray(data)
+      ? data
+      : Object.entries(data ?? {}).map(([label, value]) => ({ label, value: value as number }));
+
+    return arr.filter((d) => Number.isFinite(d.value) && d.value > 0);
+  }, [data]);
+
   const total = useMemo(() => cleaned.reduce((s, d) => s + d.value, 0), [cleaned]);
 
   if (!cleaned.length || total === 0) {
@@ -81,7 +86,8 @@ export function StackedBar({ data }: { data: ChartData[] }) {
             <Typography
               sx={{
                 fontSize: "0.7rem",
-                color: "#555",
+                fontWeight: 450, 
+                color: "#000000",
                 flex: 1,
                 minWidth: 0,
                 overflow: "hidden",
@@ -302,14 +308,14 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
       newData.push({label: label, value: data[label]} as ChartData)
     }
     data = newData;
-  } 
+  }
   
   return (
     <Box className={`ac-container ac-container-${variant}`}>
       {/* header and icon */}
       {( headerText &&
           <Box className="ac-header">
-            <Typography variant={compact ? "body2" : "h6"} fontWeight={600}>
+            <Typography variant={compact ? "body2" : "h6"} sx={{ fontWeight: 650 }}>
               {headerText}
             </Typography>
             <Box className="ac-icon" sx={{ display: "grid", placeItems: "center" }}>
@@ -319,10 +325,18 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
       )}
 
       <Box className="ac-content">
+        
+        {/* for bar display: displays the stacked bar chart */}
+        {!isVehicleBreakdown(data) && variant === "bar" && (
+          <Box className="ac-bar" sx={{ backgroundColor: "#ffffff", borderRadius: "12px", p: 1.5, mx: -1.5, mb: -1.5 }}>
+            <StackedBar data={data ?? []} />
+          </Box>
+        )}
+        
         {/* for text display: display the valueText / statistic count */}
         {variant === "text" && (
           <Box className="ac-text">
-            <Typography variant={compact ? "h5" : "h4"} fontWeight={700}>
+            <Typography variant={compact ? "h5" : "h4"} fontWeight={650}>
               {valueText ?? "—"}
             </Typography>
           </Box>
@@ -334,12 +348,6 @@ export default function AnalyticsCard({ headerText, icon, variant = "text", valu
           </Box>
         )} */}
 
-        {/* for bar display: displays the stacked bar chart */}
-        {!isVehicleBreakdown(data) && variant === "bar" && (
-          <Box className="ac-bar" sx={{ mt: 1 }}>
-            <StackedBar data={data ?? []} />
-          </Box>
-        )}
       </Box>
     </Box>
   );

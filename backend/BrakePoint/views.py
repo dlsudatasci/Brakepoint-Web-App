@@ -8,6 +8,7 @@ from django.contrib.auth import authenticate
 from django.db.models import Sum
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -735,6 +736,7 @@ def _upload_and_process_video(request):
         calibration_points=calibration_points or [],
         reference_points=reference_points or [],
         reference_distance_meters=reference_distance_meters,
+        start_time_source='failed',
         processing_status='processing',
         processing_started_at=timezone.now()
     )
@@ -747,21 +749,36 @@ def _upload_and_process_video(request):
         temp_path = tmp_file.name
     
     try:
+        from video_inspection import inspect_video
 
         import cv2
         import base64
+        inspection_result = inspect_video(temp_path)
+
+        if inspection_result.get('start_time'):
+            parsed_start_time = parse_datetime(inspection_result['start_time'])
+            if parsed_start_time is not None:
+                if timezone.is_naive(parsed_start_time):
+                    parsed_start_time = timezone.make_aware(parsed_start_time, timezone.get_current_timezone())
+                video_record.start_time = parsed_start_time
+
+        video_record.start_time_source = inspection_result.get('source') or 'failed'
+
+        if inspection_result.get('duration_seconds') is not None:
+            video_record.duration_seconds = inspection_result['duration_seconds']
+
         cap = cv2.VideoCapture(temp_path)
         if cap.isOpened():
             video_record.fps = cap.get(cv2.CAP_PROP_FPS)
-            video_record.duration_seconds = cap.get(cv2.CAP_PROP_FRAME_COUNT) / video_record.fps if video_record.fps > 0 else 0
+            if video_record.duration_seconds is None:
+                video_record.duration_seconds = cap.get(cv2.CAP_PROP_FRAME_COUNT) / video_record.fps if video_record.fps > 0 else 0
             frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             video_record.resolution = f"{frame_width}x{frame_height}"
             
-            # Generate thumbnail (frame 1)
+            # Generate thumbnail from the first frame.
             try:
-                seek_time = min(1.0, video_record.duration_seconds * 0.1) if video_record.duration_seconds > 0 else 1.0
-                cap.set(cv2.CAP_PROP_POS_MSEC, seek_time * 1000)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = cap.read()
                 if ret and frame is not None:
                     max_width = 640
@@ -928,11 +945,11 @@ def camera_videos_api(request, pk: int):
     
     return Response({"success": True, "videos": ser.data})
 
-@api_view(['DELETE'])
+@api_view(['DELETE', 'PATCH'])
 @permission_classes([IsAuthenticated]) 
 def camera_delete_api(request, pk: int):
     user = request.user 
-    print(f"DELETE Camera API called - Camera ID: {pk}, User: {user.username}, Authenticated: {request.user.is_authenticated}")
+    print(f"Camera detail API called - Method: {request.method}, Camera ID: {pk}, User: {user.username}, Authenticated: {request.user.is_authenticated}")
     
     try:
         camera = Camera.objects.get(pk=pk, user=user)
@@ -941,6 +958,21 @@ def camera_delete_api(request, pk: int):
         print(f"Camera not found with ID {pk} for user {user.username}")
         return Response({"success": False, "error": "Camera not found"}, status=404)
     
+    if request.method == 'PATCH':
+        name = request.data.get('name')
+        if name is not None:
+            name = str(name).strip()
+            if not name:
+                return Response({"success": False, "error": "Name cannot be empty"}, status=400)
+            camera.name = name
+
+        location = request.data.get('location')
+        if location is not None:
+            camera.location = str(location).strip()
+
+        camera.save()
+        return Response({"success": True, "camera": CameraSerializer(camera).data})
+
     camera.delete()
     return Response({"success": True})
 
@@ -956,17 +988,49 @@ def camera_polygon_api(request, pk: int):
     
     polygon_data = request.data.get('polygon')
 
-    if polygon_data is None:
+    def _is_coord_pair(point):
+        return (
+            isinstance(point, (list, tuple))
+            and len(point) == 2
+            and isinstance(point[0], (int, float))
+            and isinstance(point[1], (int, float))
+        )
+
+    def _is_single_polygon(value):
+        return isinstance(value, list) and len(value) > 0 and all(_is_coord_pair(point) for point in value)
+
+    def _is_polygon_collection(value):
+        return isinstance(value, list) and len(value) > 0 and all(_is_single_polygon(poly) for poly in value)
+
+    if polygon_data is None or polygon_data == []:
         camera.polygon = []
         camera.save()
-        return Response({"success": True, "message": "Polygon cleared"})
-    
+        return Response({"success": True, "message": "Polygon cleared", "polygon": camera.polygon})
+
     if not isinstance(polygon_data, list):
         return Response({"success": False, "error": "Polygon must be a list"}, status=400)
-    
-    camera.polygon = polygon_data
+
+    existing = camera.polygon or []
+    if _is_single_polygon(existing):
+        existing_polygons = [existing]
+    elif _is_polygon_collection(existing):
+        existing_polygons = list(existing)
+    else:
+        existing_polygons = []
+
+    if _is_single_polygon(polygon_data):
+        existing_polygons.append(polygon_data)
+        camera.polygon = existing_polygons
+    elif _is_polygon_collection(polygon_data):
+        camera.polygon = polygon_data
+    else:
+        return Response(
+            {"success": False, "error": "Polygon must be a list of [lng, lat] pairs or a list of polygons"},
+            status=400,
+        )
+
     camera.save()
-    
+
     return Response({"success": True, "polygon": camera.polygon})
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -1081,7 +1145,7 @@ def detect_road_elements(request, pk: int):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def detect_road_features_latest(request, pk: int):
-    """Run Mask R-CNN on the thumbnail of the camera's most recently uploaded video."""
+    """Run Mask R-CNN on the first-frame snapshot of the camera's most recently uploaded video."""
     try:
         camera = Camera.objects.get(pk=pk, user=request.user)
     except Camera.DoesNotExist:
@@ -1092,7 +1156,7 @@ def detect_road_features_latest(request, pk: int):
 
     latest_video = camera.latest_video
     if not latest_video or not latest_video.thumbnail:
-        return Response({"success": False, "error": "No video with a thumbnail found for this camera"}, status=404)
+        return Response({"success": False, "error": "No latest video snapshot found for this camera"}, status=404)
 
     import base64
     thumbnail_b64 = latest_video.thumbnail
@@ -1107,13 +1171,32 @@ def detect_road_features_latest(request, pk: int):
 
     try:
         detected = detect_signs_on_image_bytes(image_bytes)
-        return Response({"success": True, "road_features": detected, "video_id": latest_video.id, "video_name": latest_video.filename})
+        return Response({
+            "success": True,
+            "road_features": detected,
+            "video_id": latest_video.id,
+            "video_name": latest_video.filename,
+            "source": "latest_video_first_frame"
+        })
     except Exception as e:
         traceback.print_exc()
         return Response({"success": False, "error": str(e)}, status=500)
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+# gets a list of all videos in cameras that the user has
+def video_list_api(request):
+    user = request.user
 
-@api_view(['PATCH', 'DELETE'])
+    try:
+        videos = Video.objects.filter(camera__user = user)
+        ser = VideoSerializer(videos, many=True)
+        return Response({ "success": True, "videos": ser.data })
+    except:
+        return Response({ "success": False, "error": "Unable to fetch videos" })
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def video_detail_api(request, pk: int):
     """Update or delete a specific video"""
@@ -1123,6 +1206,10 @@ def video_detail_api(request, pk: int):
         video = Video.objects.get(pk=pk, camera__user=user)
     except Video.DoesNotExist:
         return Response({"success": False, "error": "Video not found"}, status=404)
+    
+    if request.method == 'GET':
+        ser = VideoSerializer(video, many=False)
+        return Response({ "success": True, "videos": ser.data })
     
     if request.method == 'PATCH':
         updated = False
@@ -1462,3 +1549,138 @@ def dashboard_summary(request):
         "vehicle_breakdown": vehicle_breakdown,
         "sub_areas": sub_areas,
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landing_objects(request):
+    try:
+        qs = SavedLocation.objects.filter(user=request.user)
+        
+        res_areas = []
+        res_subareas = []
+        for loc in qs:
+            if (loc.location_type == "aoi"):
+                res_areas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+            elif (loc.location_type == "sub_area"):
+                res_subareas.append({
+                    "id": loc.id,
+                    "name": loc.name,
+                    "lat": loc.lat,
+                    "lng": loc.lng,
+                    "zoom": loc.zoom,
+                    "bearing": loc.bearing,
+                    "pitch": loc.pitch,
+                    "geometry": loc.geometry,
+                    "bounds": loc.bounds,
+                    "location_type": loc.location_type,
+                    "sub_area_type": loc.sub_area_type,
+                    "parent_id": loc.parent_id,
+                    "camera_count": loc.camera_count,
+                    "vehicles": loc.total_vehicles,
+                    "occurrences": loc.total_occurrences,
+                    "speeding": loc.total_speeding,
+                    "swerving": loc.total_swerving,
+                    "abrupt_stopping": loc.total_abrupt_stopping,
+                    "behaviors": loc.behavior_summary,
+                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                })
+
+            res_cameras = Camera.objects.filter(user=request.user)
+        res_videos = Video.objects.filter(camera__user=request.user)
+        ser_cameras = CameraSerializer(res_cameras, many=True)
+        ser_videos = VideoSerializer(res_videos, many=True)
+
+        return Response({
+            "success": True,
+            "aois": res_areas,
+            "subareas": res_subareas,
+            "cameras": ser_cameras.data,
+            "videos": ser_videos.data,
+        })
+
+        pass
+
+    except Exception as e:
+        print(e)
+        return Response({"success": False, "error": e})
+        pass
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def inspect_video_metadata(request):
+    """
+    Inspect video file and extract metadata (creation_time, duration).
+    
+    Accepts video_id (GET/POST) or file path and returns:
+    {
+        "start_time": "ISO_8601_STRING_OR_NULL",
+        "duration_seconds": float,
+        "source": "metadata" | "filename" | "failed"
+    }
+    """
+    try:
+        from video_inspection import inspect_video
+        
+        video_id = request.query_params.get('video_id') or request.data.get('video_id')
+        file_path = request.query_params.get('file_path') or request.data.get('file_path')
+        
+        # If video_id provided, get file path from database
+        if video_id:
+            try:
+                video = Video.objects.get(pk=video_id, camera__user=request.user)
+                # If the file is not persisted, return the metadata captured during upload.
+                if video.start_time or video.duration_seconds is not None:
+                    return Response({
+                        "start_time": video.start_time.isoformat() if video.start_time else None,
+                        "duration_seconds": video.duration_seconds,
+                        "source": video.start_time_source or "failed",
+                    })
+
+                if hasattr(video, 'file') and video.file:
+                    file_path = video.file.path
+            except Video.DoesNotExist:
+                return Response(
+                    {"error": "Video not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        if not file_path:
+            return Response(
+                {"error": "Either video_id or file_path is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform inspection
+        inspection_result = inspect_video(file_path)
+        
+        # Return raw JSON response (no wrapping)
+        return Response(inspection_result)
+        
+    except Exception as e:
+        return Response({
+            "start_time": None,
+            "duration_seconds": None,
+            "source": "failed"
+        })

@@ -89,6 +89,7 @@ def test_delete_other_users_camera_returns_404(auth_client, second_user, db):
 # Polygon 
 
 POLYGON = [[120.985, 14.595], [120.990, 14.595], [120.990, 14.600], [120.985, 14.600]]
+POLYGON_2 = [[120.980, 14.590], [120.984, 14.590], [120.984, 14.594], [120.980, 14.594]]
 
 
 @pytest.mark.django_db
@@ -96,12 +97,23 @@ def test_set_camera_polygon(auth_client, camera):
     resp = auth_client.patch(polygon_url(camera.id), {"polygon": POLYGON}, format="json")
     assert resp.status_code == 200
     camera.refresh_from_db()
-    assert camera.polygon == POLYGON
+    assert camera.polygon == [POLYGON]
+
+
+@pytest.mark.django_db
+def test_append_camera_polygon(auth_client, camera):
+    resp1 = auth_client.patch(polygon_url(camera.id), {"polygon": POLYGON}, format="json")
+    assert resp1.status_code == 200
+    resp2 = auth_client.patch(polygon_url(camera.id), {"polygon": POLYGON_2}, format="json")
+    assert resp2.status_code == 200
+
+    camera.refresh_from_db()
+    assert camera.polygon == [POLYGON, POLYGON_2]
 
 
 @pytest.mark.django_db
 def test_clear_camera_polygon(auth_client, camera):
-    camera.polygon = POLYGON
+    camera.polygon = [POLYGON]
     camera.save()
     resp = auth_client.patch(polygon_url(camera.id), {"polygon": []}, format="json")
     assert resp.status_code == 200

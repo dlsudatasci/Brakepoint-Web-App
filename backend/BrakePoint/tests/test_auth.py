@@ -69,6 +69,23 @@ class TestSignup:
                            content_type="application/json")
         assert resp.status_code == 400
 
+    def test_missing_email_returns_400(self, client, db):
+        resp = client.post(self.URL, {"username": "newuser3", "password": "pass1234"},
+                           content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_empty_email_returns_400(self, client, db):
+        resp = client.post(self.URL,
+                           {"username": "newuser4", "email": "", "password": "pass1234"},
+                           content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_whitespace_email_returns_400(self, client, db):
+        resp = client.post(self.URL,
+                           {"username": "newuser5", "email": "   ", "password": "pass1234"},
+                           content_type="application/json")
+        assert resp.status_code == 400
+
 
 @pytest.mark.django_db
 class TestCheckAuth:

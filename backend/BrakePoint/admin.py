@@ -18,7 +18,7 @@ class VideoAdmin(admin.ModelAdmin):
     list_display = ['id', 'filename', 'camera', 'uploaded_at', 'vehicles', 'signs', 'processing_status']
     list_filter = ['processing_status', 'uploaded_at', 'camera', 'jeepney_hotspot']
     search_fields = ['filename', 'camera__name', 'camera__user__username']
-    readonly_fields = ['uploaded_at']  # Only keep auto-generated timestamp as readonly
+    readonly_fields = ['uploaded_at']  
     fieldsets = (
         ('Basic Information', {
             'fields': ('camera', 'filename', 'uploaded_at')
