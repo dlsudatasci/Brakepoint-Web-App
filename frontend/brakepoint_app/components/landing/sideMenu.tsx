@@ -598,7 +598,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 function CameraDetailMenu({
     camera, videos, videosLoading,
     onFeedTabActive, onRenameCamera, onAutoDetectRoadFeatures, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
-    onClickUploadVideo, onDeleteVideo, onUploadStart, onProcessingStart, onProcessingComplete
+    onClickUploadVideo, onDeleteVideo
 } : {
     camera: CameraSummary,                                                              // summary object for this camera
     videos: VideoSummary[],                                                             // array of all videos that this camera has
