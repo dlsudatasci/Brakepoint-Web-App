@@ -1,7 +1,0 @@
-/* Map fills the full viewport behind the drawer */
-.monitoring-map-wrap .map-wrap,
-.monitoring-map-wrap .map {
-  height: 100% !important;
-  width: 100% !important;
-  border-radius: 0;
-}

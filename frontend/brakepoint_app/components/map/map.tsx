@@ -5,7 +5,6 @@ import ReactDOM from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
-import SideTab from "@components/map/sideTab";
 
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
@@ -3948,122 +3947,6 @@ export default function MapView({
   return (
     <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
       <div ref={mapContainer} className="map" />
-      {mode === "explore" && (
-        <SideTab side="bottom" open={open} invisible={false} onToggle={() => setOpen(!open)} style={{ "display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center" }}>
-          <div className="explore-toolbar-header">
-            <span className="explore-toolbar__step">
-              {explorePhase === "drawing-sub"
-                ? activeSubAreaIndex != null
-                  ? "Step 3 · Edit selected sub-area"
-                  : "Step 3 · Draw a sub-area"
-                : explorePhase === "drawing-primary"
-                  ? primaryFocusArea
-                    ? "Step 2 · Adjust AOI"
-                    : "Step 1 · Draw the AOI"
-                  : primaryFocusArea
-                    ? "Step 3 · Manage sub-areas"
-                    : "Step 1 · Search and draw the AOI"
-              }
-            </span>
-
-            <span className="explore-toolbar__label">
-              {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-              {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-            </span>
-
-            <span />
-          </div>
-
-          <div className="explore-toolbar__group">
-            {primaryFocusArea && (
-              <button
-                onClick={() => fitToFocusArea(primaryFocusArea)}
-                className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                disabled={isDrawingFocusArea}
-              >
-                Reset View
-              </button>
-            )}
-
-            {!isDrawingFocusArea ? (
-              <>
-                <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                  Edit AOI
-                </button>
-
-                <button
-                  onClick={deletePrimaryFocusArea}
-                  className="explore-toolbar__btn explore-toolbar__btn--danger"
-                  disabled={!hasConfirmedPrimary}
-                >
-                  Delete AOI
-                </button>
-
-                <button
-                  onClick={beginSubFocusDrawing}
-                  className="explore-toolbar__btn explore-toolbar__btn--primary"
-                  disabled={!hasConfirmedPrimary}
-                >
-                  Add Sub-area
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (selectedSubAreaIndex != null) {
-                      handleEditSubArea(selectedSubAreaIndex);
-                    }
-                  }}
-                  className="explore-toolbar__btn explore-toolbar__btn--sub"
-                  disabled={!hasSelectedSubArea}
-                >
-                  Edit Selected
-                </button>
-
-                <button
-                  onClick={deleteSelectedSubArea}
-                  className="explore-toolbar__btn explore-toolbar__btn--danger"
-                  disabled={!hasSelectedSubArea}
-                >
-                  Delete Selected
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                  {explorePhase === "drawing-sub"
-                    ? activeSubAreaIndex != null
-                      ? "Confirm Sub-area Edit"
-                      : "Confirm Sub-area"
-                    : primaryFocusArea
-                      ? "Confirm AOI Edit"
-                      : "Confirm AOI"}
-                </button>
-
-                <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                  Cancel
-                </button>
-              </>
-            )}
-          </div>
-
-          {subFocusAreas.length > 0 && (
-            <div className="explore-toolbar">
-              <span className="explore-toolbar__label">Sub-areas</span>
-
-              {subFocusAreas.map((area, index) => (
-                <button
-                  key={`${area.label}-${index}`}
-                  onClick={() => setSelectedSubAreaIndex(index)}
-                  className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                  disabled={isDrawingFocusArea}
-                >
-                  {area.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </SideTab>
-      )}
 
       {isEditMode && mode === "map" && (
         <>

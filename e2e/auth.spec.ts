@@ -18,17 +18,16 @@ async function fillLoginForm(page: Page, username: string, password: string) {
 // ---------------------------------------------------------------------------
 
 test.describe("Login — valid flow", () => {
-  test("successful login redirects to dashboard", async ({ page }) => {
+  test("successful login redirects to landing", async ({ page }) => {
     await page.goto("/logIn");
     await fillLoginForm(page, TEST_USER, TEST_PASS);
-    await expect(page).toHaveURL(/dashboard/);
+    await expect(page).toHaveURL(/landing/);
   });
 
-  test("dashboard is accessible after login", async ({ page }) => {
+  test("landing is accessible after login", async ({ page }) => {
     await page.goto("/logIn");
     await fillLoginForm(page, TEST_USER, TEST_PASS);
-    await page.waitForURL(/dashboard/);
-    await expect(page.getByText(/analytics|monitoring/i).first()).toBeVisible();
+    await page.waitForURL(/landing/);
   });
 });
 
@@ -65,14 +64,14 @@ test.describe("Login — invalid flows", () => {
 test.describe("Sign-up", () => {
   const unique = () => `user_${Date.now()}`;
 
-  test("valid sign-up succeeds and redirects to login or dashboard", async ({ page }) => {
+  test("valid sign-up succeeds and redirects to login or landing", async ({ page }) => {
     await page.goto("/signUp");
     const username = unique();
     await page.getByLabel(/username/i).fill(username);
     await page.getByLabel(/email/i).fill(`${username}@test.com`);
     await page.getByLabel(/password/i).first().fill("StrongPass99!");
     await page.getByRole("button", { name: /^sign up$/i }).click();
-    await expect(page).toHaveURL(/login|logIn|dashboard/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/login|logIn|landing/, { timeout: 10_000 });
   });
 
   test("duplicate username shows error", async ({ page }) => {
@@ -89,12 +88,12 @@ test.describe("Sign-up", () => {
 // Protected route redirect
 // ---------------------------------------------------------------------------
 
-test("unauthenticated visit to /dashboard redirects to login", async ({ page }) => {
+test("unauthenticated visit to /landing redirects to login", async ({ page }) => {
   await page.goto("/logIn");
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
-  await page.goto("/dashboard");
+  await page.goto("/landing");
   await expect(page).toHaveURL(/login|logIn/);
 });

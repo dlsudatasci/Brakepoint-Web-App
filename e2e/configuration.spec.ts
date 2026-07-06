@@ -9,7 +9,7 @@ async function login(page: Page) {
   await page.getByLabel(/username/i).fill(TEST_USER);
   await page.getByLabel(/password/i).fill(TEST_PASS);
   await page.getByRole("button", { name: /^login$/i }).click();
-  await page.waitForURL(/dashboard/);
+  await page.waitForURL(/landing/);
 }
 
 // ---------------------------------------------------------------------------
