@@ -471,7 +471,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
     const [thumbnailWidth, setThumbnailWidth] = useState<number>(null);
     const [thumbnailHeight, setThumbnailHeight] = useState<number>(null);
-    const THUMBNAIL_WAIT_TIME_MS = 33
+    const THUMBNAIL_WAIT_TIME_MS = 50
 
     // updates the width and height for the overlay after a few ms
     // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
