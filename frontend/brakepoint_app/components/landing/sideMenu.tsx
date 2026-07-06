@@ -490,7 +490,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail == null || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
                 { !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && (
-                    <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+                    <Box sx={{ position: "relative", width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden" }}>
                         <img
                             id="image-thumbnail" src={thumbnail}
                             ref={(e) => {
@@ -756,20 +756,20 @@ export default function SideMenu({
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
             <Box className={styles.menuHeader}>
-                <Typography variant="h3" className={styles.brakePoint}>BrakePoint</Typography>
+                <Typography variant="h3" className={styles.brakePoint} sx={{fontSize: '2.25em'}}>BrakePoint</Typography>
                 <Button
                     onClick={handleSignOut}
                     // onClick={ () => {console.log(aois)} }
                     sx={{
-                        marginLeft: '9em',
+                        marginLeft: '8.5em',
                         minWidth: 0,
-                        padding: '5px 20px 5px 20px',
+                        padding: '5px 15px 5px 15px',
                         color: 'rgb(236, 237, 245)',
                         cursor: 'pointer',
                         "&:hover": { bgcolor: "rgb(236, 237, 245)", color: "#161b4c" },
                     }}
                 >
-                    <LogoutIcon sx={{ fontSize: '1.8rem' }} />
+                    <LogoutIcon sx={{ fontSize: '1.7rem' }} />
                 </Button>
             </Box>
 

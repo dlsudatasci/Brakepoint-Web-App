@@ -58,14 +58,14 @@ export default function ModeSegmentedControl({currentMode, onClick} : {
         sx={{
           width: "100%",
           backgroundColor: "#fff",
-          borderRadius: "14px",
+          borderRadius: "12px",
           padding: "4px",
           overflow: "hidden",
 
           "& .MuiToggleButtonGroup-grouped": {
             flex: 1,
             border: "none",
-            borderRadius: "10px !important",
+            borderRadius: "8px !important",
             textTransform: "none",
             fontWeight: 600,
             px: 2.5,
