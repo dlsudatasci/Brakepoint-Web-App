@@ -751,7 +751,7 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const debugButtons = false
+    const DEBUG_BUTTONS = false
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
@@ -799,13 +799,20 @@ export default function SideMenu({
                     )}
 
                     { /* DEBUG OPTIONS — DISABLE debugButtons WHEN NOT BEING USED */ }
-                    { debugButtons && (
+                    { DEBUG_BUTTONS && (
                         <>
                             <div className="backButtonContainer" style={{fontFamily: "50%"}}>
                                 <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
+                            </div>
+                            <div className="backButtonContainer" style={{fontFamily: "50%"}}>
+                                <Button variant="outlined" onClick={() => {
+                                    if (currentSelectionMode === "area") { console.log(selectedAOI) }
+                                    if (currentSelectionMode === "subarea") { console.log(selectedSubarea) }
+                                    if (currentSelectionMode === "camera") { console.log(selectedCamera) }
+                                }}> This entity </Button>
                             </div>
                             <div className="backButtonContainer" style={{fontFamily: "50%"}}>
                                 <NotificationDebugButton />    

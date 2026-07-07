@@ -1228,6 +1228,7 @@ export default function LandingPage() {
       // upload video :)
       showToast(`Uploading "${videoName}"...`, "info");
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
+      console.log("uploading video: ", res)
 
       // if fail, display a note — the user needs to know this
       if (!res.ok) {
@@ -1257,10 +1258,9 @@ export default function LandingPage() {
 
       // else, note that we've finished processing and pass this onto the processing tracker
       // afterwards, pass the video data onto addNewVideoData()
-      showToast(`"${videoName}" uploaded — processing started`, "info");
       trackVideoProcessing(videoName, data.video_id, (processedVideoData) => {
         // run this bit once the video has been uploaded
-        console.log(processedVideoData);
+        console.log("track video processing:", processedVideoData);
         addNewVideoData(processedVideoData);
         showToast(`Video "${videoName}" has finished processing`, "success");
       })

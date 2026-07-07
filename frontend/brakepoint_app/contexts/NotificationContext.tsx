@@ -204,7 +204,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           });
           if (!response.ok) {
             // if 404 NOT FOUND stop processing immediately
-            if (false && response.status === 404) {
+            if (response.status === 404) {
               stopPolling(videoId);
               completeProcessing(notifId, false)
             }
@@ -230,11 +230,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
             if (videoResponse.ok) {
               const fullData = await videoResponse.json();
-              if (fullData.success && fullData.video) {
-                onComplete(fullData);
+              if (fullData.success && fullData.videos) {
+                onComplete(fullData.videos);
                 videoData = {
-                  yolo_results: { total_unique: fullData.video.vehicles || 0 },
-                  sign_results: { unique_signs: fullData.video.signs || 0 },
+                  yolo_results: { total_unique: fullData.videos.vehicles || 0 },
+                  sign_results: { unique_signs: fullData.videos.signs || 0 },
                 }
               }
             }
