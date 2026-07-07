@@ -751,7 +751,7 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const DEBUG_BUTTONS = false
+    const DEBUG_BUTTONS = true
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }

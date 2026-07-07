@@ -76,6 +76,11 @@ function safeParseNotifications(raw: string | null): Notification[] {
   }
 }
 
+var runAfterProcessingCompleted: (video: any) => void = () => {};
+export function setRunAfterProcessingCompleted(newFunction: (video: any) => void) {
+  runAfterProcessingCompleted = newFunction;
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -189,12 +194,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, processingStage: stage, progress } : n)));
   }, []);
 
-  const startPollingForVideo = useCallback(
-    (notifId: string, videoId: number, onComplete?: (fullData: any) => void) => {
+  const startPollingForVideo = useCallback((notifId: string, videoId: number) => {
       if (pollersRef.current.has(videoId)) return;
 
       const intervalId = window.setInterval(async () => {
         try {
+
           const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`, {}, (newResp) => {
             // emergency contingency for a 401 UNAUTHORIZED
             if (newResp.status === 401) {
@@ -231,7 +236,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             if (videoResponse.ok) {
               const fullData = await videoResponse.json();
               if (fullData.success && fullData.videos) {
-                onComplete(fullData.videos);
+                runAfterProcessingCompleted(fullData.videos);
                 videoData = {
                   yolo_results: { total_unique: fullData.videos.vehicles || 0 },
                   sign_results: { unique_signs: fullData.videos.signs || 0 },
@@ -258,9 +263,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // onComplete are for extra functions to piggyback on the completion of this task
   const trackVideoProcessing = useCallback(
-    (videoName: string, videoId: number, onComplete?: (fullData: any) => void) => {
+    (videoName: string, videoId: number) => {
       const notifId = addProcessingNotification(videoName, videoId);
-      startPollingForVideo(notifId, videoId, onComplete);
+      startPollingForVideo(notifId, videoId);
       return notifId;
     },
     [addProcessingNotification, startPollingForVideo],

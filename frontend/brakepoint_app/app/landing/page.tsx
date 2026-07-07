@@ -12,7 +12,7 @@ import SideMenu from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
 
 import { CameraAddModal, CameraEditModal } from "@/components/landing/cameraModals";
-import { useNotifications } from "@/contexts/NotificationContext";
+import { useNotifications, setRunAfterProcessingCompleted } from "@/contexts/NotificationContext";
 import {
 	SubAreaType, SummaryType, VehicleBreakdown,
 	LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
@@ -122,7 +122,6 @@ export default function LandingPage() {
 
   // prepare to bake some nice warm toast (enables the use of toasts)
   const { trackVideoProcessing, showToast } = useNotifications();
-
 
 
 
@@ -1205,6 +1204,13 @@ export default function LandingPage() {
     setEditAction("addVideo");
   }
 
+  // update the function on NotificationContext to reference variables in this scope
+  setRunAfterProcessingCompleted((video: any) => {
+    // run this bit once the video has been uploaded
+    addNewVideoData(video);
+    showToast(`Video "${video?.filename ?? "unknown-video"}" has finished processing`, "success");
+  });
+
   // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
   const handleUploadStart = async (
     savedFile: File, videoName: string, cameraId: number,
@@ -1258,17 +1264,14 @@ export default function LandingPage() {
 
       // else, note that we've finished processing and pass this onto the processing tracker
       // afterwards, pass the video data onto addNewVideoData()
-      trackVideoProcessing(videoName, data.video_id, (processedVideoData) => {
-        // run this bit once the video has been uploaded
-        console.log("track video processing:", processedVideoData);
-        addNewVideoData(processedVideoData);
-        showToast(`Video "${videoName}" has finished processing`, "success");
-      })
+      showToast(`"${videoName}" uploaded — processing started`, "info");
+      trackVideoProcessing(videoName, data.video_id)
     } catch (exception) {
       console.log(exception)
     } finally {}
   }
 
+  
 
 
   return (
