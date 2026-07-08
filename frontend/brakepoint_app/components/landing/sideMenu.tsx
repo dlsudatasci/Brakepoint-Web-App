@@ -67,6 +67,7 @@ function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardC
                 onClickCard={() => {onCardClick("area", aoi.id)}}
                 onClickSideButton={() => {onNavigateAOI("area", aoi.id)}}
                 canClickThrough={canClickThrough}
+                isAlert={details.subarea_count == 0}
             />
         </Box>
     );
@@ -94,6 +95,7 @@ function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onCardHo
                 onClickCard={() => onCardClick?.("subarea", subarea.id)}
                 onClickSideButton={() => onNavigateSubarea?.("subarea", subarea.id)}
                 canClickThrough={canClickThrough}
+                isAlert={subDetails.camera_count == 0}
             />
         </Box>
     )
@@ -115,11 +117,12 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
             onMouseLeave={() => onCardHover?.("camera", null)}
         >
             <LocationCard
-                type="subarea"
+                type="camera"
                 locationDetails={cameraDetails}
                 onClickCard={() => {onCardClick?.("camera", camera.id)}}
                 onClickSideButton={() => onNavigateCamera?.("camera", camera.id)}
                 canClickThrough={canClickThrough}
+                isAlert={cameraDetails.is_calibrated}
             />
         </Box>
     )

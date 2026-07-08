@@ -97,7 +97,6 @@ export type SubAreaSummary = LocationSummary & {
     camera_count: number;
     cameras?: CameraSummary[]; // deprecated — please use camera_ids
 	camera_ids?: number[]
-    subarea_count: number;
     tags: string[];
     // vehicle_breakdown: Record<string, number>;
 	vehicle_breakdown?: VehicleBreakdown;
@@ -133,8 +132,8 @@ const default_values = {
 
 export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 	return {
+		video_count: 0, video_ids: [],
 		...default_values,
-		videos: 0, video_ids: [],
 		...obj, ...additional,
 		summary_type: "camera",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown, additional.vehicle_breakdown),
@@ -145,8 +144,8 @@ export function convertObjectToCameraSummary(obj: any, additional: any = {}) {
 
 export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 	return {
+		camera_count: 0, camera_ids: [],
 		...default_values,
-		cameras: 0, camera_ids: [],
 		...obj, ...additional,
 		summary_type: "subarea",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown, additional.vehicle_breakdown),
@@ -158,7 +157,7 @@ export function convertObjectToSubareaSummary(obj: any, additional: any = {}) {
 export function convertObjectToAreaSummary(obj: any, additional: any = {}) {
 	const res = {
 		location: undefined,
-		subareas: 0, subarea_ids: [],
+		subarea_count: 0, subarea_ids: [],
 		...default_values,
 		...obj, ...additional,
 		summary_type: "area",
