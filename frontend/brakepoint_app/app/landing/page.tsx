@@ -1211,6 +1211,8 @@ export default function LandingPage() {
     showToast(`Video "${video?.filename ?? "unknown-video"}" has finished processing`, "success");
   });
 
+  const __debug = useRef<number>(0);
+
   // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
   const handleUploadStart = async (
     savedFile: File, videoName: string, cameraId: number,
@@ -1231,6 +1233,7 @@ export default function LandingPage() {
     // console.log("Sending file:", formData)
 
     try {
+
       // upload video :)
       showToast(`Uploading "${videoName}"...`, "info");
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
@@ -1244,7 +1247,6 @@ export default function LandingPage() {
 
       // parse and add to current list as pending
       const data = await res.json();
-      console.log(data);
 
       // Persist camera calibration in local state after a successful upload.
       patchObjectInList("camera", cameraId, {
@@ -1255,10 +1257,11 @@ export default function LandingPage() {
       });
 
       addNewVideoData({
-        id: data.id, camera: cameraId, filename: videoName,
+        id: data.video_id, camera: cameraId, filename: videoName,
         calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
         duration_seconds: 0, vehicle_breakdown: {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0},
         uploaded_at: new Date(), recorded_at: new Date(),
+        thumbnail: uploadThumbnail,
         processing_status: "pending"
       });
 

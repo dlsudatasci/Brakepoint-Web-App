@@ -76,7 +76,7 @@ function safeParseNotifications(raw: string | null): Notification[] {
   }
 }
 
-var runAfterProcessingCompleted: (video: any) => void = () => {};
+let runAfterProcessingCompleted: (video: any) => void = () => {};
 export function setRunAfterProcessingCompleted(newFunction: (video: any) => void) {
   runAfterProcessingCompleted = newFunction;
 }
