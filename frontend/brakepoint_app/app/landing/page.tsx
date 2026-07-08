@@ -1211,8 +1211,6 @@ export default function LandingPage() {
     showToast(`Video "${video?.filename ?? "unknown-video"}" has finished processing`, "success");
   });
 
-  const __debug = useRef<number>(0);
-
   // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
   const handleUploadStart = async (
     savedFile: File, videoName: string, cameraId: number,
