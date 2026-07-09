@@ -131,7 +131,7 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
 // puts out a percentage as a string value
 const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
 
-function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
+export function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
     if (!resolution) return null;
     const match = resolution.match(/^(\d+)x(\d+)$/i);
     if (!match) return null;
@@ -424,11 +424,12 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, latestVideo, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
     camera: CameraSummary,                                      // summary objecet for this camera
     loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
     videosLoading?: boolean,                                    // whether videos are still being loaded
     videosError?: boolean,                                      // whether video loading have posted an error
+    latestVideo: VideoSummary;                                  // the latest video uploaded
     thumbnail?: string;                                         // the thumbnail to display
     onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
     onAutoDetectRoadFeatures?: (id: number) => void;            // event to trigger model-based auto-fill of camera road feature tags
@@ -441,8 +442,8 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     const [calibrationOverlay, setCalibrationOverlay] = useState<{
             width: number,
             height: number,
-            calibrationPoints,
-            referencePoints,
+            calibrationPoints: {x: number, y: number}[],
+            referencePoints: {x: number, y: number}[],
         }>({width: 0, height: 0, calibrationPoints:[], referencePoints:[]});
 
     const handleUploadClick = () => {
@@ -451,7 +452,6 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     };
 
     // handle scaling calibration overlay to the thumbnail
-    const thumbnailChanging = useRef<boolean>(false);
     const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
     const [thumbnailWidth, setThumbnailWidth] = useState<number>(null);
     const [thumbnailHeight, setThumbnailHeight] = useState<number>(null);
@@ -461,32 +461,36 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
     useEffect(() => {
         setTimeout(() => {
-            const width = thumbnailObject?.naturalWidth ?? 640;
-            const height = thumbnailObject?.naturalHeight ?? 320;
-            setThumbnailWidth(width);
-            setThumbnailHeight(height);
+            const currentThumbnailWidth = thumbnailObject?.naturalWidth ?? 640;
+            const currentThumbnailHeight = thumbnailObject?.naturalHeight ?? 320;
+            setThumbnailWidth(currentThumbnailWidth);
+            setThumbnailHeight(currentThumbnailHeight);
+            const storedThumbnailRes = parseVideoResolution(latestVideo?.resolution)
+            if (!storedThumbnailRes) return;
 
-            const parsedResolution = { width: width, height: height }
-            if (!parsedResolution) return null;
+            const rescalingCoefficientX = currentThumbnailWidth / storedThumbnailRes.width
+            const rescalingCoefficientY = currentThumbnailHeight / storedThumbnailRes.height
 
             const calibrationPoints = camera.calibration_points
                 .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-                .slice(0, 4);
+                .slice(0, 4)
+                .map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientY } });
             if (calibrationPoints.length < 4) return null;
 
             const referencePoints = (camera.reference_points ?? [])
                 .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-                .slice(0, 2);
+                .slice(0, 2)
+                .map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientY } });
 
-             setCalibrationOverlay({
-                width: parsedResolution.width,
-                height: parsedResolution.height,
-                calibrationPoints,
-                referencePoints,
+            setCalibrationOverlay({
+              width: currentThumbnailWidth,
+              height: currentThumbnailHeight,
+              calibrationPoints,
+              referencePoints,
             });
 
         }, THUMBNAIL_WAIT_TIME_MS)
-    }, [thumbnailObject]) 
+    }, [thumbnailObject, camera?.calibration_points, camera?.reference_points]) 
 
     return (
         <div className="menuContainer">
@@ -502,7 +506,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                             ref={(e) => {
                                 setThumbnailObject(e);
                             }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
+                            style={{ width: "100%", height: "100%", borderRadius: "inherit" }}
                         />
 
                         {calibrationOverlay && (
@@ -624,6 +628,7 @@ function CameraDetailMenu({
 
     // state variables
     const [thumbnail, setThumbnail] = useState<string | null>(null)
+    const [latestVideo, setLatestVideo] = useState<VideoSummary | null>(null)
     const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
 
     // toggles the tab
@@ -635,6 +640,7 @@ function CameraDetailMenu({
     // gets initial thumbnail
     useEffect(() => {
         if (videos.length === 0) {
+            setLatestVideo(null);
             setThumbnail(null);
             return;
         }
@@ -644,6 +650,7 @@ function CameraDetailMenu({
         );
         const latestWithThumbnail = sortedVideos.find((video) => !!video?.thumbnail);
         setThumbnail(latestWithThumbnail?.thumbnail ?? null);
+        setLatestVideo(latestWithThumbnail ?? null);
     }, [videos])
 
     // display page here
@@ -669,6 +676,7 @@ function CameraDetailMenu({
                 camera={camera} 
                 loadedVideos={videos}
                 videosLoading={videosLoading}
+                latestVideo={latestVideo}
                 thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo?.(camera.id)}}
                 onDeleteVideo={onDeleteVideo}

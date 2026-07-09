@@ -80,7 +80,7 @@ interface CameraAddModalProps {
   cameraId?: number | null;
 
   onUploadStart?: (
-    savedFile: File, uploadingVideoName: string, cameraId: number,
+    savedFile: File, uploadingVideoName: string, cameraId: number, resolution: { width: number, height: number },
     calibrationPoints: {x: number, y: number}[], originalReferencePoints: {x: number, y: number}[],
     referenceDistance: number, uploadThumbnail?: string
   ) => void;
@@ -92,6 +92,7 @@ interface CameraAddModalProps {
     calibrationPoints: {x: number, y: number}[],
     referencePoints: {x: number, y: number}[],
     referenceDistance: number,
+    sourceDimensions?: {width: number, height: number}
   ) => void;
 
   initialCalibrationPoints?: { x: number; y: number }[];
@@ -740,6 +741,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
 
       const currCalibrationPoints = calibrationPoints;
       const currReferenceDistance = referenceDistance;
+      const currSourceDimensions = videoDimensions;
 
       setShowCalibration(false);
       setCalibrationPoints([]);
@@ -756,7 +758,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
         cameraId,
         currCalibrationPoints,
         originalReferencePoints,
-        currReferenceDistance
+        currReferenceDistance,
+        currSourceDimensions
       )
       return;
     }
@@ -800,6 +803,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       savedFile,
       uploadingVideoName,
       cameraId,
+      videoDimensions,
       activeCalibrationPoints,
       originalReferencePoints,
       activeReferenceDistance,

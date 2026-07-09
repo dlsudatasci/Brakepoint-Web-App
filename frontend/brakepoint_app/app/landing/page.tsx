@@ -8,6 +8,7 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SideMenu from "@/components/landing/sideMenu";
+import { parseVideoResolution } from "@/components/landing/sideMenu";
 // import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
 
@@ -656,9 +657,21 @@ export default function LandingPage() {
     calibrationPoints: {x: number, y: number}[],
     referencePoints: {x: number, y: number}[],
     referenceDistance: number,
+    calibrationImageDimensions?: {width: number, height: number}
   ) => {
+
+
     const camera = getCameraSummaryFromId(cameraId);
     if (!camera) return;
+
+    // adjust the calibration and reference points
+    const recalibrateVideo = getVideoSummaryFromId(recalibrateVideoId);
+    if (!recalibrateVideo) return;
+    const originalImageDimensions = parseVideoResolution(recalibrateVideo.resolution)
+    const rescalingCoefficientX = originalImageDimensions.width / calibrationImageDimensions.width
+    const rescalingCoefficientY = originalImageDimensions.height / calibrationImageDimensions.height
+    calibrationPoints = calibrationPoints.map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientX } });
+    referencePoints = referencePoints.map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientX } });
 
     try {
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/calibration/`, {
@@ -719,7 +732,7 @@ export default function LandingPage() {
         showToast(`Cannot delete the ${thisObject.sub_area_type.replaceAll("_", " ")} "${thisObject.name}"; please delete all its cameras first`, "warning"); return;
       }
       if (isCameraSummary(thisObject) && thisObject.video_count > 0) {
-        showToast(`Cannot delete the camera "${thisObject.name}"; please delete all its cameras first`, "warning"); return;
+        showToast(`Cannot delete the camera "${thisObject.name}"; please delete all its videos first`, "warning"); return;
       }
       setEditName(thisObject.name);
     } else {
@@ -1224,7 +1237,7 @@ export default function LandingPage() {
 
   // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
   const handleUploadStart = async (
-    savedFile: File, videoName: string, cameraId: number,
+    savedFile: File, videoName: string, cameraId: number, resolution: { width: number, height: number },
     calibrationPoints: {x: number, y: number}[], originalReferencePoints: {x: number, y: number}[],
     referenceDistance: number, uploadThumbnail?: string
   ) => {
@@ -1244,7 +1257,6 @@ export default function LandingPage() {
       // upload video :)
       showToast(`Uploading "${videoName}"...`, "info");
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
-      console.log("uploading video: ", res)
 
       // if fail, display a note — the user needs to know this
       if (!res.ok) {
