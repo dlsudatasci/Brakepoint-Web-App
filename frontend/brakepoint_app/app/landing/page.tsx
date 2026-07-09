@@ -11,11 +11,20 @@ import SideMenu from "@/components/landing/sideMenu";
 import { parseVideoResolution } from "@/components/landing/sideMenu";
 // import type { SideMenuUpdater } from "@/components/landing/sideMenu";
 import { authFetch } from "@/lib/authFetch";
+import {
+  isLandingObjectsResponse,
+  LandingAoiDto,
+  LandingSubareaDto,
+  LandingCameraDto,
+  LandingVideoDto,
+  isLandingVideoDto,
+  isLandingVideoDetailResponse,
+} from "@/lib/api/landingObjects";
 
-import { CameraAddModal, CameraEditModal } from "@/components/landing/cameraModals";
+import { CameraAddModal } from "@/components/landing/cameraModals";
 import { useNotifications, setRunAfterProcessingCompleted } from "@/contexts/NotificationContext";
 import {
-	SubAreaType, SummaryType, VehicleBreakdown,
+  SubAreaType, SummaryType,
 	LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
 	isAreaSummary, isSubareaSummary, isCameraSummary,
 	convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
@@ -23,9 +32,6 @@ import {
   AOIRecord, SubareaRecord, CameraRecord, VideoRecord,
   convertRecordToArray,
 } from "@/components/landing/summaryTypes";
-import { Cameraswitch } from "@mui/icons-material";
-import { ValidateNotSelfIntersecting } from "terra-draw";
-import { dataIndexSerializer } from "@mui/x-charts/internals";
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
 
@@ -133,184 +139,81 @@ export default function LandingPage() {
       initialLoadLocationSummaries();
   }, [])
 
+  const hydrateLandingObjects = (
+    aoiData: LandingAoiDto[],
+    subareaData: LandingSubareaDto[],
+    cameraData: LandingCameraDto[],
+    videoData: LandingVideoDto[],
+  ) => {
+    const aoisProcessed: AOIRecord = {}
+    const subareasProcessed: SubareaRecord = {}
+    const camerasProcessed: CameraRecord = {}
+    const videosProcessed: VideoRecord = {}
+
+    for (const curr of aoiData) {
+      aoisProcessed[curr.id] = convertObjectToAreaSummary(curr, {
+        subarea_ids: curr.subarea_ids ?? [],
+        subarea_count: curr.subarea_count ?? (curr.subarea_ids ?? []).length,
+      })
+    }
+
+    for (const curr of subareaData) {
+      subareasProcessed[curr.id] = convertObjectToSubareaSummary(curr, {
+        vehicle_breakdown: (curr.vehicle_breakdown ?? {}) as Record<string, number>,
+        camera_ids: curr.camera_ids ?? [],
+        camera_count: curr.camera_count ?? (curr.camera_ids ?? []).length,
+      })
+    }
+
+    for (const curr of cameraData) {
+      camerasProcessed[curr.id] = convertObjectToCameraSummary(curr, {
+        video_ids: curr.video_ids ?? [],
+        video_count: curr.video_count ?? (curr.video_ids ?? []).length,
+      })
+    }
+
+    for (const curr of videoData) {
+      videosProcessed[curr.id] = convertObjectToVideoSummary(curr)
+    }
+
+    setAllAois(aoisProcessed);
+    setAllSubareas(subareasProcessed);
+    setAllCameras(camerasProcessed);
+    setAllVideos(videosProcessed);
+  }
+
   // Initial fetch
   const initialLoadLocationSummaries = async () => {
     let cancelled = false;
 
-    Promise.all([
-        // authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`).then((r) => r.json()),
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=aoi`).then((r) => r.json()),
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/?type=sub_area`).then((r) => r.json()),
-        authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`).then((r) => r.json()),
-    ]).then(([aoiData, subareaData, cameraData]) => {
-      
-      // quickfail
-      if (!aoiData.success || !subareaData.success || !cameraData.success) { return; }
-
-      aoiData = aoiData.saved_locations;
-      subareaData = subareaData.saved_locations;
-      cameraData = cameraData.cameras;
-
-      // for some reason, doing these four fetches separately is somehow faster??? commented out attempt to fetch all areas and subareas at once
-      // savedLocationData = savedLocationData.saved_locations;
-      // const aoiData = savedLocationData.filter((loc) => loc.location_type === "aoi")
-      // const subareaData = savedLocationData.filter((loc) => loc.location_type === "sub_area")
-
-      // using cameras, and subareas: create a list of children by parent
-      const cameraIdsBySubarea: Record<number, number[]> = {}
-      const subareaIdsByArea: Record<number, number[]> = {}
-
-      // and empty objects for our main objects
-      // const videosProcessed: VideoRecord = {}
-      const camerasProcessed: CameraRecord = {}
-      const subareasProcessed: SubareaRecord = {}
-      const aoisProcessed: AOIRecord = {}
-
-      // step 1: format cameras
-      for (const curr of cameraData) {
-        const parentOfThis = curr.saved_location ?? -1;
-        parentOfThis in cameraIdsBySubarea ? cameraIdsBySubarea[parentOfThis].push(curr.id) : cameraIdsBySubarea[parentOfThis] = [curr.id]
-        if (parentOfThis === -1) { continue }
-
-        camerasProcessed[curr.id] = convertObjectToCameraSummary(curr)
-      }
-      
-      // step 2: format subareas
-      for (const curr of subareaData) {
-        const parentOfThis = curr.parent_id ?? -1;
-        parentOfThis in subareaIdsByArea ? subareaIdsByArea[parentOfThis].push(curr.id) : subareaIdsByArea[parentOfThis] = [curr.id]
-        if (parentOfThis === -1) { continue }
-
-        subareasProcessed[curr.id] = convertObjectToSubareaSummary(curr, {
-          vehicle_breakdown: (curr.vehicle_breakdown ?? {}) as Record<string, number>,
-          camera_count: (cameraIdsBySubarea[curr.id] ?? []).length,
-          camera_ids: (cameraIdsBySubarea[curr.id] ?? []),
-        })
-      }
-
-      // step 3: format areas
-      for (const curr of aoiData) {
-        // get subarea and all stats that can be obtained via them
-        const childSubareasIds = subareaIdsByArea[curr.id] ?? []
-        const childSubareas = childSubareasIds.map((id) => subareasProcessed[id] ?? null ).filter((x) => x != null)
-        const stats = {"vehicles": 0, "adb": 0, "speeding": 0, "swerving": 0, "abrupt_stopping": 0}
-        const vehicle_breakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0}
-        for (const curr of childSubareas) {
-          for (const vehicle in vehicle_breakdown) {
-            vehicle_breakdown[vehicle] += curr.vehicle_breakdown[vehicle] ?? 0;
-          }
-          stats.vehicles += curr.vehicles ?? 0;
-          stats.adb += curr.adb ?? 0;
-          stats.speeding += curr.speeding ?? 0;
-          stats.swerving += curr.swerving ?? 0;
-          stats.abrupt_stopping += curr.abrupt_stopping ?? 0;
-        }
-
-        aoisProcessed[curr.id] = convertObjectToAreaSummary(curr, {
-          subarea_count: childSubareasIds.length ?? 0,
-          subarea_ids: childSubareasIds,
-
-          vehicles: stats.vehicles,
-          adb: stats.adb,
-          speeding: stats.speeding,
-          swerving: stats.swerving,
-          abrupt_stopping: stats.abrupt_stopping,
-          vehicle_breakdown: vehicle_breakdown
-        })
-      }
-
-      // with those done, set these to our new variables
-      setAllAois(aoisProcessed);
-      setAllSubareas(subareasProcessed);
-      setAllCameras(camerasProcessed);
-
-      // continue to loading videos
-      initialLoadVideos();
-
+    authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/landing-objects/`).then((r) => r.json()).then((payload: unknown) => {
+      if (!isLandingObjectsResponse(payload) || !payload.success) { return; }
+      hydrateLandingObjects(
+        payload.aois ?? [],
+        payload.subareas ?? [],
+        payload.cameras ?? [],
+        payload.videos ?? [],
+      );
+      setVideosReady(true);
     }).catch(() => {
       // error handling
       
     }).finally(() => {
       if (!cancelled) {
         setLocationSummariesReady(true);
+        setVideosReady(true);
       }
     })
     return () => { cancelled = true; };
   };
-
-  // initial fetch for all videos, loads /after/ location summaries have been loaded
-  const initialLoadVideos = async () => {
-
-    setVideosReady(false);
-    try { 
-      authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/`).then((r) => r.json())
-      .then((videoData) => {
-        if (!videoData.success) { return; }
-
-        // variable temp storages
-        const videoIdsByCamera: Record<number, number[]> = {}
-        const videosProcessed: VideoRecord = {};
-
-        // process videos
-        for (const curr of videoData.videos) {
-          const parentOfThis = curr.camera ?? -1;
-          parentOfThis in videoIdsByCamera ? videoIdsByCamera[parentOfThis].push(curr.id) : videoIdsByCamera[parentOfThis] = [curr.id]
-          if (parentOfThis === -1 || !idIsPresentInMap("camera", parentOfThis)) { continue } // quickfail; this is corrupted data and should be ignored
-          videosProcessed[curr.id] = convertObjectToVideoSummary(curr);
-        }
-
-        // for all cameras with videos, edit them to include relevant statistics
-        const newCamerasList = allCamerasRef.current;
-        for (const cameraId of Object.keys(videoIdsByCamera)) {
-          const camera = getCameraSummaryFromId(Number(cameraId));
-          if (camera === null) continue;
-          const childrenVideoIds = videoIdsByCamera[cameraId];
-          const childrenVideos = Object.values(videosProcessed).filter((x) => childrenVideoIds.includes(x.id));
-
-          camera.video_count = childrenVideoIds.length ?? 0;
-          camera.video_ids = childrenVideoIds;
-
-          // reset stats and reload to be very sure they are accurate here
-          camera.latest_upload = null;
-          camera.vehicles = 0; camera.adb = 0;
-          camera.speeding = 0; camera.swerving = 0; camera.abrupt_stopping = 0;
-          const newVehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0} as VehicleBreakdown
-
-          for (const currVideo of childrenVideos) {
-            camera.vehicles += currVideo.vehicles;
-            camera.adb += currVideo.occurrences;
-            camera.speeding += currVideo.speeding_count;
-            camera.swerving += currVideo.swerving_count;
-            camera.abrupt_stopping += currVideo.abrupt_stopping_count;
-            
-            if (camera.latest_upload === null || camera.latest_upload < currVideo.uploaded_at) {
-              camera.latest_upload = currVideo.uploaded_at;
-            }
-
-
-          }
-
-          newCamerasList[Number(cameraId)] = camera;
-        }
-
-        setVideosReady(true);
-        setAllVideos(videosProcessed)
-        setAllCameras(newCamerasList);
-      })
-    } catch {
-
-    } finally {
-      setVideosReady(true);
-    }
-  }
 
   // handles adding new video data, after the initial load
   const addNewVideoDataFromId = async (newVideoId: number) => {
     setVideosReady(false);
     try {
       authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${newVideoId}`).then((r) => r.json())
-      .then((videoData) => {
-        if (!videoData.success) { return; }
+      .then((videoData: unknown) => {
+        if (!isLandingVideoDetailResponse(videoData) || !videoData.success || !videoData.videos) { return; }
         addNewVideoData(videoData.videos)
       })
     } catch (exception) {
@@ -320,7 +223,7 @@ export default function LandingPage() {
     }
   }
 
-  const addNewVideoData = async (videoData: any) => {
+  const addNewVideoData = async (videoData: LandingVideoDto) => {
     setVideosReady(false);
 
     // get the id and parent, dispose if parent doesn't exist
@@ -353,11 +256,11 @@ export default function LandingPage() {
     }
 
     // if not yet calibrated and video has calibration details, update
-    if (!parent.is_calibrated && newVideoSummary?.calibration_points && newVideoSummary?.reference_points) {
+    if (!parent.is_calibrated && videoData?.calibration_points && videoData?.reference_points) {
       parent.is_calibrated = true;
-      parent.calibration_points = newVideoSummary.calibration_points
-      parent.reference_points = newVideoSummary.reference_points
-      parent.reference_distance_meters = newVideoSummary.reference_distance_meters
+      parent.calibration_points = videoData.calibration_points
+      parent.reference_points = videoData.reference_points
+      parent.reference_distance_meters = videoData.reference_distance_meters
     }
         
     // and set the newly updated data to our camera list
@@ -1229,10 +1132,11 @@ export default function LandingPage() {
   }
 
   // update the function on NotificationContext to reference variables in this scope
-  setRunAfterProcessingCompleted((video: any) => {
+  setRunAfterProcessingCompleted((video: unknown) => {
     // run this bit once the video has been uploaded
+    if (!isLandingVideoDto(video)) return;
     addNewVideoData(video);
-    showToast(`Video "${video?.filename ?? "unknown-video"}" has finished processing`, "success");
+    showToast(`Video "${video.filename ?? "unknown-video"}" has finished processing`, "success");
   });
 
   // run once we get all the user data to upload a video (given by CameraAddModal from cameraModals.tsx)
@@ -1275,14 +1179,16 @@ export default function LandingPage() {
         reference_distance_meters: referenceDistance,
       });
 
-      addNewVideoData({
+      const pendingVideo: LandingVideoDto = {
         id: data.video_id, camera: cameraId, filename: videoName,
         calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
         duration_seconds: 0, vehicle_breakdown: {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0},
-        uploaded_at: new Date(), recorded_at: new Date(),
+        uploaded_at: new Date().toISOString(), recorded_at: new Date().toISOString(),
         thumbnail: uploadThumbnail,
         processing_status: "pending"
-      });
+      };
+
+      addNewVideoData(pendingVideo);
 
       // else, note that we've finished processing and pass this onto the processing tracker
       // afterwards, pass the video data onto addNewVideoData()

@@ -1,38 +1,28 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Box, Typography, Button, Chip, CircularProgress, Divider, IconButton } from "@mui/material";
+import { Box, Typography, Button, CircularProgress, IconButton } from "@mui/material";
 import { useRouter } from "next/navigation";
 import styles from "./menuBar.module.css";
-import { authFetch } from "@/lib/authFetch";
-import { useNotifications } from "@/contexts/NotificationContext";
 
 // components
-import AnalyticsCard, { StackedBar } from "./analyticsCard";
+import AnalyticsCard from "./analyticsCard";
 import LocationCard from "./locationCard";
 import ModeSegmentedControl from "@/components/landing/modeToggle";
 import LandingSection from "@/components/landing/landingSection"
 import Timeline from "@/components/landing/timeline";
 import {
     SubAreaType, SummaryType,
-    LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
-    isAreaSummary, isSubareaSummary, isCameraSummary,
-    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
-    VideoSummary, convertObjectToVideoSummary,
+    AOISummary, SubAreaSummary, CameraSummary,
+    VideoSummary,
     AOIRecord, SubareaRecord, CameraRecord, VideoRecord, convertRecordToArray,
-    VehicleBreakdown
 } from "@/components/landing/summaryTypes";
 import CameraTags from "@/components/ui/cameraTags";
 import VideoTable from "@/components/ui/table";
 
 // icons
 import LogoutIcon from "@mui/icons-material/Logout";
-import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import EditIcon from '@mui/icons-material/Edit';
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
@@ -43,7 +33,6 @@ import NotificationDebugButton from "@/components/ui/notifDebug";
 
 // css
 import "./sideMenu.css";
-import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
 
 // displays a single AOI card
 function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardClick }: {
@@ -53,7 +42,7 @@ function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardC
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void
 }) {
-   const details = convertObjectToAreaSummary(aoi);
+    const details = aoi;
 
     return (
         <Box
@@ -81,8 +70,7 @@ function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onCardHo
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void;
 }) {
-   
-   const subDetails: SubAreaSummary = convertObjectToSubareaSummary(subarea);
+    const subDetails: SubAreaSummary = subarea;
     return (
         <Box
             key={subarea.id}
@@ -109,7 +97,7 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void;
 }) {
-    const cameraDetails: CameraSummary = convertObjectToCameraSummary(camera);
+    const cameraDetails: CameraSummary = camera;
     return (
         <Box
             key={camera.id}
@@ -754,8 +742,49 @@ export default function SideMenu({
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
 }: SideMenuProps) {
     const router = useRouter();
-    const { trackVideoProcessing, showToast } = useNotifications();
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const allAoisArray = useMemo(() => convertRecordToArray(allAois ?? {}), [allAois]);
+
+    const selectedAreaSubareas = useMemo(() => {
+        if (!selectedAOI || !allSubareas) return [];
+
+        const subareaIds = selectedAOI.subarea_ids ?? [];
+        if (subareaIds.length > 0) {
+            return subareaIds
+                .map((id) => allSubareas[id])
+                .filter((item): item is SubAreaSummary => Boolean(item));
+        }
+
+        // Fallback keeps behavior for legacy/partially-hydrated records.
+        return convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id);
+    }, [selectedAOI, allSubareas]);
+
+    const selectedSubareaCameras = useMemo(() => {
+        if (!selectedSubarea || !allCameras) return [];
+
+        const cameraIds = selectedSubarea.camera_ids ?? [];
+        if (cameraIds.length > 0) {
+            return cameraIds
+                .map((id) => allCameras[id])
+                .filter((item): item is CameraSummary => Boolean(item));
+        }
+
+        return convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id);
+    }, [selectedSubarea, allCameras]);
+
+    const selectedCameraVideos = useMemo(() => {
+        if (!selectedCamera || !allVideos) return [];
+
+        const videoIds = selectedCamera.video_ids ?? [];
+        if (videoIds.length > 0) {
+            return videoIds
+                .map((id) => allVideos[id])
+                .filter((item): item is VideoSummary => Boolean(item));
+        }
+
+        return convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id);
+    }, [selectedCamera, allVideos]);
 
     // handles the sign out process - removes user session data from the browser
     const handleSignOut = () => {
@@ -838,7 +867,7 @@ export default function SideMenu({
                     {currentSelectionMode === "camera" && (
                         <CameraDetailMenu
                             camera={selectedCamera}
-                            videos={convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id)}
+                            videos={selectedCameraVideos}
                             videosLoading={videosLoading}
                             onRenameCamera={onRequestRename}
                             onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
@@ -854,7 +883,7 @@ export default function SideMenu({
                     { currentSelectionMode === "subarea" && (
                         <SubareaDetailMenu
                             subarea={selectedSubarea}
-                            cameras={convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id)}
+                            cameras={selectedSubareaCameras}
                             detailLoading={false}
                             canStartDrawing={canStartDrawing}
                             onStartDrawing={onStartDrawing}
@@ -872,7 +901,7 @@ export default function SideMenu({
                         // AOI detail – if an AOI is currently selected
                         <AoiDetailMenu
                             aoi={selectedAOI}
-                            subareas={convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id)}
+                            subareas={selectedAreaSubareas}
                             detailLoading={false}
                             isDrawingSubarea={isDrawingSubarea}
                             canClickThrough={canClickToSubareas}
@@ -890,7 +919,7 @@ export default function SideMenu({
                         // main menu – list of all AOIs
                         // Panel 1: AOI list
                         <AllAoiMenu
-                            aois = {convertRecordToArray(allAois)}
+                            aois = {allAoisArray}
                             listLoading = {locationSummariesLoading}
                             isDrawingAOI = {isDrawingAOI}
                             canClickThrough={canClickToAreas}
