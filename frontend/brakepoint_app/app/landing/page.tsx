@@ -139,6 +139,8 @@ export default function LandingPage() {
       initialLoadLocationSummaries();
   }, [])
 
+  // receives the originally-formatted versions of output from /api/landing-objects
+  // formats them, and sets them to our variables
   const hydrateLandingObjects = (
     aoiData: LandingAoiDto[],
     subareaData: LandingSubareaDto[],
@@ -176,6 +178,7 @@ export default function LandingPage() {
       videosProcessed[curr.id] = convertObjectToVideoSummary(curr)
     }
 
+    // set all our local records
     setAllAois(aoisProcessed);
     setAllSubareas(subareasProcessed);
     setAllCameras(camerasProcessed);
@@ -186,8 +189,13 @@ export default function LandingPage() {
   const initialLoadLocationSummaries = async () => {
     let cancelled = false;
 
+    // retrieve all objects from the api
     authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/landing-objects/`).then((r) => r.json()).then((payload: unknown) => {
-      if (!isLandingObjectsResponse(payload) || !payload.success) { return; }
+      // quickfail
+      if (!isLandingObjectsResponse(payload)) throw "Unknown error occured while attempting to retrieve data from the API";
+      if (payload.error) throw payload.error;
+
+      // apply data to clientside storage
       hydrateLandingObjects(
         payload.aois ?? [],
         payload.subareas ?? [],
@@ -195,9 +203,10 @@ export default function LandingPage() {
         payload.videos ?? [],
       );
       setVideosReady(true);
-    }).catch(() => {
+    }).catch((e) => {
       // error handling
-      
+      console.error(e);
+      showToast("An error occured while attempting to load your data. Please reload the page.", "error");
     }).finally(() => {
       if (!cancelled) {
         setLocationSummariesReady(true);
