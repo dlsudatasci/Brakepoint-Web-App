@@ -5,6 +5,7 @@
 
   display: flex;
   flex-direction: row;
+  overflow: hidden;
 
   line-height: 1.1;
 
@@ -17,7 +18,7 @@
 
 .lc-container > .lc-main {
   background-color: #ffffff;
-  border-radius: 12px 0 0 12px;
+  /* border-radius: 12px 0 0 12px; */
   width: 85%;
   
   padding: 0.80em;
@@ -28,7 +29,7 @@
 
 .lc-container > .lc-button {
   background-color: #242b69;
-  border-radius: 0 12px 12px 0;
+  /* border-radius: 0 12px 12px 0; */
   width: 15%;
 
   display: flex;

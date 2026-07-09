@@ -296,7 +296,7 @@ const availablePresets = SIGN_TAG_PRESETS.filter(p => !newTags.includes(p));
                     borderColor: tagColor(preset),
                     color: tagColor(preset),
                     cursor: 'pointer',
-                    '&:hover': {
+                    '&:hover, &.MuiChip-clickable:hover': {
                       bgcolor: tagColor(preset),
                       color: '#fff',
                     },
