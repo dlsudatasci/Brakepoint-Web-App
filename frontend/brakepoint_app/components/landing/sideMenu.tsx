@@ -122,7 +122,7 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
                 onClickCard={() => {onCardClick?.("camera", camera.id)}}
                 onClickSideButton={() => onNavigateCamera?.("camera", camera.id)}
                 canClickThrough={canClickThrough}
-                isAlert={cameraDetails.is_calibrated}
+                isAlert={!cameraDetails.is_calibrated}
             />
         </Box>
     )
@@ -754,7 +754,7 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const DEBUG_BUTTONS = false
+    const DEBUG_BUTTONS = true
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }

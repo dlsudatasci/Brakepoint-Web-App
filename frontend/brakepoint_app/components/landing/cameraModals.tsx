@@ -192,6 +192,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
+      setVideoName(selected.name);
+
       if (selected.type.startsWith('video/')) {
         const url = URL.createObjectURL(selected);
         setVideoUrl(url);
@@ -824,7 +826,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       <DialogTitle>
         {showCalibration ? (isEditMode ? 'Edit Video Calibration' : 'Camera Calibration') : 'Add New Video'}
       </DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, overflow: 'hidden' }}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, pt: "0.25em !important", overflow: 'hidden' }}>
         {!showCalibration ? (
           <>
             <TextField
@@ -960,7 +962,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="secondary">Cancel</Button>
-        {showCalibration && (
+        { /* if editing calibration, do not show back button in the reference step */ }
+        {showCalibration && !isEditMode && (
           <Button onClick={handleBackToUpload} color="secondary">Back</Button>
         )}
         <Button 
