@@ -350,11 +350,22 @@ export default function LandingPage() {
     if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
       parent.latest_upload = newVideoSummary.uploaded_at;
     }
+
+    // if not yet calibrated and video has calibration details, update
+    if (!parent.is_calibrated && newVideoSummary?.calibration_points && newVideoSummary?.reference_points) {
+      parent.is_calibrated = true;
+      parent.calibration_points = newVideoSummary.calibration_points
+      parent.reference_points = newVideoSummary.reference_points
+      parent.reference_distance_meters = newVideoSummary.reference_distance_meters
+    }
         
     // and set the newly updated data to our camera list
     const newCameraList = allCamerasRef.current;
     newCameraList[parent.id] = parent;
     setAllCameras(newCameraList);
+
+    // and done
+    setVideosReady(true)
   }
   //onComplete?: (fullData: any) => void
   
@@ -1227,8 +1238,6 @@ export default function LandingPage() {
     formData.append('reference_points', JSON.stringify(originalReferencePoints));
     formData.append('reference_distance_meters', referenceDistance.toString());
     if (uploadThumbnail) formData.append('thumbnail', uploadThumbnail);
-
-    // console.log("Sending file:", formData)
 
     try {
 

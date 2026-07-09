@@ -438,31 +438,12 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 }) {
     const [openUploadModal, setOpenUploadModal] = useState(false);
 
-    const calibrationOverlay = useMemo(() => {
-        if (!thumbnail || !camera.calibration_points || camera.calibration_points.length < 4) return null;
-
-        const latestVideo = [...loadedVideos].sort(
-            (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime(),
-        )[0];
-        const parsedResolution = parseVideoResolution(latestVideo?.resolution);
-        if (!parsedResolution) return null;
-
-        const calibrationPoints = camera.calibration_points
-            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-            .slice(0, 4);
-        if (calibrationPoints.length < 4) return null;
-
-        const referencePoints = (camera.reference_points ?? [])
-            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-            .slice(0, 2);
-
-        return {
-            width: parsedResolution.width,
-            height: parsedResolution.height,
+    const [calibrationOverlay, setCalibrationOverlay] = useState<{
+            width: number,
+            height: number,
             calibrationPoints,
             referencePoints,
-        };
-    }, [thumbnail, camera.calibration_points, camera.reference_points, loadedVideos]);
+        }>({width: 0, height: 0, calibrationPoints:[], referencePoints:[]});
 
     const handleUploadClick = () => {
         setOpenUploadModal(true);
@@ -480,8 +461,30 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
     // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
     useEffect(() => {
         setTimeout(() => {
-            setThumbnailHeight(thumbnailObject?.naturalWidth);
-            setThumbnailHeight(thumbnailObject?.naturalHeight);
+            const width = thumbnailObject?.naturalWidth ?? 640;
+            const height = thumbnailObject?.naturalHeight ?? 320;
+            setThumbnailWidth(width);
+            setThumbnailHeight(height);
+
+            const parsedResolution = { width: width, height: height }
+            if (!parsedResolution) return null;
+
+            const calibrationPoints = camera.calibration_points
+                .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+                .slice(0, 4);
+            if (calibrationPoints.length < 4) return null;
+
+            const referencePoints = (camera.reference_points ?? [])
+                .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+                .slice(0, 2);
+
+             setCalibrationOverlay({
+                width: parsedResolution.width,
+                height: parsedResolution.height,
+                calibrationPoints,
+                referencePoints,
+            });
+
         }, THUMBNAIL_WAIT_TIME_MS)
     }, [thumbnailObject]) 
 
