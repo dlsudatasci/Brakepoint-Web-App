@@ -1253,7 +1253,7 @@ export default function LandingPage() {
       });
 
       const pendingVideo: LandingVideoDto = {
-        id: data.video_id, camera: cameraId, filename: videoName,
+        id: data.video_id, camera: cameraId, filename: videoName, resolution: `${resolution.width}x${resolution.height}`,
         calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
         duration_seconds: 0, vehicle_breakdown: {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0},
         uploaded_at: new Date().toISOString(), recorded_at: new Date().toISOString(),
