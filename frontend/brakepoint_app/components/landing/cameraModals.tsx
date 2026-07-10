@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, Snackbar, Alert } from '@mui/material';
+import React from 'react';
+import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, CircularProgress } from '@mui/material';
 
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 import '@/components/ui/table.css';
-import { authFetch } from '@/lib/authFetch';
-import { RequestQuoteRounded } from '@mui/icons-material';
 
 // --- Perspective Transform Helpers ---
 function computeHomography(src: {x:number,y:number}[], dst: {x:number,y:number}[]): number[][] {
@@ -80,7 +78,7 @@ interface CameraAddModalProps {
   cameraId?: number | null;
 
   onUploadStart?: (
-    savedFile: File, uploadingVideoName: string, cameraId: number,
+    savedFile: File, uploadingVideoName: string, cameraId: number, resolution: { width: number, height: number },
     calibrationPoints: {x: number, y: number}[], originalReferencePoints: {x: number, y: number}[],
     referenceDistance: number, uploadThumbnail?: string
   ) => void;
@@ -92,6 +90,7 @@ interface CameraAddModalProps {
     calibrationPoints: {x: number, y: number}[],
     referencePoints: {x: number, y: number}[],
     referenceDistance: number,
+    sourceDimensions?: {width: number, height: number}
   ) => void;
 
   initialCalibrationPoints?: { x: number; y: number }[];
@@ -192,6 +191,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
+      setVideoName(selected.name);
+
       if (selected.type.startsWith('video/')) {
         const url = URL.createObjectURL(selected);
         setVideoUrl(url);
@@ -736,7 +737,9 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
         ? referencePoints.map(p => transformPoint(homographyInv, p))
         : referencePoints;
 
-      const savedVideoUrl = videoUrl;
+      const currCalibrationPoints = calibrationPoints;
+      const currReferenceDistance = referenceDistance;
+      const currSourceDimensions = videoDimensions;
 
       setShowCalibration(false);
       setCalibrationPoints([]);
@@ -749,61 +752,13 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       setHomographyInv(null);
       onClose();
 
-      try {
-        console.log('[calibration-edit] Updating calibration for video', editVideoId);
-        const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${editVideoId}/`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            calibration_points: calibrationPoints,
-            reference_points: originalReferencePoints,
-            reference_distance_meters: referenceDistance,
-          }),
-        });
-
-        if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          console.error('[calibration-edit] Non-JSON response:', response.status, contentType);
-          if (onProcessingComplete) {
-            onProcessingComplete('Calibration Update', false, { error: `Server error (${response.status})` });
-          }
-          return;
-        }
-
-        const data = await response.json();
-        console.log('[calibration-edit] Response data:', data);
-
-        if (!response.ok) {
-          console.error('[calibration-edit] Update failed:', response.status, data);
-          if (onProcessingComplete) {
-            onProcessingComplete('Calibration Update', false, { error: data.error || data.detail || 'Update failed' });
-          }
-          return;
-        }
-
-        onCalibrationSaved?.(
-          cameraId,
-          calibrationPoints,
-          originalReferencePoints,
-          referenceDistance,
-        );
-
-        if (onProcessingComplete) {
-          onProcessingComplete('Calibration Update', true, { message: 'Calibration updated successfully' });
-        }
-
-        if (onUploadComplete) {
-          onUploadComplete();
-        }
-      } catch (err) {
-        if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-        console.error('[calibration-edit] Error caught:', err);
-        if (onProcessingComplete) {
-          onProcessingComplete('Calibration Update', false, { error: String(err) || 'Failed to update calibration' });
-        }
-      }
+      onCalibrationSaved(
+        cameraId,
+        currCalibrationPoints,
+        originalReferencePoints,
+        currReferenceDistance,
+        currSourceDimensions
+      )
       return;
     }
 
@@ -846,6 +801,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       savedFile,
       uploadingVideoName,
       cameraId,
+      videoDimensions,
       activeCalibrationPoints,
       originalReferencePoints,
       activeReferenceDistance,
@@ -864,74 +820,6 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
     setWarpDimensions({ width: 0, height: 0 });
     setHomographyInv(null);
     onClose();
-    /*
-
-    const formData = new FormData();
-    formData.append('file', savedFile);
-    formData.append('video_name', uploadingVideoName);
-    formData.append('camera_id', cameraId.toString());
-    formData.append('calibration_points', JSON.stringify(calibrationPoints));
-    formData.append('reference_points', JSON.stringify(originalReferencePoints));
-    formData.append('reference_distance_meters', referenceDistance.toString());
-    if (uploadThumbnail) {
-      formData.append('thumbnail', uploadThumbnail);
-    }
-
-    // if (onUploadStart) onUploadStart(uploadingVideoName);
-
-    try {
-      console.log('[upload] Sending upload request...', formData);
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-
-      console.log('[upload] Response status:', response.status);
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        console.error('[upload] Non-JSON response:', response.status, contentType);
-        if (onProcessingComplete) {
-          onProcessingComplete(uploadingVideoName, false, { error: `Server error (${response.status})` });
-        }
-        return;
-      }
-
-      const data = await response.json();
-      console.log('[upload] Response data:', data);
-
-      if (!response.ok) {
-        console.error('[upload] Upload failed:', response.status, data);
-        if (onProcessingComplete) {
-          onProcessingComplete(uploadingVideoName, false, { error: data.error || data.detail || 'Upload failed' });
-        }
-        return;
-      }
-
-      if (data.video_id && onProcessingStart) {
-        onProcessingStart(uploadingVideoName, data.video_id);
-      }
-
-      onSubmit({ 
-        video_name: uploadingVideoName, 
-        file_name: savedFile, 
-        calibration_points: savedCalibrationPoints,
-        reference_distance_meters: savedReferenceDistance
-      });
-
-      if (onUploadComplete) {
-        onUploadComplete();
-      }
-    } catch (err) {
-      if (savedVideoUrl) URL.revokeObjectURL(savedVideoUrl);
-      console.error('[upload] Upload error caught:', err);
-      if (onProcessingComplete) {
-        onProcessingComplete(uploadingVideoName, false, { error: String(err) || 'Failed to process video' });
-      }
-    }
-      */
 
   };
 
@@ -940,7 +828,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       <DialogTitle>
         {showCalibration ? (isEditMode ? 'Edit Video Calibration' : 'Camera Calibration') : 'Add New Video'}
       </DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, overflow: 'hidden' }}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, pt: "0.25em !important", overflow: 'hidden' }}>
         {!showCalibration ? (
           <>
             <TextField
@@ -1076,7 +964,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="secondary">Cancel</Button>
-        {showCalibration && (
+        { /* if editing calibration, do not show back button in the reference step */ }
+        {showCalibration && !isEditMode && (
           <Button onClick={handleBackToUpload} color="secondary">Back</Button>
         )}
         <Button 
@@ -1185,4 +1074,33 @@ export function CameraEditModal({ open, onClose, onSubmit, videoId, currentName 
       </DialogActions>
     </Dialog>
   );
+}
+
+interface CameraResetModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  isLoading: boolean;
+  cameraName: string;
+}
+
+export function CameraResetModal({ open, onClose, onSubmit, isLoading, cameraName }: CameraResetModalProps) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Reset Camera Calibration</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+        <div>Are you sure you want to <b>reset</b> the calibration of the camera "{cameraName}"?</div>
+        <div>Resetting its calibration will delete the existing stored calibration and allow you to set a new one for your next upload for this camera.</div>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="secondary">Cancel</Button>
+        <Button
+          onClick={onSubmit}
+          variant="contained"
+          color="primary"
+          disabled={isLoading}
+        > { !isLoading ? "Reset" : <CircularProgress size={16} sx={{ color: "#fff" }} /> }</Button>
+      </DialogActions>
+    </Dialog>
+  )
 }

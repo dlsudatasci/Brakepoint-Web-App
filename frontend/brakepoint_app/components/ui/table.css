@@ -1,24 +1,3 @@
-/* .table-container {
-  width: 100%;
-  overflow-x: auto;
-}
-
-.MuiDataGrid-topContainer {
-    background-color: aqua;
-}
-
-.MuiDataGrid-filler, .MuiDataGrid-scrollbarFiller--header {
-    background-color: rgb(255, 255, 255);
-}
-
-.MuiDataGrid-columnHeaderTitleContainer {
-    background-color: rgb(255, 255, 255);
-}
-
-.MuiDataGrid-cellEmpty {
-      border: none;
-} */
-
 .table-container {
   width: 100%;
   overflow-x: auto;
@@ -163,12 +142,20 @@
   min-height: unset;
 }
 
+.cal-header__empty-note {
+  font-size: 10.5px;
+  color: #ff0000;
+  font-style: italic;
+  padding: 9px;
+  text-align: center;
+}
+
 /* ─── Session block ────────────────────────────────────────────────────────── */
 
 .cal-block {
   position: absolute;
-  left: 5px;
-  right: 5px;
+  /* left: 5px;
+  right: 5px; */
   background: #dbeafe;
   border: 1.5px solid #93c5fd;
   border-radius: 10px;

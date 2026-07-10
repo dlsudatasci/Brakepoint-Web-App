@@ -1554,12 +1554,106 @@ def dashboard_summary(request):
 @permission_classes([IsAuthenticated])
 def get_landing_objects(request):
     try:
-        qs = SavedLocation.objects.filter(user=request.user)
-        
+        locations = list(SavedLocation.objects.filter(user=request.user))
+        cameras = list(Camera.objects.filter(user=request.user))
+        videos = list(Video.objects.filter(camera__user=request.user))
+
+        # Build relationship indexes once so the frontend can stay UI-focused.
+        subarea_ids_by_aoi = {}
+        for loc in locations:
+            if loc.location_type == "sub_area" and loc.parent_id is not None:
+                subarea_ids_by_aoi.setdefault(loc.parent_id, []).append(loc.id)
+
+        camera_ids_by_subarea = {}
+        camera_by_id = {}
+        for camera in cameras:
+            camera_by_id[camera.id] = camera
+            if camera.saved_location_id is not None:
+                camera_ids_by_subarea.setdefault(camera.saved_location_id, []).append(camera.id)
+
+        videos_by_camera = {}
+        for video in videos:
+            videos_by_camera.setdefault(video.camera_id, []).append(video)
+
+        stats_by_subarea = {}
+        for subarea_id in camera_ids_by_subarea:
+            stats_by_subarea[subarea_id] = {
+                "vehicles": 0,
+                "occurrences": 0,
+                "speeding": 0,
+                "swerving": 0,
+                "abrupt_stopping": 0,
+                "vehicle_breakdown": {},
+            }
+
+        for video in videos:
+            camera = camera_by_id.get(video.camera_id)
+            if camera is None or camera.saved_location_id is None:
+                continue
+
+            subarea_stats = stats_by_subarea.setdefault(camera.saved_location_id, {
+                "vehicles": 0,
+                "occurrences": 0,
+                "speeding": 0,
+                "swerving": 0,
+                "abrupt_stopping": 0,
+                "vehicle_breakdown": {},
+            })
+
+            subarea_stats["vehicles"] += (video.vehicles or 0)
+            subarea_stats["occurrences"] += (video.occurrences or 0)
+            subarea_stats["speeding"] += (video.speeding_count or 0)
+            subarea_stats["swerving"] += (video.swerving_count or 0)
+            subarea_stats["abrupt_stopping"] += (video.abrupt_stopping_count or 0)
+
+            if isinstance(video.vehicle_breakdown, dict):
+                for label, value in video.vehicle_breakdown.items():
+                    subarea_stats["vehicle_breakdown"][label] = subarea_stats["vehicle_breakdown"].get(label, 0) + (value or 0)
+
+        def behavior_summary_from_counts(speeding, swerving, abrupt_stopping):
+            behaviors = []
+            if speeding > 0:
+                behaviors.append("Speeding")
+            if swerving > 0:
+                behaviors.append("Swerving")
+            if abrupt_stopping > 0:
+                behaviors.append("Abrupt Stopping")
+            return behaviors if behaviors else ["No Data"]
+
         res_areas = []
         res_subareas = []
-        for loc in qs:
-            if (loc.location_type == "aoi"):
+        for loc in locations:
+            if loc.location_type == "aoi":
+                child_subarea_ids = subarea_ids_by_aoi.get(loc.id, [])
+
+                area_vehicles = 0
+                area_occurrences = 0
+                area_speeding = 0
+                area_swerving = 0
+                area_abrupt_stopping = 0
+                area_breakdown = {}
+                area_camera_count = 0
+
+                for subarea_id in child_subarea_ids:
+                    sub_stats = stats_by_subarea.get(subarea_id, {
+                        "vehicles": 0,
+                        "occurrences": 0,
+                        "speeding": 0,
+                        "swerving": 0,
+                        "abrupt_stopping": 0,
+                        "vehicle_breakdown": {},
+                    })
+
+                    area_vehicles += sub_stats["vehicles"]
+                    area_occurrences += sub_stats["occurrences"]
+                    area_speeding += sub_stats["speeding"]
+                    area_swerving += sub_stats["swerving"]
+                    area_abrupt_stopping += sub_stats["abrupt_stopping"]
+                    area_camera_count += len(camera_ids_by_subarea.get(subarea_id, []))
+
+                    for label, value in sub_stats["vehicle_breakdown"].items():
+                        area_breakdown[label] = area_breakdown.get(label, 0) + value
+
                 res_areas.append({
                     "id": loc.id,
                     "name": loc.name,
@@ -1573,16 +1667,30 @@ def get_landing_objects(request):
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
-                    "camera_count": loc.camera_count,
-                    "vehicles": loc.total_vehicles,
-                    "occurrences": loc.total_occurrences,
-                    "speeding": loc.total_speeding,
-                    "swerving": loc.total_swerving,
-                    "abrupt_stopping": loc.total_abrupt_stopping,
-                    "behaviors": loc.behavior_summary,
-                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                    "subarea_count": len(child_subarea_ids),
+                    "subarea_ids": child_subarea_ids,
+                    "camera_count": area_camera_count,
+                    "vehicles": area_vehicles,
+                    "occurrences": area_occurrences,
+                    "adb": area_occurrences,
+                    "speeding": area_speeding,
+                    "swerving": area_swerving,
+                    "abrupt_stopping": area_abrupt_stopping,
+                    "behaviors": behavior_summary_from_counts(area_speeding, area_swerving, area_abrupt_stopping),
+                    "vehicle_breakdown": area_breakdown,
                 })
-            elif (loc.location_type == "sub_area"):
+
+            elif loc.location_type == "sub_area":
+                subarea_stats = stats_by_subarea.get(loc.id, {
+                    "vehicles": 0,
+                    "occurrences": 0,
+                    "speeding": 0,
+                    "swerving": 0,
+                    "abrupt_stopping": 0,
+                    "vehicle_breakdown": {},
+                })
+                child_camera_ids = camera_ids_by_subarea.get(loc.id, [])
+
                 res_subareas.append({
                     "id": loc.id,
                     "name": loc.name,
@@ -1596,35 +1704,82 @@ def get_landing_objects(request):
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
-                    "camera_count": loc.camera_count,
-                    "vehicles": loc.total_vehicles,
-                    "occurrences": loc.total_occurrences,
-                    "speeding": loc.total_speeding,
-                    "swerving": loc.total_swerving,
-                    "abrupt_stopping": loc.total_abrupt_stopping,
-                    "behaviors": loc.behavior_summary,
-                    "vehicle_breakdown": loc.total_vehicle_breakdown,
+                    "camera_count": len(child_camera_ids),
+                    "camera_ids": child_camera_ids,
+                    "vehicles": subarea_stats["vehicles"],
+                    "occurrences": subarea_stats["occurrences"],
+                    "adb": subarea_stats["occurrences"],
+                    "speeding": subarea_stats["speeding"],
+                    "swerving": subarea_stats["swerving"],
+                    "abrupt_stopping": subarea_stats["abrupt_stopping"],
+                    "behaviors": behavior_summary_from_counts(subarea_stats["speeding"], subarea_stats["swerving"], subarea_stats["abrupt_stopping"]),
+                    "vehicle_breakdown": subarea_stats["vehicle_breakdown"],
                 })
 
-            res_cameras = Camera.objects.filter(user=request.user)
-        res_videos = Video.objects.filter(camera__user=request.user)
-        ser_cameras = CameraSerializer(res_cameras, many=True)
-        ser_videos = VideoSerializer(res_videos, many=True)
+        res_cameras = []
+        for camera in cameras:
+            camera_videos = videos_by_camera.get(camera.id, [])
+            vehicles = 0
+            occurrences = 0
+            speeding = 0
+            swerving = 0
+            abrupt_stopping = 0
+            vehicle_breakdown = {}
+
+            for video in camera_videos:
+                vehicles += (video.vehicles or 0)
+                occurrences += (video.occurrences or 0)
+                speeding += (video.speeding_count or 0)
+                swerving += (video.swerving_count or 0)
+                abrupt_stopping += (video.abrupt_stopping_count or 0)
+                if isinstance(video.vehicle_breakdown, dict):
+                    for label, value in video.vehicle_breakdown.items():
+                        vehicle_breakdown[label] = vehicle_breakdown.get(label, 0) + (value or 0)
+
+            latest_upload = camera.latest_upload
+            if latest_upload is None and camera_videos:
+                latest_upload = max(v.uploaded_at for v in camera_videos)
+
+            res_cameras.append({
+                "id": camera.id,
+                "name": camera.name,
+                "lat": camera.lat,
+                "lng": camera.lng,
+                "location": camera.location,
+                "polygon": camera.polygon,
+                "saved_location": camera.saved_location_id,
+                "is_calibrated": camera.is_calibrated,
+                "calibration_points": camera.calibration_points,
+                "reference_points": camera.reference_points,
+                "reference_distance_meters": camera.reference_distance_meters,
+                "meter_per_pixel": camera.meter_per_pixel,
+                "tags": camera.tags or [],
+                "video_count": len(camera_videos),
+                "video_ids": [video.id for video in camera_videos],
+                "latest_upload": latest_upload,
+                "vehicles": vehicles,
+                "occurrences": occurrences,
+                "adb": occurrences,
+                "speeding": speeding,
+                "swerving": swerving,
+                "abrupt_stopping": abrupt_stopping,
+                "behaviors": behavior_summary_from_counts(speeding, swerving, abrupt_stopping),
+                "vehicle_breakdown": vehicle_breakdown,
+            })
+
+        ser_videos = VideoSerializer(videos, many=True)
 
         return Response({
             "success": True,
             "aois": res_areas,
             "subareas": res_subareas,
-            "cameras": ser_cameras.data,
+            "cameras": res_cameras,
             "videos": ser_videos.data,
         })
 
-        pass
-
     except Exception as e:
         print(e)
-        return Response({"success": False, "error": e})
-        pass
+        return Response({"success": False, "error": str(e)})
 
 
 @api_view(['GET', 'POST'])

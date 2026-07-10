@@ -5,7 +5,6 @@ import ReactDOM from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
-import SideTab from "@components/map/sideTab";
 
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
@@ -503,7 +502,6 @@ class createPolygonEditButtons implements maplibregl.IControl {
   }
 
 }
-
 
 
 
@@ -2259,7 +2257,7 @@ export default function MapView({
       };
       const enterHandler = (e: any) => {
         if (disableSubAreaInteractionRef.current) return;
-        map.getCanvas().style.cursor = "pointer";
+        //map.getCanvas().style.cursor = "pointer";
         const id = e.features?.[0]?.properties?.id;
         if (id != null) onSubAreaHoverRef.current?.(Number(id));
       };
@@ -2389,14 +2387,14 @@ export default function MapView({
         const editBtn = document.createElement("button");
         editBtn.className = "aoi-pin-btn aoi-pin-btn--edit";
         editBtn.title = "Rename";
-        editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
         editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("area", item.id); });
         pill.appendChild(editBtn);
 
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "aoi-pin-btn aoi-pin-btn--delete";
         deleteBtn.title = "Delete";
-        deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
         deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("area", item.id); });
         pill.appendChild(deleteBtn);
 
@@ -2479,14 +2477,14 @@ export default function MapView({
         const editBtn = document.createElement("button");
         editBtn.className = "sub-area-pin-btn sub-area-pin-btn--edit";
         editBtn.title = "Rename";
-        editBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
         editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("subarea", item.id); });
         pill.appendChild(editBtn);
 
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "sub-area-pin-btn sub-area-pin-btn--delete";
         deleteBtn.title = "Delete";
-        deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
         deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("subarea", item.id); });
         pill.appendChild(deleteBtn);
 
@@ -3190,14 +3188,6 @@ export default function MapView({
                 "icon-ignore-placement": true,
               },
             }, belowLayer);
-
-            map.on("mouseenter", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "pointer";
-            });
-
-            map.on("mouseleave", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "";
-            });
           });
         }
       } else {
@@ -3501,6 +3491,71 @@ export default function MapView({
     }
   }, [visibleCameraIds]);
 
+
+
+  // commented out — would've turned the cursor to a pointer iff hovering oevr area and selectionMode == all, or hovering over subarea and selectionMode == any
+  // ended up with a too buggy implementation and was removed for now
+  /*
+  useEffect(() => {
+    console.log("init!")
+    const map = mapRef.current;
+    if (!map) return;
+
+    /*
+    if (currentSelectionMode === "all") {
+      events.onAoiEnter?.unsubscribe();
+      events.onAoiLeave?.unsubscribe();
+      map.off("mouseenter", onAoiEnter);
+      map.off("mouseleave", onAoiLeave);
+      events.onAoiEnter = map.on("mouseenter", "aoi-fill", onAoiEnter)
+      events.onAoiLeave = map.on("mouseleave", "aoi-fill", onAoiLeave)
+    } else if (currentSelectionMode === "area") {
+      events.onSubEnter?.unsubscribe();
+      events.onSubLeave?.unsubscribe();
+      map.off("mouseenter", onSubEnter);
+      map.off("mouseleave", onSubLeave);
+      events.onSubEnter = map.on("mouseenter", "sub-area-fill", onSubEnter)
+      events.onSubLeave = map.on("mouseleave", "sub-area-fill", onSubLeave)
+    }
+
+    mapRef.current = map;
+
+    // events for the custom cursor for entering AoIs and subareas
+    map.on('mouseenter', "aoi-fill", (e: any) => {
+      console.log("enter-aoi: ", selectionMode, true, cursorIsOverSubarea)
+      setCursorIsOverArea(true);
+      handleAoiHoverCursorChange(canvas, true, cursorIsOverSubarea);
+    })
+
+    map.on('mouseenter', "sub-area-fill", (e: any) => {
+      console.log("enter-sub: ", selectionMode, true, true)
+      setCursorIsOverSubarea(true);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, true);
+    })
+
+    map.on('mouseleave', "aoi-fill", (e: any) => {
+      console.log("leave-aoi: ", selectionMode, false, cursorIsOverSubarea)
+      setCursorIsOverArea(false);
+      handleAoiHoverCursorChange(canvas, false, cursorIsOverSubarea);
+    })
+
+    map.on('mouseleave', "sub-area-fill", (e: any) => {
+      console.log("leave-sub: ", selectionMode, true, false)
+      setCursorIsOverSubarea(false);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, false);
+    })
+
+    // events for the custom cursor for entering and leaving a Mapillary icon
+    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, cursorIsOverSubarea);
+    })
+  }, [])
+  */
+
+  // handle the main cursor logic for tool mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -3509,31 +3564,13 @@ export default function MapView({
     canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    // events for the custom cursor for mapillary street icons
-    map.on('mouseenter', "aoi-fill", (e: any) => {
-      canvas.classList.add("map-pointer")
-    })
-
-    map.on('mouseleave', "aoi-fill", (e: any) => {
-      canvas.classList.remove("map-pointer")
-    })
-
-    if (!isEditMode) return;
+    if (!isEditMode && !isDrawingAOI) return;
 
     if (toolMode === "addCamera") {
       canvas.classList.add("map-cam-crosshair");
     }
 
-    if (toolMode === "addPoint") {
+    if (isDrawingAOI || toolMode === "addPoint") {
       canvas.classList.add("map-crosshair");
     }
 
@@ -3541,7 +3578,8 @@ export default function MapView({
       canvas.classList.add("map-remove");
     }
 
-  }, [isEditMode, toolMode]);
+  }, [isEditMode, toolMode, isDrawingAOI, currentSelectionMode]);
+
 
   useEffect(() => {
     if (mode !== "explore") return;
@@ -3909,122 +3947,6 @@ export default function MapView({
   return (
     <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
       <div ref={mapContainer} className="map" />
-      {mode === "explore" && (
-        <SideTab side="bottom" open={open} invisible={false} onToggle={() => setOpen(!open)} style={{ "display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center" }}>
-          <div className="explore-toolbar-header">
-            <span className="explore-toolbar__step">
-              {explorePhase === "drawing-sub"
-                ? activeSubAreaIndex != null
-                  ? "Step 3 · Edit selected sub-area"
-                  : "Step 3 · Draw a sub-area"
-                : explorePhase === "drawing-primary"
-                  ? primaryFocusArea
-                    ? "Step 2 · Adjust AOI"
-                    : "Step 1 · Draw the AOI"
-                  : primaryFocusArea
-                    ? "Step 3 · Manage sub-areas"
-                    : "Step 1 · Search and draw the AOI"
-              }
-            </span>
-
-            <span className="explore-toolbar__label">
-              {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-              {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-            </span>
-
-            <span />
-          </div>
-
-          <div className="explore-toolbar__group">
-            {primaryFocusArea && (
-              <button
-                onClick={() => fitToFocusArea(primaryFocusArea)}
-                className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                disabled={isDrawingFocusArea}
-              >
-                Reset View
-              </button>
-            )}
-
-            {!isDrawingFocusArea ? (
-              <>
-                <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                  Edit AOI
-                </button>
-
-                <button
-                  onClick={deletePrimaryFocusArea}
-                  className="explore-toolbar__btn explore-toolbar__btn--danger"
-                  disabled={!hasConfirmedPrimary}
-                >
-                  Delete AOI
-                </button>
-
-                <button
-                  onClick={beginSubFocusDrawing}
-                  className="explore-toolbar__btn explore-toolbar__btn--primary"
-                  disabled={!hasConfirmedPrimary}
-                >
-                  Add Sub-area
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (selectedSubAreaIndex != null) {
-                      handleEditSubArea(selectedSubAreaIndex);
-                    }
-                  }}
-                  className="explore-toolbar__btn explore-toolbar__btn--sub"
-                  disabled={!hasSelectedSubArea}
-                >
-                  Edit Selected
-                </button>
-
-                <button
-                  onClick={deleteSelectedSubArea}
-                  className="explore-toolbar__btn explore-toolbar__btn--danger"
-                  disabled={!hasSelectedSubArea}
-                >
-                  Delete Selected
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                  {explorePhase === "drawing-sub"
-                    ? activeSubAreaIndex != null
-                      ? "Confirm Sub-area Edit"
-                      : "Confirm Sub-area"
-                    : primaryFocusArea
-                      ? "Confirm AOI Edit"
-                      : "Confirm AOI"}
-                </button>
-
-                <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                  Cancel
-                </button>
-              </>
-            )}
-          </div>
-
-          {subFocusAreas.length > 0 && (
-            <div className="explore-toolbar">
-              <span className="explore-toolbar__label">Sub-areas</span>
-
-              {subFocusAreas.map((area, index) => (
-                <button
-                  key={`${area.label}-${index}`}
-                  onClick={() => setSelectedSubAreaIndex(index)}
-                  className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                  disabled={isDrawingFocusArea}
-                >
-                  {area.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </SideTab>
-      )}
 
       {isEditMode && mode === "map" && (
         <>

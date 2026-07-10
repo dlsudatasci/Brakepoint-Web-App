@@ -1,38 +1,28 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Box, Typography, Button, Chip, CircularProgress, Divider, IconButton } from "@mui/material";
+import { Box, Typography, Button, CircularProgress, IconButton } from "@mui/material";
 import { useRouter } from "next/navigation";
 import styles from "./menuBar.module.css";
-import { authFetch } from "@/lib/authFetch";
-import { useNotifications } from "@/contexts/NotificationContext";
 
 // components
-import AnalyticsCard, { StackedBar } from "./analyticsCard";
+import AnalyticsCard from "./analyticsCard";
 import LocationCard from "./locationCard";
 import ModeSegmentedControl from "@/components/landing/modeToggle";
 import LandingSection from "@/components/landing/landingSection"
 import Timeline from "@/components/landing/timeline";
 import {
     SubAreaType, SummaryType,
-    LocationSummary, AOISummary, SubAreaSummary, CameraSummary,
-    isAreaSummary, isSubareaSummary, isCameraSummary,
-    convertObjectToAreaSummary, convertObjectToSubareaSummary, convertObjectToCameraSummary,
-    VideoSummary, convertObjectToVideoSummary,
+    AOISummary, SubAreaSummary, CameraSummary,
+    VideoSummary,
     AOIRecord, SubareaRecord, CameraRecord, VideoRecord, convertRecordToArray,
-    VehicleBreakdown
 } from "@/components/landing/summaryTypes";
 import CameraTags from "@/components/ui/cameraTags";
 import VideoTable from "@/components/ui/table";
 
 // icons
 import LogoutIcon from "@mui/icons-material/Logout";
-import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import EditIcon from '@mui/icons-material/Edit';
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import SwapCallsIcon from '@mui/icons-material/SwapCalls';
@@ -43,7 +33,6 @@ import NotificationDebugButton from "@/components/ui/notifDebug";
 
 // css
 import "./sideMenu.css";
-import { identifierSerializerSeriesIdDataIndex } from "@mui/x-charts/internals";
 
 // displays a single AOI card
 function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardClick }: {
@@ -53,7 +42,7 @@ function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardC
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void
 }) {
-   const details = convertObjectToAreaSummary(aoi);
+    const details = aoi;
 
     return (
         <Box
@@ -67,6 +56,7 @@ function AOIListItem({ aoi, canClickThrough, onNavigateAOI, onCardHover, onCardC
                 onClickCard={() => {onCardClick("area", aoi.id)}}
                 onClickSideButton={() => {onNavigateAOI("area", aoi.id)}}
                 canClickThrough={canClickThrough}
+                isAlert={details.subarea_count == 0}
             />
         </Box>
     );
@@ -80,8 +70,7 @@ function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onCardHo
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void;
 }) {
-   
-   const subDetails: SubAreaSummary = convertObjectToSubareaSummary(subarea);
+    const subDetails: SubAreaSummary = subarea;
     return (
         <Box
             key={subarea.id}
@@ -94,6 +83,7 @@ function subareaListItem({ subarea, canClickThrough, onNavigateSubarea, onCardHo
                 onClickCard={() => onCardClick?.("subarea", subarea.id)}
                 onClickSideButton={() => onNavigateSubarea?.("subarea", subarea.id)}
                 canClickThrough={canClickThrough}
+                isAlert={subDetails.camera_count == 0}
             />
         </Box>
     )
@@ -107,7 +97,7 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
     onCardHover?: (type: SummaryType, id: number | null) => void;
     onCardClick?: (type: SummaryType, id: number) => void;
 }) {
-    const cameraDetails: CameraSummary = convertObjectToCameraSummary(camera);
+    const cameraDetails: CameraSummary = camera;
     return (
         <Box
             key={camera.id}
@@ -115,11 +105,12 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
             onMouseLeave={() => onCardHover?.("camera", null)}
         >
             <LocationCard
-                type="subarea"
+                type="camera"
                 locationDetails={cameraDetails}
                 onClickCard={() => {onCardClick?.("camera", camera.id)}}
                 onClickSideButton={() => onNavigateCamera?.("camera", camera.id)}
                 canClickThrough={canClickThrough}
+                isAlert={!cameraDetails.is_calibrated}
             />
         </Box>
     )
@@ -128,7 +119,7 @@ function cameraListItem({ camera, canClickThrough, onNavigateCamera, onCardHover
 // puts out a percentage as a string value
 const pct = (tot: number, n: number) => tot > 0 ? `${((n / tot) * 100).toFixed(1)}%` : "0.0%";
 
-function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
+export function parseVideoResolution(resolution?: string): { width: number; height: number } | null {
     if (!resolution) return null;
     const match = resolution.match(/^(\d+)x(\d+)$/i);
     if (!match) return null;
@@ -421,11 +412,12 @@ function SubareaDetailMenu({ subarea, cameras, detailLoading, onRenameSubarea, o
 }
 
 // displays part of the sidebar for the camera feed tab
-function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
+function CameraFeedMenu({camera, loadedVideos, videosLoading, latestVideo, thumbnail, onClickUploadVideo, onDeleteVideo, onThumbnailUpdate, onEditCameraTags, onAutoDetectRoadFeatures} : {
     camera: CameraSummary,                                      // summary objecet for this camera
     loadedVideos: VideoSummary[],                               // summary object for all the videos loaded into this camera
     videosLoading?: boolean,                                    // whether videos are still being loaded
     videosError?: boolean,                                      // whether video loading have posted an error
+    latestVideo: VideoSummary;                                  // the latest video uploaded
     thumbnail?: string;                                         // the thumbnail to display
     onEditCameraTags?: (id: number, newTags: string[]) => void; // event to trigger when user requests to edit (add or remove) this camera's tags
     onAutoDetectRoadFeatures?: (id: number) => void;            // event to trigger model-based auto-fill of camera road feature tags
@@ -435,36 +427,58 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 }) {
     const [openUploadModal, setOpenUploadModal] = useState(false);
 
-    const calibrationOverlay = useMemo(() => {
-        if (!thumbnail || !camera.calibration_points || camera.calibration_points.length < 4) return null;
-
-        const latestVideo = [...loadedVideos].sort(
-            (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime(),
-        )[0];
-        const parsedResolution = parseVideoResolution(latestVideo?.resolution);
-        if (!parsedResolution) return null;
-
-        const calibrationPoints = camera.calibration_points
-            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-            .slice(0, 4);
-        if (calibrationPoints.length < 4) return null;
-
-        const referencePoints = (camera.reference_points ?? [])
-            .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-            .slice(0, 2);
-
-        return {
-            width: parsedResolution.width,
-            height: parsedResolution.height,
-            calibrationPoints,
-            referencePoints,
-        };
-    }, [thumbnail, camera.calibration_points, camera.reference_points, loadedVideos]);
+    const [calibrationOverlay, setCalibrationOverlay] = useState<{
+            width: number,
+            height: number,
+            calibrationPoints: {x: number, y: number}[],
+            referencePoints: {x: number, y: number}[],
+        }>({width: 0, height: 0, calibrationPoints:[], referencePoints:[]});
 
     const handleUploadClick = () => {
         setOpenUploadModal(true);
         onClickUploadVideo?.();  // still notify parent if needed
     };
+
+    // handle scaling calibration overlay to the thumbnail
+    const [thumbnailObject, setThumbnailObject] = useState<HTMLImageElement>(null);
+    const [thumbnailWidth, setThumbnailWidth] = useState<number>(null);
+    const [thumbnailHeight, setThumbnailHeight] = useState<number>(null);
+    const THUMBNAIL_WAIT_TIME_MS = 50
+
+    // updates the width and height for the overlay after a few ms
+    // if we don't wait and try to change it immediately, the thumbnail's properties won't be visible yet in the first load
+    useEffect(() => {
+        setTimeout(() => {
+            const currentThumbnailWidth = thumbnailObject?.naturalWidth ?? 640;
+            const currentThumbnailHeight = thumbnailObject?.naturalHeight ?? 320;
+            setThumbnailWidth(currentThumbnailWidth);
+            setThumbnailHeight(currentThumbnailHeight);
+            const storedThumbnailRes = parseVideoResolution(latestVideo?.resolution)
+            if (!storedThumbnailRes) return;
+
+            const rescalingCoefficientX = currentThumbnailWidth / storedThumbnailRes.width
+            const rescalingCoefficientY = currentThumbnailHeight / storedThumbnailRes.height
+
+            const calibrationPoints = camera.calibration_points
+                .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+                .slice(0, 4)
+                .map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientY } });
+            if (calibrationPoints.length < 4) return null;
+
+            const referencePoints = (camera.reference_points ?? [])
+                .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+                .slice(0, 2)
+                .map((p) => { return { x: p.x * rescalingCoefficientX, y: p.y * rescalingCoefficientY } });
+
+            setCalibrationOverlay({
+              width: currentThumbnailWidth,
+              height: currentThumbnailHeight,
+              calibrationPoints,
+              referencePoints,
+            });
+
+        }, THUMBNAIL_WAIT_TIME_MS)
+    }, [thumbnailObject, camera?.calibration_points, camera?.reference_points]) 
 
     return (
         <div className="menuContainer">
@@ -474,15 +488,18 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail == null || thumbnail == "")) && ( <span className="placeholderText">An error occured while loading videos for this camera.</span> ) }
                 { !videosLoading && (loadedVideos.length < 1) && <span className="placeholderText">No videos for this area yet. Upload a video to start monitoring.</span> }
                 { !videosLoading && (loadedVideos.length > 0 && (thumbnail != null && thumbnail != "")) && (
-                    <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+                    <Box sx={{ position: "relative", width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden" }}>
                         <img
-                            src={thumbnail}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
+                            id="image-thumbnail" src={thumbnail}
+                            ref={(e) => {
+                                setThumbnailObject(e);
+                            }}
+                            style={{ width: "100%", height: "100%", borderRadius: "inherit" }}
                         />
 
                         {calibrationOverlay && (
                             <svg
-                                viewBox={`0 0 ${calibrationOverlay.width} ${calibrationOverlay.height}`}
+                                viewBox={`0 0 ${thumbnailWidth ?? 640} ${thumbnailHeight ?? 320}`}
                                 preserveAspectRatio="none"
                                 style={{
                                     position: "absolute",
@@ -579,7 +596,7 @@ function CameraFeedMenu({camera, loadedVideos, videosLoading, thumbnail, onClick
 function CameraDetailMenu({
     camera, videos, videosLoading,
     onFeedTabActive, onRenameCamera, onAutoDetectRoadFeatures, onRecalibrateCamera, onDeleteCamera, onEditCameraTags,
-    onClickUploadVideo, onDeleteVideo, onUploadStart, onProcessingStart, onProcessingComplete
+    onClickUploadVideo, onDeleteVideo
 } : {
     camera: CameraSummary,                                                              // summary object for this camera
     videos: VideoSummary[],                                                             // array of all videos that this camera has
@@ -599,6 +616,7 @@ function CameraDetailMenu({
 
     // state variables
     const [thumbnail, setThumbnail] = useState<string | null>(null)
+    const [latestVideo, setLatestVideo] = useState<VideoSummary | null>(null)
     const [activeTab, setActiveTab] = useState<"feed" | "statistics">("feed")
 
     // toggles the tab
@@ -610,6 +628,7 @@ function CameraDetailMenu({
     // gets initial thumbnail
     useEffect(() => {
         if (videos.length === 0) {
+            setLatestVideo(null);
             setThumbnail(null);
             return;
         }
@@ -619,6 +638,7 @@ function CameraDetailMenu({
         );
         const latestWithThumbnail = sortedVideos.find((video) => !!video?.thumbnail);
         setThumbnail(latestWithThumbnail?.thumbnail ?? null);
+        setLatestVideo(latestWithThumbnail ?? null);
     }, [videos])
 
     // display page here
@@ -644,6 +664,7 @@ function CameraDetailMenu({
                 camera={camera} 
                 loadedVideos={videos}
                 videosLoading={videosLoading}
+                latestVideo={latestVideo}
                 thumbnail={thumbnail}
                 onClickUploadVideo={() => {onClickUploadVideo?.(camera.id)}}
                 onDeleteVideo={onDeleteVideo}
@@ -721,8 +742,49 @@ export default function SideMenu({
     onNavigateTo, onBack, onCardClick, onCardHover, onStartDrawing, onRequestRename, onRequestDelete,
 }: SideMenuProps) {
     const router = useRouter();
-    const { trackVideoProcessing, showToast } = useNotifications();
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const allAoisArray = useMemo(() => convertRecordToArray(allAois ?? {}), [allAois]);
+
+    const selectedAreaSubareas = useMemo(() => {
+        if (!selectedAOI || !allSubareas) return [];
+
+        const subareaIds = selectedAOI.subarea_ids ?? [];
+        if (subareaIds.length > 0) {
+            return subareaIds
+                .map((id) => allSubareas[id])
+                .filter((item): item is SubAreaSummary => Boolean(item));
+        }
+
+        // Fallback keeps behavior for legacy/partially-hydrated records.
+        return convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id);
+    }, [selectedAOI, allSubareas]);
+
+    const selectedSubareaCameras = useMemo(() => {
+        if (!selectedSubarea || !allCameras) return [];
+
+        const cameraIds = selectedSubarea.camera_ids ?? [];
+        if (cameraIds.length > 0) {
+            return cameraIds
+                .map((id) => allCameras[id])
+                .filter((item): item is CameraSummary => Boolean(item));
+        }
+
+        return convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id);
+    }, [selectedSubarea, allCameras]);
+
+    const selectedCameraVideos = useMemo(() => {
+        if (!selectedCamera || !allVideos) return [];
+
+        const videoIds = selectedCamera.video_ids ?? [];
+        if (videoIds.length > 0) {
+            return videoIds
+                .map((id) => allVideos[id])
+                .filter((item): item is VideoSummary => Boolean(item));
+        }
+
+        return convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id);
+    }, [selectedCamera, allVideos]);
 
     // handles the sign out process - removes user session data from the browser
     const handleSignOut = () => {
@@ -732,25 +794,25 @@ export default function SideMenu({
         router.push("/logIn");
     };
 
-    const debugButtons = false
+    const DEBUG_BUTTONS = false
     return (
         <Box className={styles.menuContainer}>
             { /* the header – include title and signout */ }
             <Box className={styles.menuHeader}>
-                <Typography variant="h3" className={styles.brakePoint}>BrakePoint</Typography>
+                <Typography variant="h3" className={styles.brakePoint} sx={{fontSize: '2.25em'}}>BrakePoint</Typography>
                 <Button
                     onClick={handleSignOut}
                     // onClick={ () => {console.log(aois)} }
                     sx={{
-                        marginLeft: '9em',
+                        marginLeft: '8.5em',
                         minWidth: 0,
-                        padding: '5px 20px 5px 20px',
+                        padding: '5px 15px 5px 15px',
                         color: 'rgb(236, 237, 245)',
                         cursor: 'pointer',
                         "&:hover": { bgcolor: "rgb(236, 237, 245)", color: "#161b4c" },
                     }}
                 >
-                    <LogoutIcon sx={{ fontSize: '1.8rem' }} />
+                    <LogoutIcon sx={{ fontSize: '1.7rem' }} />
                 </Button>
             </Box>
 
@@ -780,13 +842,20 @@ export default function SideMenu({
                     )}
 
                     { /* DEBUG OPTIONS — DISABLE debugButtons WHEN NOT BEING USED */ }
-                    { debugButtons && (
+                    { DEBUG_BUTTONS && (
                         <>
                             <div className="backButtonContainer" style={{fontFamily: "50%"}}>
                                 <Button variant="outlined" onClick={() => { console.log(allAois) }}> AOIs </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allSubareas) }}> Subareas </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allCameras) }}> Cameras </Button>
                                 <Button variant="outlined" onClick={() => { console.log(allVideos) }}> Videos </Button>
+                            </div>
+                            <div className="backButtonContainer" style={{fontFamily: "50%"}}>
+                                <Button variant="outlined" onClick={() => {
+                                    if (currentSelectionMode === "area") { console.log(selectedAOI) }
+                                    if (currentSelectionMode === "subarea") { console.log(selectedSubarea) }
+                                    if (currentSelectionMode === "camera") { console.log(selectedCamera) }
+                                }}> This entity </Button>
                             </div>
                             <div className="backButtonContainer" style={{fontFamily: "50%"}}>
                                 <NotificationDebugButton />    
@@ -798,7 +867,7 @@ export default function SideMenu({
                     {currentSelectionMode === "camera" && (
                         <CameraDetailMenu
                             camera={selectedCamera}
-                            videos={convertRecordToArray(allVideos).filter((x) => x.camera === selectedCamera.id)}
+                            videos={selectedCameraVideos}
                             videosLoading={videosLoading}
                             onRenameCamera={onRequestRename}
                             onAutoDetectRoadFeatures={onAutoDetectRoadFeatures}
@@ -814,7 +883,7 @@ export default function SideMenu({
                     { currentSelectionMode === "subarea" && (
                         <SubareaDetailMenu
                             subarea={selectedSubarea}
-                            cameras={convertRecordToArray(allCameras).filter((x) => x.parent === selectedSubarea.id)}
+                            cameras={selectedSubareaCameras}
                             detailLoading={false}
                             canStartDrawing={canStartDrawing}
                             onStartDrawing={onStartDrawing}
@@ -832,7 +901,7 @@ export default function SideMenu({
                         // AOI detail – if an AOI is currently selected
                         <AoiDetailMenu
                             aoi={selectedAOI}
-                            subareas={convertRecordToArray(allSubareas).filter((x) => x.parent === selectedAOI.id)}
+                            subareas={selectedAreaSubareas}
                             detailLoading={false}
                             isDrawingSubarea={isDrawingSubarea}
                             canClickThrough={canClickToSubareas}
@@ -850,7 +919,7 @@ export default function SideMenu({
                         // main menu – list of all AOIs
                         // Panel 1: AOI list
                         <AllAoiMenu
-                            aois = {convertRecordToArray(allAois)}
+                            aois = {allAoisArray}
                             listLoading = {locationSummariesLoading}
                             isDrawingAOI = {isDrawingAOI}
                             canClickThrough={canClickToAreas}

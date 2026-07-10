@@ -24,7 +24,7 @@
 }
 
 .landing-map .maplibregl-ctrl-geocoder {
-  left: 520px;
+  left: 460px;
 }
 
 .maplibregl-ctrl-geocoder .suggestions {
@@ -33,60 +33,6 @@
 
 input[type="search"]::-webkit-search-cancel-button {
   display: none !important;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Cursor modes                                                               */
-/* -------------------------------------------------------------------------- */
-/* Open Hand (Default) */
-.maplibregl-canvas {
-  cursor: url("/cursors/grab.svg")
-  12 12, 
-  grab
-  /* grab !important; */
-}
-
-/* Closed Hand */
-.maplibregl-canvas:active {
-  cursor: url("/cursors/grabbing.svg") 
-  12 12, 
-  grabbing
-  /* grabbing !important; */
-}
-
-.map-cursor,
-.aoi-label-pin {
-  cursor:
-    url('/cursors/cursor.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-pointer {
-  cursor:
-    url('/cursors/pointer.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-crosshair {
-  cursor:
-    url('/cursors/crosshair.svg')
-      12 12,
-    crosshair !important;
-}
-
-.map-cam-crosshair {
-  cursor: url("/cursors/grabbing-camera.svg") 
-  20 20, 
-  crosshair !important;
-}
-
-.map-remove {
-  cursor:
-    url('/cursors/cursor-delete.svg')
-      12 12,
-    pointer !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -142,22 +88,32 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .aoi-label-pin,
 .sub-area-label-pin {
+  padding: 1em;
+
+  display: flex;
+  flex-direction: row;
+  gap: 0.25em;
+
   position: relative;
   display: inline-flex;
   align-items: center;
   height: 30px;
-  padding: 0 12px;
   border: 2px solid #fff;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 1.5em;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
 }
 
+.aoi-label-pin--selected,
+.sub-area-label-pin--selected {
+  font-weight: 700;
+}
+
 .aoi-label-pin {
-  background: #06b6d4;
+  background: #0c92aa;
   color: #fff;
 }
 
@@ -192,7 +148,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .aoi-label-pin::after {
-  border-top: 10px solid #06b6d4;
+  border-top: 10px solid #0c92aa;
   border-right: 7px solid transparent;
   border-left: 7px solid transparent;
 }
@@ -208,28 +164,26 @@ input[type="search"]::-webkit-search-cancel-button {
   pointer-events: none;
 }
 
-.aoi-pin-btn {
+.aoi-pin-btn,
+.sub-area-pin-btn {
   display: none;
   background: none;
   border: none;
   padding: 0 0 0 5px;
   color: inherit;
-  opacity: 0.75;
+  opacity: 1;
   align-items: center;
   line-height: 1;
   flex-shrink: 0;
 }
 
+.aoi-pin-btn:hover,
+.sub-area-pin-btn:hover {
+  opacity: 0.5;
+}
+
 .aoi-label-pin--selected .aoi-pin-btn {
   display: inline-flex;
-}
-
-.aoi-pin-btn:hover {
-  opacity: 1;
-}
-
-.aoi-pin-btn--delete:hover {
-  color: #fca5a5;
 }
 
 .sub-area-label-pin::after {
@@ -249,28 +203,8 @@ input[type="search"]::-webkit-search-cancel-button {
   pointer-events: none;
 }
 
-.sub-area-pin-btn {
-  display: none;
-  background: none;
-  border: none;
-  padding: 0 0 0 5px;
-  color: inherit;
-  opacity: 0.75;
-  align-items: center;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
 .sub-area-label-pin--selected .sub-area-pin-btn {
   display: inline-flex;
-}
-
-.sub-area-pin-btn:hover {
-  opacity: 1;
-}
-
-.sub-area-pin-btn--delete:hover {
-  color: #fca5a5;
 }
 
 .dash-popup {
@@ -294,6 +228,54 @@ input[type="search"]::-webkit-search-cancel-button {
 .dash-popup__coords {
   font-size: 12px;
   opacity: 0.75;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cursor modes                                                               */
+/* -------------------------------------------------------------------------- */
+/* Open Hand (Default) */
+.maplibregl-canvas {
+  cursor: url("/cursors/grab.svg") 10 0,
+  grab
+}
+
+/* Closed Hand */
+.maplibregl-canvas:active {
+  cursor: url("/cursors/grabbing.svg") 10 0,
+  grabbing
+}
+
+.map-cursor,
+.aoi-label-pin,
+.sub-area-label-pin {
+  cursor:
+    url('/cursors/cursor.svg') 2 0,
+    default
+}
+
+.map-pointer,
+.aoi-pin-btn,
+.sub-area-pin-btn {
+  cursor:
+    url('/cursors/pointer.svg') 7 0,
+    pointer;
+}
+
+.map-cam-crosshair {
+  cursor: url("/cursors/grabbing-camera.svg") 8 0,
+  crosshair !important;
+}
+
+.map-remove {
+  cursor:
+    url('/cursors/cursor-delete.svg') 1 0,
+    cursor !important;
+}
+
+.map-crosshair {
+  cursor:
+    url('/cursors/crosshair.svg') 10 10,
+    progress !important;
 }
 
 /* -------------------------------------------------------------------------- */
