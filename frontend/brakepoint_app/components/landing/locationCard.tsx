@@ -1,7 +1,8 @@
 "use client";
 
-import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip, CircularProgress } from "@mui/material";
+import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Chip, CircularProgress, Tooltip } from "@mui/material";
 import { SubAreaSummary, LocationSummary, isAreaSummary, isSubareaSummary, isCameraSummary } from "@components/landing/summaryTypes"
+import { useState } from "react";
 
 import DirectionsCarFilledOutlinedIcon from "@mui/icons-material/DirectionsCarFilledOutlined";
 //import type { SubAreaSummary } from "./analytics";
@@ -23,24 +24,33 @@ type LCProps = {
   canClickThrough?: boolean;                    // whether the card right button is active or displays loading
   onClickCard?: () => void;                     // what happens when the user clicks on the main card itself?
   onClickSideButton?: () => void;               // what happens when the user clicks on the highlighted side button?
-  isAlert?: undefined | true | false;           // force alert status. by default, triggers if camera_count == 0
+  isAlert?: undefined | true | false;           // set alert status. displays a red glow around the border of this card
 };
 
 // LocationCard - displays an information card for a subarea (if applicable)
 export default function LocationCard({ type, locationDetails, canClickThrough = true, onClickCard, onClickSideButton, isAlert }: LCProps) {
-
-  // if isAlert is not set, set it automatically based on how the locationDetails are set up
-  if (isAlert === undefined && isSubareaSummary(locationDetails)) {
-    if (locationDetails.camera_count < 1) { isAlert = true }
-    else { isAlert = false; }
-  }
 
   // handles click on card events
   function handleClickCard() {
     if (canClickThrough) { onClickSideButton() }; 
   }
 
+  const [isOpen, setOpen] = useState<boolean>(false);
+  const handleOpen = () => { setOpen(true) };
+  const handleClose = () => { setOpen(false) };
+
   return (
+    <Tooltip
+      title = {
+        type === "area" ? "This area has no subareas yet." :
+        type === "subarea" ? "This subarea has no cameras yet." :
+        "This camera has not been calibrated and has had no videos uploaded yet." 
+      }
+      placement="top"
+      open={isOpen && isAlert}
+      onClose={handleClose}
+      onOpen={handleOpen}
+    >
     <Box className={`lc-container ${isAlert ? "alert" : ""}`}>
       {/* main - contains the main details regarding this card (area/subarea) */}
       <Box className="lc-main" onClick={onClickCard} >
@@ -109,5 +119,6 @@ export default function LocationCard({ type, locationDetails, canClickThrough = 
         { canClickThrough && <KeyboardArrowRightIcon /> }
       </Box>
     </Box>
+    </Tooltip>
   );
 }

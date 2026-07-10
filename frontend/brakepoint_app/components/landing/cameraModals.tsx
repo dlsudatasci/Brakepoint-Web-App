@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, Snackbar, Alert } from '@mui/material';
+import React from 'react';
+import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, CircularProgress } from '@mui/material';
 
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 import '@/components/ui/table.css';
-import { authFetch } from '@/lib/authFetch';
-import { RequestQuoteRounded } from '@mui/icons-material';
 
 // --- Perspective Transform Helpers ---
 function computeHomography(src: {x:number,y:number}[], dst: {x:number,y:number}[]): number[][] {
@@ -80,7 +78,7 @@ interface CameraAddModalProps {
   cameraId?: number | null;
 
   onUploadStart?: (
-    savedFile: File, uploadingVideoName: string, cameraId: number,
+    savedFile: File, uploadingVideoName: string, cameraId: number, resolution: { width: number, height: number },
     calibrationPoints: {x: number, y: number}[], originalReferencePoints: {x: number, y: number}[],
     referenceDistance: number, uploadThumbnail?: string
   ) => void;
@@ -92,6 +90,7 @@ interface CameraAddModalProps {
     calibrationPoints: {x: number, y: number}[],
     referencePoints: {x: number, y: number}[],
     referenceDistance: number,
+    sourceDimensions?: {width: number, height: number}
   ) => void;
 
   initialCalibrationPoints?: { x: number; y: number }[];
@@ -192,6 +191,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
+      setVideoName(selected.name);
+
       if (selected.type.startsWith('video/')) {
         const url = URL.createObjectURL(selected);
         setVideoUrl(url);
@@ -738,6 +739,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
 
       const currCalibrationPoints = calibrationPoints;
       const currReferenceDistance = referenceDistance;
+      const currSourceDimensions = videoDimensions;
 
       setShowCalibration(false);
       setCalibrationPoints([]);
@@ -754,7 +756,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
         cameraId,
         currCalibrationPoints,
         originalReferencePoints,
-        currReferenceDistance
+        currReferenceDistance,
+        currSourceDimensions
       )
       return;
     }
@@ -798,6 +801,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       savedFile,
       uploadingVideoName,
       cameraId,
+      videoDimensions,
       activeCalibrationPoints,
       originalReferencePoints,
       activeReferenceDistance,
@@ -824,7 +828,7 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       <DialogTitle>
         {showCalibration ? (isEditMode ? 'Edit Video Calibration' : 'Camera Calibration') : 'Add New Video'}
       </DialogTitle>
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, overflow: 'hidden' }}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 0, pb: 1, pt: "0.25em !important", overflow: 'hidden' }}>
         {!showCalibration ? (
           <>
             <TextField
@@ -960,7 +964,8 @@ export function CameraAddModal({open, onClose, onSubmit, onVideoFileSelect, came
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="secondary">Cancel</Button>
-        {showCalibration && (
+        { /* if editing calibration, do not show back button in the reference step */ }
+        {showCalibration && !isEditMode && (
           <Button onClick={handleBackToUpload} color="secondary">Back</Button>
         )}
         <Button 
@@ -1069,4 +1074,33 @@ export function CameraEditModal({ open, onClose, onSubmit, videoId, currentName 
       </DialogActions>
     </Dialog>
   );
+}
+
+interface CameraResetModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  isLoading: boolean;
+  cameraName: string;
+}
+
+export function CameraResetModal({ open, onClose, onSubmit, isLoading, cameraName }: CameraResetModalProps) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Reset Camera Calibration</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+        <div>Are you sure you want to <b>reset</b> the calibration of the camera "{cameraName}"?</div>
+        <div>Resetting its calibration will delete the existing stored calibration and allow you to set a new one for your next upload for this camera.</div>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="secondary">Cancel</Button>
+        <Button
+          onClick={onSubmit}
+          variant="contained"
+          color="primary"
+          disabled={isLoading}
+        > { !isLoading ? "Reset" : <CircularProgress size={16} sx={{ color: "#fff" }} /> }</Button>
+      </DialogActions>
+    </Dialog>
+  )
 }

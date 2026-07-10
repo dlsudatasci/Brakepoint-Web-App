@@ -511,6 +511,10 @@ export default function Table({
             </button>
           </div>
 
+          {todayBlocks.length === 0 && !loading && (
+            <span className="cal-header__empty-note">No videos recorded for this day</span>
+          )}
+
           {!hideUpload && (
             <div className="cal-header__actions">
               {/*<button className="cal-icon-btn" title="Upload video" aria-label="Upload video" onClick={() => setAddModalOpen(true)}>
@@ -554,9 +558,9 @@ export default function Table({
                   />
                 ))}
 
-                {todayBlocks.length === 0 && (
+                {/* {todayBlocks.length === 0 && (
                   <div className="cal-empty cal-empty--inline">No videos recorded for this day</div>
-                )}
+                )} */}
 
                 {todayBlocks.map(({ row, startHour, col, colCount }) => (
                   <SessionBlock
