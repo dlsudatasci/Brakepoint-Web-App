@@ -232,41 +232,47 @@ export default function LandingPage() {
     if (parent === null || videoId === undefined) { setVideosReady(true); return; };
 
     // create a new video for appending to our video list
-    const newVideoList = allVideosRef.current;
     const newVideoSummary = convertObjectToVideoSummary(videoData)
-    newVideoList[videoId] = newVideoSummary;
-    setAllVideos(newVideoList);
+    setAllVideos((prev) => ({
+      ...prev,
+      [videoId]: newVideoSummary,
+    }));
 
     // update this object's parent accordingly
-    if (!parent.video_ids || !parent.video_ids.includes(videoId)) {
-      if (!parent.video_count) parent.video_count = 0; 
-      if (!parent.video_ids) parent.video_ids = [];
-      parent.video_count++;
-      parent.video_ids = parent.video_ids ? [...parent.video_ids, videoId] : [videoId];
-    }
-    parent.vehicles += newVideoSummary.vehicles;
-    parent.adb += newVideoSummary.occurrences;
-    parent.speeding += newVideoSummary.speeding_count;
-    parent.swerving += newVideoSummary.swerving_count;
-    parent.abrupt_stopping += newVideoSummary.abrupt_stopping_count;
+    const parentVideoIds = parent.video_ids ?? [];
+    const alreadyLinked = parentVideoIds.includes(videoId);
+    const nextVideoIds = alreadyLinked ? parentVideoIds : [...parentVideoIds, videoId];
+    const nextVideoCount = alreadyLinked ? (parent.video_count ?? parentVideoIds.length) : (parent.video_count ?? parentVideoIds.length) + 1;
+
+    const updatedParent: CameraSummary = {
+      ...parent,
+      video_ids: nextVideoIds,
+      video_count: nextVideoCount,
+      vehicles: (parent.vehicles ?? 0) + (newVideoSummary.vehicles ?? 0),
+      adb: (parent.adb ?? 0) + (newVideoSummary.occurrences ?? 0),
+      speeding: (parent.speeding ?? 0) + (newVideoSummary.speeding_count ?? 0),
+      swerving: (parent.swerving ?? 0) + (newVideoSummary.swerving_count ?? 0),
+      abrupt_stopping: (parent.abrupt_stopping ?? 0) + (newVideoSummary.abrupt_stopping_count ?? 0),
+    };
     
     // update its latest upload only if necessary
-    if (parent.latest_upload === null || parent.latest_upload < newVideoSummary.uploaded_at) {
-      parent.latest_upload = newVideoSummary.uploaded_at;
+    if (updatedParent.latest_upload === null || updatedParent.latest_upload < newVideoSummary.uploaded_at) {
+      updatedParent.latest_upload = newVideoSummary.uploaded_at;
     }
 
     // if not yet calibrated and video has calibration details, update
-    if (!parent.is_calibrated && videoData?.calibration_points && videoData?.reference_points) {
-      parent.is_calibrated = true;
-      parent.calibration_points = videoData.calibration_points
-      parent.reference_points = videoData.reference_points
-      parent.reference_distance_meters = videoData.reference_distance_meters
+    if (!updatedParent.is_calibrated && videoData?.calibration_points && videoData?.reference_points) {
+      updatedParent.is_calibrated = true;
+      updatedParent.calibration_points = videoData.calibration_points
+      updatedParent.reference_points = videoData.reference_points
+      updatedParent.reference_distance_meters = videoData.reference_distance_meters
     }
         
     // and set the newly updated data to our camera list
-    const newCameraList = allCamerasRef.current;
-    newCameraList[parent.id] = parent;
-    setAllCameras(newCameraList);
+    setAllCameras((prev) => ({
+      ...prev,
+      [parent.id]: updatedParent,
+    }));
 
     // and done
     setVideosReady(true)
@@ -361,26 +367,29 @@ export default function LandingPage() {
     if (!idIsPresentInMap(type, id)) return; // test first if it's even present
 
     // get object
-    let newListObject;
+    let currentListObject;
     switch (type) {
-      case "area": newListObject = allAoisRef.current; break;
-      case "subarea": newListObject = allSubareasRef.current; break;
-      case "camera": newListObject = allCamerasRef.current; break;
-      case "video": newListObject = allVideosRef.current; break;
+      case "area": currentListObject = allAoisRef.current; break;
+      case "subarea": currentListObject = allSubareasRef.current; break;
+      case "camera": currentListObject = allCamerasRef.current; break;
+      case "video": currentListObject = allVideosRef.current; break;
     }
 
-    // patch in everything
-    for (const key in patchObject) {
-      const val = patchObject[key];
-      newListObject[id][key] = val;
-    }
+    const currentObj = currentListObject[id];
+    if (!currentObj) return;
+
+    const patched = { ...currentObj, ...patchObject };
+    const nextListObject = {
+      ...currentListObject,
+      [id]: patched,
+    };
 
     // return it in
     switch(type) {
-      case "area": setAllAois(newListObject); break;
-      case "subarea": setAllSubareas(newListObject); break;
-      case "camera": setAllCameras(newListObject); break;
-      case "video": setAllVideos(newListObject); break;
+      case "area": setAllAois(nextListObject); break;
+      case "subarea": setAllSubareas(nextListObject); break;
+      case "camera": setAllCameras(nextListObject); break;
+      case "video": setAllVideos(nextListObject); break;
     }
   }
 
@@ -767,25 +776,37 @@ export default function LandingPage() {
       if (type === "area") {
         // add to list of areas
         const newArea = convertObjectToAreaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
-        const newAreaList = allAoisRef.current
-        newAreaList[newId] = newArea
-        setAllAois(newAreaList)
+        setAllAois((prev) => ({
+          ...prev,
+          [newId]: newArea,
+        }))
 
       } else if (type === "subarea") {
         // add to list of subareas
         const newSubarea = convertObjectToSubareaSummary(saved.saved_location ?? {...newObjectRaw, id: newId});
-        const newSubareaList = allSubareasRef.current
-        newSubareaList[newId] = newSubarea;
-        setAllSubareas(newSubareaList)
+        setAllSubareas((prev) => ({
+          ...prev,
+          [newId]: newSubarea,
+        }))
 
         // update the parent area
-        if (!parent.subarea_count) parent.subarea_count = 0; 
-        if (!parent.subarea_ids) parent.subarea_ids = [];
-        parent.subarea_count += 1;
-        parent.subarea_ids = [...parent.subarea_ids, newId];
-        const newAreaList = allAoisRef.current;
-        newAreaList[parentId] = parent;
-        setAllAois(newAreaList)
+        setAllAois((prev) => {
+          const existingParent = prev[parentId];
+          if (!existingParent) return prev;
+
+          const existingIds = existingParent.subarea_ids ?? [];
+          const alreadyIncluded = existingIds.includes(newId);
+          const nextIds = alreadyIncluded ? existingIds : [...existingIds, newId];
+
+          return {
+            ...prev,
+            [parentId]: {
+              ...existingParent,
+              subarea_ids: nextIds,
+              subarea_count: alreadyIncluded ? (existingParent.subarea_count ?? nextIds.length) : (existingParent.subarea_count ?? nextIds.length - 1) + 1,
+            },
+          };
+        })
       }
 
       // done!
@@ -844,17 +865,29 @@ export default function LandingPage() {
 
       // add to list of cameras
       const newCamera = convertObjectToCameraSummary(saved.camera ?? {...body, id: newId});
-      const newCameraList = allCamerasRef.current
-      newCameraList[newId] = newCamera;
-      setAllCameras(newCameraList)
+      setAllCameras((prev) => ({
+        ...prev,
+        [newId]: newCamera,
+      }))
 
       // update list of subareas
-      if (!parentSubarea.camera_count) parentSubarea.camera_count = 0; 
-      if (!parentSubarea.camera_ids) parentSubarea.camera_ids = [];
-      parentSubarea.camera_count++;
-      parentSubarea.camera_ids = [...parentSubarea.camera_ids, newId];
-      const newSubareaList = allSubareasRef.current;
-      setAllSubareas(newSubareaList);
+      setAllSubareas((prev) => {
+        const existingSubarea = prev[parentId];
+        if (!existingSubarea) return prev;
+
+        const existingIds = existingSubarea.camera_ids ?? [];
+        const alreadyIncluded = existingIds.includes(newId);
+        const nextIds = alreadyIncluded ? existingIds : [...existingIds, newId];
+
+        return {
+          ...prev,
+          [parentId]: {
+            ...existingSubarea,
+            camera_ids: nextIds,
+            camera_count: alreadyIncluded ? (existingSubarea.camera_count ?? nextIds.length) : (existingSubarea.camera_count ?? nextIds.length - 1) + 1,
+          },
+        };
+      });
 
       // done!
       showToast(`Successfully created a new camera` , "success")
@@ -993,20 +1026,35 @@ export default function LandingPage() {
         // done — in this case, delete in our local area/subarea list
         if (type === "area") {
           if (selectedAoiRef.current === id) handleBack(); // perform a return if this is selected
-          const newAllAois = allAoisRef.current;
-          delete newAllAois[id];
-          setAllAois(newAllAois);
+          setAllAois((prev) => {
+            const { [id]: _removed, ...rest } = prev;
+            return rest;
+          });
         } else if (type === "subarea") {
           if (selectedSubareaRef.current === id) handleBack(); // perform a return if this is selected
-          const newAllSubareas = allSubareasRef.current;
-          const parentOfThis = newAllSubareas[id].parent
-          delete newAllSubareas[id];
-          setAllSubareas(newAllSubareas);
+          const parentOfThis = allSubareasRef.current[id]?.parent
 
-          const newAllAreas = allAoisRef.current;
-          newAllAreas[parentOfThis].subarea_count--;
-          newAllAreas[parentOfThis].subarea_ids = newAllAreas[parentOfThis].subarea_ids.filter((x) => x !== id)
-          setAllAois(newAllAreas)          
+          setAllSubareas((prev) => {
+            const { [id]: _removed, ...rest } = prev;
+            return rest;
+          });
+
+          if (parentOfThis != null) {
+            setAllAois((prev) => {
+              const existingParent = prev[parentOfThis];
+              if (!existingParent) return prev;
+
+              const nextIds = (existingParent.subarea_ids ?? []).filter((x) => x !== id);
+              return {
+                ...prev,
+                [parentOfThis]: {
+                  ...existingParent,
+                  subarea_ids: nextIds,
+                  subarea_count: Math.max(0, (existingParent.subarea_count ?? 0) - 1),
+                },
+              };
+            });
+          }
         }
       }
       
@@ -1020,15 +1068,28 @@ export default function LandingPage() {
         // done — in this case, delete in our local camera list and update the subarea list accordingly
         if (selectedCameraRef.current === id) handleBack() // perform a return if this is selected
 
-        const newAllCameras = allCamerasRef.current;
-        const parentOfThis = newAllCameras[id].parent;
-        delete newAllCameras[id];
-        setAllCameras(newAllCameras);
+        const parentOfThis = allCamerasRef.current[id]?.parent;
+        setAllCameras((prev) => {
+          const { [id]: _removed, ...rest } = prev;
+          return rest;
+        });
 
-        const newAllSubareas = allSubareasRef.current;
-        newAllSubareas[parentOfThis].camera_count--;
-        newAllSubareas[parentOfThis].camera_ids = newAllSubareas[parentOfThis].camera_ids.filter((x) => x !== id);
-        setAllSubareas(newAllSubareas)
+        if (parentOfThis != null) {
+          setAllSubareas((prev) => {
+            const existingParent = prev[parentOfThis];
+            if (!existingParent) return prev;
+
+            const nextIds = (existingParent.camera_ids ?? []).filter((x) => x !== id);
+            return {
+              ...prev,
+              [parentOfThis]: {
+                ...existingParent,
+                camera_ids: nextIds,
+                camera_count: Math.max(0, (existingParent.camera_count ?? 0) - 1),
+              },
+            };
+          });
+        }
       }
 
       // deleting video
@@ -1037,15 +1098,18 @@ export default function LandingPage() {
         if (!res.ok) throw new Error(await res.text()); // throw error and shunt out
 
         // done — work on deleting this object and updating the camera to note this video's absence
-        const newAllVideos = allVideosRef.current;
-        const parentOfThis = newAllVideos[id].camera;
-        delete newAllVideos[id];
-        setAllVideos(newAllVideos);
+        const parentOfThis = allVideosRef.current[id]?.camera;
+        setAllVideos((prev) => {
+          const { [id]: _removed, ...rest } = prev;
+          return rest;
+        });
 
-        patchObjectInList("camera", parentOfThis, {
-          video_count: allCamerasRef.current[parentOfThis].video_count - 1,
-          video_ids: allCamerasRef.current[parentOfThis].video_ids.filter((x) => x !== id),
-        })
+        if (parentOfThis != null && allCamerasRef.current[parentOfThis]) {
+          patchObjectInList("camera", parentOfThis, {
+            video_count: Math.max(0, (allCamerasRef.current[parentOfThis].video_count ?? 0) - 1),
+            video_ids: (allCamerasRef.current[parentOfThis].video_ids ?? []).filter((x) => x !== id),
+          })
+        }
       }
 
       showToast(`Successfuly deleted ${type} "${oldName}"`, "success")
