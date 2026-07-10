@@ -1087,7 +1087,7 @@ interface CameraResetModalProps {
 export function CameraResetModal({ open, onClose, onSubmit, isLoading, cameraName }: CameraResetModalProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Edit Video Name</DialogTitle>
+      <DialogTitle>Reset Camera Calibration</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         <div>Are you sure you want to <b>reset</b> the calibration of the camera "{cameraName}"?</div>
         <div>Resetting its calibration will delete the existing stored calibration and allow you to set a new one for your next upload for this camera.</div>
