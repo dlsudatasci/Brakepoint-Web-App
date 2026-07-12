@@ -21,7 +21,7 @@ import {
   isLandingVideoDetailResponse,
 } from "@/lib/api/landingObjects";
 
-import { CameraAddModal } from "@/components/landing/cameraModals";
+import { CameraAddModal, CameraResetModal } from "@/components/landing/cameraModals";
 import { useNotifications, setRunAfterProcessingCompleted } from "@/contexts/NotificationContext";
 import {
   SubAreaType, SummaryType,
@@ -107,7 +107,7 @@ export default function LandingPage() {
   mapGoToRef.current = mapGoTo;
 
   // handles states for editing and deletingareas/subareas/cameras
-  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "addVideo" | "editVideo">(null);
+  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "resetCalibration" | "addVideo" | "editVideo">(null);
   const [editObjectType, setEditObjectType] = useState<null | SummaryType | "video">(null);
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
@@ -226,7 +226,7 @@ export default function LandingPage() {
         addNewVideoData(videoData.videos)
       })
     } catch (exception) {
-      console.log(exception)
+      console.error(exception)
       setVideosReady(true);
     } finally {
     }
@@ -544,33 +544,76 @@ export default function LandingPage() {
     setRecalibrateThumbnail(null);
   };
 
-  const getLatestVideoForCamera = (cameraId: number): VideoSummary | null => {
-    const videos = convertRecordToArray(allVideosRef.current)
+  const getLatestVideoThumbnailForCamera = (cameraId: number): VideoSummary | null => {
+    const videos: VideoSummary[] = convertRecordToArray(allVideosRef.current)
       .filter((v) => v.camera === cameraId)
       .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime());
-    return videos.length > 0 ? videos[0] : null;
+    if (videos.length <= 0) return null;
+    // return the latest available video
+    for (const v of videos) {
+      if (v?.thumbnail !== null) return v;
+    }
+    return null;
   };
 
+  // Handle recalbration or resetting calibration of camera.
+  // Calibration reset occurs iff there are no uploaded videos or the latest video has no usable thumbnail.
   const handleRecalibrateCamera = async (cameraId: number) => {
     const camera = getCameraSummaryFromId(cameraId);
     if (!camera) return;
 
-    const latestVideo = getLatestVideoForCamera(cameraId);
-    if (!latestVideo) {
-      showToast(`Cannot recalibrate camera "${camera.name}" because it has no uploaded videos yet`, "warning");
-      return;
+    const latestVideo = getLatestVideoThumbnailForCamera(cameraId);
+
+    if (latestVideo) {
+      // reset calibration as normal
+      setEditId(cameraId);
+      setEditObjectType("camera");
+      setRecalibrateVideoId(latestVideo.id);
+      setRecalibrateThumbnail(latestVideo.thumbnail);
+      setEditAction("recalibrate");
+    } else if (camera.is_calibrated) {
+      // instead of recalibrating, trigger reset calibration
+      setEditId(cameraId);
+      setEditName(camera.name);
+      setEditObjectType("camera");
+      setEditAction("resetCalibration");
+    } else {
+      // cannot reset calibration without a calibrated camera to begin with
+      showToast("Cannot reset calibration of a camera that hasn't been calibrated yet.", "warning")
     }
 
-    if (!latestVideo.thumbnail) {
-      showToast(`Cannot recalibrate camera "${camera.name}" because the latest video has no first-frame thumbnail`, "warning");
-      return;
-    }
+  };
 
-    setEditId(cameraId);
-    setEditObjectType("camera");
-    setEditAction("recalibrate");
-    setRecalibrateVideoId(latestVideo.id);
-    setRecalibrateThumbnail(latestVideo.thumbnail);
+  const handleResetCalibration = async () => {
+    setEditIsLoading(true);
+    const camera = getCameraSummaryFromId(editId);
+    try {
+      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${camera.id}/calibration/`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" }
+      }).then((r) => r.json());
+
+      if (!res.success) {
+        showToast(`Failed to reset calibration for camera ${camera.name}.`, "error");
+        return;
+      }
+
+      patchObjectInList("camera", camera.id, {
+          is_calibrated: false,
+          calibration_points: null,
+          reference_points: null,
+          reference_distance_meters: null,
+      })
+
+      setEditIsLoading(false);
+      showToast(`Successfully reset calibration for camera ${camera.name}.`, "success");
+
+    } catch(e) {
+      showToast(`Failed to reset calibration for camera ${camera.name}.`, "error")
+      console.error(e);
+    } finally {
+      handleEditClose();
+    }
   };
 
   const handleSaveCameraCalibration = async (
@@ -618,7 +661,7 @@ export default function LandingPage() {
       });
       showToast(`Calibration updated for camera "${camera.name}"`, "success");
     } catch (exception) {
-      console.log(exception);
+      console.error(exception);
       showToast(`Failed to save recalibration for camera "${camera.name}"`, "error");
     }
   }
@@ -825,7 +868,7 @@ export default function LandingPage() {
 
     } catch (exception) {
       showToast(`Failed to create new ${type}`, "error")
-      console.log(exception)
+      console.error(exception)
     } finally {
       // and done! do cleanup
       handleDrawingCleanup()
@@ -907,7 +950,7 @@ export default function LandingPage() {
 
     } catch (exception) {
       showToast(`Failed to create new camera`, "error")
-      console.log(exception)
+      console.error(exception)
     } finally {
       // handle cleanup
       setDrawIsLoading(false);
@@ -935,7 +978,7 @@ export default function LandingPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: newName }),
           });
-          if (!res.ok) { console.log(await res.text()); return false; }
+          if (!res.ok) { console.error(await res.text()); return false; }
 
           // past this point, api success - patch the relevant data in our local copy
           patchObjectInList(type, id, {name: newName});
@@ -943,7 +986,7 @@ export default function LandingPage() {
 
     } catch (exception) {
       showToast(`Failed to rename ${type} "${oldName}"`, "error")
-      console.log(exception)
+      console.error(exception)
     } finally {
       // cleanup
       handleEditClose()
@@ -964,7 +1007,7 @@ export default function LandingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ polygon: polygon }),
       })
-      if (!res.ok) { console.log(await res.text()); return false; }
+      if (!res.ok) { console.error(await res.text()); return false; }
 
       // patching local copies...
       const existingPolygon = camera.polygon;
@@ -1005,7 +1048,7 @@ export default function LandingPage() {
 
     } catch (exception) {
       showToast(`Failed to set polygon`, "error")
-      console.log(exception)
+      console.error(exception)
     } finally {
 
     }
@@ -1125,7 +1168,7 @@ export default function LandingPage() {
 
     } catch (exception) {
       showToast(`Failed to delete ${type} "${oldName}"`)
-      console.log(exception)
+      console.error(exception)
     } finally {
       // cleanup
       handleEditClose()
@@ -1157,7 +1200,7 @@ export default function LandingPage() {
       
     } catch (exception) {
       showToast(`Failed to update tags of camera "${camera.name}"`, "error")
-      console.log(exception)
+      console.error(exception)
     } finally {
 
     }
@@ -1192,7 +1235,7 @@ export default function LandingPage() {
       await handleEditCameraTags(id, mergedTags);
       showToast(`Auto-filled ${detectedTags.length} road feature tag(s) from latest video`, "success");
     } catch (exception) {
-      console.log(exception);
+      console.error(exception);
       showToast(`Failed to auto-detect road features for camera \"${camera.name}\"`, "error");
     }
   }
@@ -1253,7 +1296,7 @@ export default function LandingPage() {
       });
 
       const pendingVideo: LandingVideoDto = {
-        id: data.video_id, camera: cameraId, filename: videoName,
+        id: data.video_id, camera: cameraId, filename: videoName, resolution: `${resolution.width}x${resolution.height}`,
         calibration_points: calibrationPoints, reference_points: originalReferencePoints, reference_distance_meters: referenceDistance,
         duration_seconds: 0, vehicle_breakdown: {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0},
         uploaded_at: new Date().toISOString(), recorded_at: new Date().toISOString(),
@@ -1268,7 +1311,7 @@ export default function LandingPage() {
       showToast(`"${videoName}" uploaded — processing started`, "info");
       trackVideoProcessing(videoName, data.video_id)
     } catch (exception) {
-      console.log(exception)
+      console.error(exception)
     } finally {}
   }
 
@@ -1515,6 +1558,14 @@ export default function LandingPage() {
         onUploadStart={ handleUploadStart }
       />
 
+      { /* Camera reset calibration video modal */ }
+      <CameraResetModal
+        open = { editAction === "resetCalibration" }
+        cameraName = { editName }
+        isLoading = { editIsLoading }
+        onClose = { handleEditClose }
+        onSubmit = { handleResetCalibration }
+      />
 
     </Box>
   );

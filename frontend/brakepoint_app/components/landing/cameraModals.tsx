@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, Snackbar, Alert } from '@mui/material';
+import React from 'react';
+import { Button, TextField, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Box, Typography, CircularProgress } from '@mui/material';
 
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 import '@/components/ui/table.css';
-import { authFetch } from '@/lib/authFetch';
-import { RequestQuoteRounded } from '@mui/icons-material';
 
 // --- Perspective Transform Helpers ---
 function computeHomography(src: {x:number,y:number}[], dst: {x:number,y:number}[]): number[][] {
@@ -1076,4 +1074,33 @@ export function CameraEditModal({ open, onClose, onSubmit, videoId, currentName 
       </DialogActions>
     </Dialog>
   );
+}
+
+interface CameraResetModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  isLoading: boolean;
+  cameraName: string;
+}
+
+export function CameraResetModal({ open, onClose, onSubmit, isLoading, cameraName }: CameraResetModalProps) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Reset Camera Calibration</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+        <div>Are you sure you want to <b>reset</b> the calibration of the camera "{cameraName}"?</div>
+        <div>Resetting its calibration will delete the existing stored calibration and allow you to set a new one for your next upload for this camera.</div>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="secondary">Cancel</Button>
+        <Button
+          onClick={onSubmit}
+          variant="contained"
+          color="primary"
+          disabled={isLoading}
+        > { !isLoading ? "Reset" : <CircularProgress size={16} sx={{ color: "#fff" }} /> }</Button>
+      </DialogActions>
+    </Dialog>
+  )
 }
