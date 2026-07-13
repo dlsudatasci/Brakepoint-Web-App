@@ -12,14 +12,24 @@ export default function LogInPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const router = useRouter();
+  
+  // redirect to /landing if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      router.replace('/landing');
+    } else {
+      setIsCheckingAuth(false);
+    }
+  }, [router]);
 
   useEffect(() => {
     setIsCheckingAuth(false);
   }, []);
 
-    if (isCheckingAuth) {
-      return null; 
-    }
+  if (isCheckingAuth) {
+    return null; 
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
