@@ -246,6 +246,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -340,6 +341,7 @@ def saved_locations_list_create(request):
                 pitch=body.get("pitch", 0.0),
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
+                road_polygons=body.get("road_polygons", []),
                 location_type=body.get("location_type", "sub_area"),
                 sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
@@ -358,6 +360,7 @@ def saved_locations_list_create(request):
                         "pitch": loc.pitch,
                         "geometry": loc.geometry,
                         "bounds": loc.bounds,
+                        "road_polygons": loc.road_polygons,
                         "location_type": loc.location_type,
                         "sub_area_type": loc.sub_area_type,
                         "parent_id": loc.parent_id,
@@ -401,6 +404,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -456,6 +460,7 @@ def saved_locations_list_create(request):
                 pitch=body.get("pitch", 0.0),
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
+                road_polygons=body.get("road_polygons", []),
                 location_type=body.get("location_type", "sub_area"),
                 sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
@@ -473,6 +478,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -513,6 +519,7 @@ def saved_location_detail(request, saved_location_id):
                 "pitch": loc.pitch,
                 "geometry": loc.geometry,
                 "bounds": loc.bounds,
+                "road_polygons": loc.road_polygons,
                 "location_type": loc.location_type,
                 "sub_area_type": loc.sub_area_type,
                 "parent_id": loc.parent_id,
@@ -538,6 +545,8 @@ def saved_location_detail(request, saved_location_id):
             loc.pitch = body.get("pitch", loc.pitch)
             loc.geometry = body.get("geometry", loc.geometry)
             loc.bounds = body.get("bounds", loc.bounds)
+            if "road_polygons" in body:
+                loc.road_polygons = body.get("road_polygons") or []
             loc.location_type = body.get("location_type", loc.location_type)
             loc.sub_area_type = body.get("sub_area_type", loc.sub_area_type)
 
@@ -1981,6 +1990,7 @@ def get_landing_objects(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": getattr(loc, "road_polygons", []),
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,

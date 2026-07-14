@@ -14,6 +14,28 @@ export function isVehicleBreakdown(obj: any): obj is VehicleBreakdown {
 	return (obj !== undefined && "Bus" in obj && "Car" in obj && "Jeepney" in obj && "Motorcycle" in obj && "Truck" in obj)
 }
 
+export function sumBreakdowns(target: VehicleBreakdown, source?: Partial<VehicleBreakdown> | null) {
+	if (!source) return target;
+	target.Bus += source.Bus ?? 0;
+	target.Car += source.Car ?? 0;
+	target.Jeepney += source.Jeepney ?? 0;
+	target.Motorcycle += source.Motorcycle ?? 0;
+	target.Truck += source.Truck ?? 0;
+	return target;
+}
+
+export function formatDurationLabel(totalSeconds?: number | null) {
+	if (totalSeconds == null || Number.isNaN(totalSeconds)) return "0s";
+	const secs = Math.max(0, Math.floor(totalSeconds));
+	const hours = Math.floor(secs / 3600);
+	const mins = Math.floor((secs % 3600) / 60);
+	const rem = secs % 60;
+
+	if (hours > 0) return `${hours}h ${mins}m ${rem}s`;
+	if (mins > 0) return `${mins}m ${rem}s`;
+	return `${rem}s`;
+}
+
 // convert both of the vehicle breakdown formats outputted by the AOI to this unified format
 function convertBreakdownToUnifiedFormat(breakdown?: any) {
 	const res: VehicleBreakdown = {"Bus": 0, "Car": 0, "Jeepney": 0, "Motorcycle": 0, "Truck": 0};
@@ -80,6 +102,7 @@ export type SubAreaSummary = LocationSummary & {
 	camera_ids?: number[]
     subarea_count: number;
     tags: string[];
+	road_polygons?: [number, number][][];
     // vehicle_breakdown: Record<string, number>;
 	vehicle_breakdown?: VehicleBreakdown;
     sub_area_type: SubAreaType | null;
@@ -166,6 +189,7 @@ export type VideoSummary = {
 	start_time?: string | null;
 	start_time_source?: "metadata" | "filename" | "failed" | string;
 	duration_seconds: number;
+	duration?: string;
 	fps?: number;
 	resolution: string;
 	thumbnail: string;
@@ -176,18 +200,36 @@ export type VideoSummary = {
 	speeding_count?: number;
 	swerving_count?: number;
 	abrupt_stopping_count?: number;
+	processing_status?: "pending" | "processing" | "completed" | "failed" | string;
 
 	// signs?: number; // TODO
 	jeepney_hotspot?: boolean;
 	uploaded_at: Date;
+	recorded_at: Date;
+	recorded_time_string?: string;
+	uploaded_time_string?: string;
 	vehicle_breakdown: VehicleBreakdown;
 }
 
 export function convertObjectToVideoSummary(obj: any, additional?: any) {
+	const uploadedAtRaw = obj?.uploaded_at ?? additional?.uploaded_at;
+	const recordedAtRaw = obj?.recorded_at ?? obj?.start_time ?? additional?.recorded_at ?? additional?.start_time ?? uploadedAtRaw;
+	const uploadedAt = uploadedAtRaw ? new Date(uploadedAtRaw) : new Date();
+	const recordedAt = recordedAtRaw ? new Date(recordedAtRaw) : uploadedAt;
+
+	const safeUploadedAt = Number.isNaN(uploadedAt.getTime()) ? new Date() : uploadedAt;
+	const safeRecordedAt = Number.isNaN(recordedAt.getTime()) ? safeUploadedAt : recordedAt;
+
 	return {
 		summaryType: "video",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
 		...obj, ...additional,
+		uploaded_at: safeUploadedAt,
+		recorded_at: safeRecordedAt,
+		recorded_time_string: (obj?.recorded_time_string ?? additional?.recorded_time_string),
+		uploaded_time_string: (obj?.uploaded_time_string ?? additional?.uploaded_time_string),
+		processing_status: (obj?.processing_status ?? additional?.processing_status ?? "pending"),
+		duration: formatDurationLabel(obj?.duration_seconds ?? additional?.duration_seconds ?? 0),
 		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 	} as VideoSummary
 }

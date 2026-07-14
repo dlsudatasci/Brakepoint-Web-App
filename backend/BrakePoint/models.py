@@ -24,6 +24,7 @@ class SavedLocation(models.Model):
 
     geometry = models.JSONField(null=True, blank=True)
     bounds = models.JSONField(null=True, blank=True)
+    road_polygons = models.JSONField(default=list, blank=True, null=True)
     location_type = models.CharField(
         max_length=20,
         choices=LOCATION_TYPES,
