@@ -36,6 +36,7 @@ export type LandingSubareaDto = {
   pitch?: number;
   geometry?: [number, number][];
   bounds?: [[number, number], [number, number]];
+  road_polygons?: [number, number][][];
   location_type?: "sub_area";
   sub_area_type?: SubAreaType | null;
   parent_id?: number | null;

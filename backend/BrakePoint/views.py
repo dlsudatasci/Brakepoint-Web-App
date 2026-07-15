@@ -14,6 +14,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 import json
+import importlib
 import requests
 import tempfile
 import os
@@ -37,13 +38,14 @@ from .polygon_validators import (
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from yolo_processor import run_detection_on_video
-    from mask_rcnn_detectron2_processor import (
-        run_traffic_sign_detection_on_video,
-        detect_signs_on_first_frame_of_video,
-        detect_signs_on_image_bytes,
-        DETECTRON2_AVAILABLE,
-    )
+    yolo_processor_module = importlib.import_module("yolo_processor")
+    sign_processor_module = importlib.import_module("mask_rcnn_detectron2_processor")
+
+    run_detection_on_video = yolo_processor_module.run_detection_on_video
+    run_traffic_sign_detection_on_video = sign_processor_module.run_traffic_sign_detection_on_video
+    detect_signs_on_first_frame_of_video = sign_processor_module.detect_signs_on_first_frame_of_video
+    detect_signs_on_image_bytes = sign_processor_module.detect_signs_on_image_bytes
+    DETECTRON2_AVAILABLE = sign_processor_module.DETECTRON2_AVAILABLE
 except ImportError:  # pragma: no cover — ML packages not installed in CI
     def run_detection_on_video(*a, **kw): return {"status": "error", "error": "YOLO not available"}
     def run_traffic_sign_detection_on_video(*a, **kw): return {"status": "error"}
@@ -51,8 +53,126 @@ except ImportError:  # pragma: no cover — ML packages not installed in CI
     def detect_signs_on_image_bytes(*a, **kw): return {}
     DETECTRON2_AVAILABLE = False
 
+try:
+    inspect_video = importlib.import_module("video_inspection").inspect_video
+except ImportError:  # pragma: no cover — ML packages not installed in CI
+    def inspect_video(*a, **kw):
+        return {"start_time": None, "duration_seconds": None, "source": "failed"}
+
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_VIDEO_SIZE_MB = 500
+
+
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _extract_bearer_token(request):
+    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    if isinstance(auth_header, str) and auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+
+    fallback = request.META.get("HTTP_X_MODEL_SERVICE_TOKEN") or request.META.get("HTTP_X_SHARED_TOKEN")
+    if isinstance(fallback, str):
+        return fallback.strip()
+    return ""
+
+
+def _get_model_service_settings():
+    enabled = _as_bool(os.getenv("MODEL_SERVICE_ENABLED"), default=False)
+    submit_url = os.getenv("MODEL_SERVICE_SUBMIT_URL", "").strip()
+    shared_token = os.getenv("MODEL_SERVICE_SHARED_TOKEN", "").strip()
+    callback_token = os.getenv("MODEL_SERVICE_CALLBACK_TOKEN", "").strip()
+    callback_base_url = os.getenv("MODEL_CALLBACK_BASE_URL", "").strip()
+
+    # If URL is provided, assume remote mode should be active.
+    if submit_url and not enabled:
+        enabled = True
+
+    return {
+        "enabled": enabled,
+        "submit_url": submit_url,
+        "shared_token": shared_token,
+        "callback_token": callback_token,
+        "callback_base_url": callback_base_url,
+    }
+
+
+def _build_model_callback_url(request, callback_base_url):
+    callback_path = "/api/model-results-callback/"
+    if callback_base_url:
+        return f"{callback_base_url.rstrip('/')}{callback_path}"
+    return request.build_absolute_uri(callback_path)
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_callback_payload(payload):
+    data = payload if isinstance(payload, dict) else {}
+    results = data.get("results") if isinstance(data.get("results"), dict) else {}
+
+    status_val = str(data.get("status") or results.get("status") or "").strip().lower()
+    if status_val in {"ok", "success", "completed", "complete", "done"}:
+        normalized_status = "completed"
+    elif status_val in {"failed", "error", "failure"}:
+        normalized_status = "failed"
+    elif status_val in {"processing", "running", "queued", "pending"}:
+        normalized_status = "processing"
+    else:
+        normalized_status = "processing"
+
+    video_id = data.get("video_id") or results.get("video_id")
+    yolo_progress = data.get("yolo_progress", results.get("yolo_progress", 100 if normalized_status == "completed" else 0))
+
+    normalized = {
+        "video_id": _safe_int(video_id, default=0),
+        "status": normalized_status,
+        "error": str(data.get("error") or results.get("error") or ""),
+        "vehicles": _safe_int(data.get("vehicles", results.get("vehicles")), default=0),
+        "speeding_count": _safe_int(data.get("speeding_count", results.get("speeding_count")), default=0),
+        "swerving_count": _safe_int(data.get("swerving_count", results.get("swerving_count")), default=0),
+        "abrupt_stopping_count": _safe_int(data.get("abrupt_stopping_count", results.get("abrupt_stopping_count")), default=0),
+        "vehicle_breakdown": data.get("vehicle_breakdown", results.get("vehicle_breakdown", {})),
+        "meter_per_pixel": _safe_float(data.get("meter_per_pixel", results.get("meter_per_pixel")), default=None),
+        "jeepney_hotspot": bool(data.get("jeepney_hotspot", results.get("jeepney_hotspot", False))),
+        "duration_seconds": _safe_float(data.get("duration_seconds", results.get("duration_seconds")), default=None),
+        "fps": _safe_float(data.get("fps", results.get("fps")), default=None),
+        "resolution": data.get("resolution", results.get("resolution")),
+        "thumbnail": data.get("thumbnail", results.get("thumbnail")),
+        "yolo_progress": max(0, min(100, _safe_int(yolo_progress, default=0))),
+    }
+
+    sign_breakdown = data.get("sign_breakdown", results.get("sign_breakdown", {}))
+    if isinstance(sign_breakdown, dict):
+        normalized["sign_breakdown"] = sign_breakdown
+    else:
+        normalized["sign_breakdown"] = {}
+
+    sign_classes = data.get("sign_classes", results.get("sign_classes"))
+    if isinstance(sign_classes, list):
+        normalized["sign_classes"] = [str(x) for x in sign_classes]
+    else:
+        normalized["sign_classes"] = list(normalized["sign_breakdown"].keys())
+
+    normalized["signs"] = _safe_int(
+        data.get("signs", results.get("signs", len(normalized["sign_classes"]))),
+        default=0,
+    )
+    return normalized
 api_view(['GET'])
 @permission_classes([AllowAny])
 def home(request):
@@ -126,6 +246,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -220,6 +341,7 @@ def saved_locations_list_create(request):
                 pitch=body.get("pitch", 0.0),
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
+                road_polygons=body.get("road_polygons", []),
                 location_type=body.get("location_type", "sub_area"),
                 sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
@@ -238,6 +360,7 @@ def saved_locations_list_create(request):
                         "pitch": loc.pitch,
                         "geometry": loc.geometry,
                         "bounds": loc.bounds,
+                        "road_polygons": loc.road_polygons,
                         "location_type": loc.location_type,
                         "sub_area_type": loc.sub_area_type,
                         "parent_id": loc.parent_id,
@@ -281,6 +404,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -336,6 +460,7 @@ def saved_locations_list_create(request):
                 pitch=body.get("pitch", 0.0),
                 geometry=body.get("geometry"),
                 bounds=body.get("bounds"),
+                road_polygons=body.get("road_polygons", []),
                 location_type=body.get("location_type", "sub_area"),
                 sub_area_type=body.get("sub_area_type"),
                 parent_id=parent_id,
@@ -353,6 +478,7 @@ def saved_locations_list_create(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": loc.road_polygons,
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -393,6 +519,7 @@ def saved_location_detail(request, saved_location_id):
                 "pitch": loc.pitch,
                 "geometry": loc.geometry,
                 "bounds": loc.bounds,
+                "road_polygons": loc.road_polygons,
                 "location_type": loc.location_type,
                 "sub_area_type": loc.sub_area_type,
                 "parent_id": loc.parent_id,
@@ -418,6 +545,8 @@ def saved_location_detail(request, saved_location_id):
             loc.pitch = body.get("pitch", loc.pitch)
             loc.geometry = body.get("geometry", loc.geometry)
             loc.bounds = body.get("bounds", loc.bounds)
+            if "road_polygons" in body:
+                loc.road_polygons = body.get("road_polygons") or []
             loc.location_type = body.get("location_type", loc.location_type)
             loc.sub_area_type = body.get("sub_area_type", loc.sub_area_type)
 
@@ -702,11 +831,9 @@ def _upload_and_process_video(request):
     reference_distance_meters = None
     
     if calibration_points_json:
-        import json
         calibration_points = json.loads(calibration_points_json)
     
     if reference_points_json:
-        import json
         reference_points = json.loads(reference_points_json)
     
     if reference_distance_str:
@@ -741,16 +868,107 @@ def _upload_and_process_video(request):
         processing_started_at=timezone.now()
     )
 
+    model_cfg = _get_model_service_settings()
+
+    import re as _re
+    _speed_limit = None
+    if isinstance(camera.tags, list):
+        for _tag in camera.tags:
+            _m = _re.match(r'(\d+)\s*kph\s+speed\s+limit', str(_tag), _re.IGNORECASE)
+            if _m:
+                _speed_limit = int(_m.group(1))
+                break
+
     project_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp')
     os.makedirs(project_tmp, exist_ok=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", dir=project_tmp) as tmp_file:
         for chunk in video_file.chunks():
             tmp_file.write(chunk)
         temp_path = tmp_file.name
+
+    # Remote pipeline mode: send the uploaded file to the model-service and return immediately.
+    if model_cfg["enabled"]:
+        if not model_cfg["submit_url"]:
+            video_record.processing_status = 'failed'
+            video_record.error_message = 'MODEL_SERVICE_ENABLED is true but MODEL_SERVICE_SUBMIT_URL is not configured'
+            video_record.processing_completed_at = timezone.now()
+            video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return Response({'error': 'Model service is not configured on the backend'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        callback_url = _build_model_callback_url(request, model_cfg["callback_base_url"])
+
+        form_data = {
+            'video_id': str(video_record.id),
+            'camera_id': str(camera.id),
+            'callback_url': callback_url,
+            'callback_token': model_cfg["callback_token"],
+            'calibration_points': json.dumps(calibration_points or []),
+            'reference_points': json.dumps(reference_points or []),
+            'reference_distance_meters': '' if reference_distance_meters is None else str(reference_distance_meters),
+            'use_sign_detection': 'true' if use_sign_detection else 'false',
+            'speed_limit_kmh': '' if _speed_limit is None else str(_speed_limit),
+        }
+
+        headers = {}
+        if model_cfg["shared_token"]:
+            headers['Authorization'] = f"Bearer {model_cfg['shared_token']}"
+
+        try:
+            with open(temp_path, 'rb') as src:
+                files = {'file': (video_file.name or f"video-{video_record.id}.mp4", src, video_file.content_type or 'video/mp4')}
+                remote_resp = requests.post(
+                    model_cfg["submit_url"],
+                    data=form_data,
+                    files=files,
+                    headers=headers,
+                    timeout=120,
+                )
+
+            if not remote_resp.ok:
+                remote_error_text = remote_resp.text[:2000]
+                video_record.processing_status = 'failed'
+                video_record.error_message = f"Model service rejected request ({remote_resp.status_code}): {remote_error_text}"
+                video_record.processing_completed_at = timezone.now()
+                video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+                return Response(
+                    {'error': 'Remote model service rejected the upload', 'details': remote_error_text},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            try:
+                remote_payload = remote_resp.json()
+            except ValueError:
+                remote_payload = {'message': remote_resp.text[:500]}
+
+            return Response(
+                {
+                    'success': True,
+                    'video_id': video_record.id,
+                    'camera_id': camera.id,
+                    'message': remote_payload.get('message', 'Video uploaded successfully, remote processing started'),
+                    'processing_status': 'processing',
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        except requests.RequestException as exc:
+            video_record.processing_status = 'failed'
+            video_record.error_message = f"Could not reach model service: {exc}"
+            video_record.processing_completed_at = timezone.now()
+            video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+            return Response(
+                {'error': 'Failed to submit video to model service', 'details': str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
     
     try:
-        from video_inspection import inspect_video
-
         import cv2
         import base64
         inspection_result = inspect_video(temp_path)
@@ -808,15 +1026,6 @@ def _upload_and_process_video(request):
         }
         
         import threading
-        import re as _re
-        
-        _speed_limit = None
-        if isinstance(camera.tags, list):
-            for _tag in camera.tags:
-                _m = _re.match(r'(\d+)\s*kph\s+speed\s+limit', str(_tag), _re.IGNORECASE)
-                if _m:
-                    _speed_limit = int(_m.group(1))
-                    break
 
         def process_video_background(is_dry_run):
             """Process video in background thread"""
@@ -1274,6 +1483,86 @@ def video_progress_api(request, pk: int):
         return Response({"success": False, "error": "Video not found"}, status=404)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def model_results_callback(request):
+    model_cfg = _get_model_service_settings()
+    expected_token = model_cfg["callback_token"] or model_cfg["shared_token"]
+
+    if expected_token:
+        provided_token = _extract_bearer_token(request)
+        if provided_token != expected_token:
+            return Response({"success": False, "error": "Unauthorized callback"}, status=401)
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    normalized = _normalize_callback_payload(payload)
+    video_id = normalized["video_id"]
+    if not video_id:
+        return Response({"success": False, "error": "video_id is required"}, status=400)
+
+    try:
+        video = Video.objects.select_related('camera').get(pk=video_id)
+    except Video.DoesNotExist:
+        return Response({"success": False, "error": "Video not found"}, status=404)
+
+    status_val = normalized["status"]
+    now = timezone.now()
+
+    video.processing_status = status_val
+    video.yolo_progress = normalized["yolo_progress"]
+
+    if normalized["duration_seconds"] is not None:
+        video.duration_seconds = normalized["duration_seconds"]
+    if normalized["fps"] is not None:
+        video.fps = normalized["fps"]
+    if normalized["resolution"]:
+        video.resolution = str(normalized["resolution"])
+    if normalized["thumbnail"]:
+        video.thumbnail = str(normalized["thumbnail"])
+
+    if status_val == 'completed':
+        video.vehicles = normalized["vehicles"]
+        video.speeding_count = normalized["speeding_count"]
+        video.swerving_count = normalized["swerving_count"]
+        video.abrupt_stopping_count = normalized["abrupt_stopping_count"]
+        video.vehicle_breakdown = normalized["vehicle_breakdown"] if isinstance(normalized["vehicle_breakdown"], dict) else {}
+        video.meter_per_pixel = normalized["meter_per_pixel"]
+        video.jeepney_hotspot = normalized["jeepney_hotspot"]
+        video.signs = normalized["signs"]
+        video.sign_classes = normalized["sign_classes"]
+        video.sign_breakdown = normalized["sign_breakdown"]
+        video.processing_stage = 'complete'
+        video.error_message = ''
+        video.processing_completed_at = now
+    elif status_val == 'failed':
+        video.processing_stage = ''
+        video.error_message = normalized["error"] or 'Remote processing failed'
+        video.processing_completed_at = now
+    else:
+        video.processing_stage = 'yolo'
+        if not video.processing_started_at:
+            video.processing_started_at = now
+
+    video.save()
+
+    # Keep camera-level calibration in sync once remote inference computes meter_per_pixel.
+    if status_val == 'completed' and video.meter_per_pixel is not None:
+        cam = video.camera
+        if cam is not None:
+            cam.meter_per_pixel = video.meter_per_pixel
+            if video.calibration_points:
+                cam.calibration_points = video.calibration_points
+            if video.reference_points:
+                cam.reference_points = video.reference_points
+            if video.reference_distance_meters is not None:
+                cam.reference_distance_meters = video.reference_distance_meters
+            cam.is_calibrated = True
+            cam.latest_upload = now
+            cam.save()
+
+    return Response({"success": True, "video_id": video.id, "processing_status": video.processing_status})
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def behavior_timeline_api(request):
@@ -1701,6 +1990,7 @@ def get_landing_objects(request):
                     "pitch": loc.pitch,
                     "geometry": loc.geometry,
                     "bounds": loc.bounds,
+                    "road_polygons": getattr(loc, "road_polygons", []),
                     "location_type": loc.location_type,
                     "sub_area_type": loc.sub_area_type,
                     "parent_id": loc.parent_id,
@@ -1796,8 +2086,6 @@ def inspect_video_metadata(request):
     }
     """
     try:
-        from video_inspection import inspect_video
-        
         video_id = request.query_params.get('video_id') or request.data.get('video_id')
         file_path = request.query_params.get('file_path') or request.data.get('file_path')
         

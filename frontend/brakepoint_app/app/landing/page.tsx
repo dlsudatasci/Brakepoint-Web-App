@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   Box, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Button, IconButton, CircularProgress, Typography,
+  FormControl, InputLabel, Select, MenuItem,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SideMenu from "@/components/landing/sideMenu";
@@ -107,13 +108,17 @@ export default function LandingPage() {
   mapGoToRef.current = mapGoTo;
 
   // handles states for editing and deletingareas/subareas/cameras
-  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "resetCalibration" | "addVideo" | "editVideo">(null);
+  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "resetCalibration" | "addVideo" | "editVideo" | "assignPolygon">(null);
   const [editObjectType, setEditObjectType] = useState<null | SummaryType | "video">(null);
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
   const [editIsLoading, setEditIsLoading] = useState<boolean>(false);
   const [recalibrateVideoId, setRecalibrateVideoId] = useState<number | null>(null);
   const [recalibrateThumbnail, setRecalibrateThumbnail] = useState<string | null>(null);
+  const [pendingPolygon, setPendingPolygon] = useState<[number, number][] | null>(null);
+  const [pendingPolygonSourceCameraId, setPendingPolygonSourceCameraId] = useState<number | null>(null);
+  const [assignPolygonCameraId, setAssignPolygonCameraId] = useState<number | null>(null);
+  const pendingPolygonOnSuccessRef = useRef<((cameraId: number | null) => void) | null>(null);
 
   // legacy states — move above when currently being used
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
@@ -366,6 +371,7 @@ export default function LandingPage() {
         name: obj.name,
         lat: obj.lat,
         lng: obj.lng,
+        parentId: obj.parent ?? null,
         polygon: obj.polygon ?? undefined,
         occurrences: undefined,
       }
@@ -542,6 +548,75 @@ export default function LandingPage() {
     setEditName("");
     setRecalibrateVideoId(null);
     setRecalibrateThumbnail(null);
+    setPendingPolygon(null);
+    setPendingPolygonSourceCameraId(null);
+    setAssignPolygonCameraId(null);
+    pendingPolygonOnSuccessRef.current = null;
+  };
+
+  const toPolygonCollection = (value: [number, number][] | [number, number][][] | null | undefined) => {
+    if (!Array.isArray(value) || value.length === 0) return [] as [number, number][][];
+
+    const first = value[0] as any;
+    const isRing = Array.isArray(first) && first.length === 2 && typeof first[0] === "number" && typeof first[1] === "number";
+    if (isRing) return [value as [number, number][]];
+
+    return value as [number, number][][];
+  };
+
+  const removePolygonFromCollection = (
+    value: [number, number][] | [number, number][][] | null | undefined,
+    targetPolygon: [number, number][],
+  ) => {
+    const collection = toPolygonCollection(value);
+    const nextCollection = collection.filter((polygon) => JSON.stringify(polygon) !== JSON.stringify(targetPolygon));
+    if (nextCollection.length === 0) return null;
+    if (nextCollection.length === 1) return nextCollection[0];
+    return nextCollection;
+  };
+
+  const getCurrentSubareaRoadPolygons = () => {
+    if (selectedSubareaRef.current == null) return [] as [number, number][][];
+
+    const roadPolygons = allSubareasRef.current[selectedSubareaRef.current]?.road_polygons;
+    return toPolygonCollection(roadPolygons);
+  };
+
+  const currentRoadPolygonItems = useMemo(() => {
+    if (selectedSubareaId == null) return [];
+
+    const roadPolygons = toPolygonCollection(allSubareas[selectedSubareaId]?.road_polygons);
+    return roadPolygons.map((points) => ({
+      points,
+      cameraId: null,
+      subAreaId: selectedSubareaId,
+      occurrences: 0,
+    }));
+  }, [allSubareas, selectedSubareaId]);
+
+  const saveSubareaRoadPolygons = async (subareaId: number, nextRoadPolygons: [number, number][][]) => {
+    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${subareaId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ road_polygons: nextRoadPolygons }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    patchObjectInList("subarea", subareaId, { road_polygons: nextRoadPolygons });
+  };
+
+  const getAssignableCameras = () => {
+    if (selectedSubareaRef.current == null) return [];
+
+    const allowedCameraIds = allSubareasRef.current[selectedSubareaRef.current]?.camera_ids ?? [];
+    if (allowedCameraIds.length === 0) return [];
+
+    return allowedCameraIds
+      .map((cameraId) => allCamerasRef.current[cameraId])
+      .filter((camera): camera is CameraSummary => camera != null);
   };
 
   const getLatestVideoThumbnailForCamera = (cameraId: number): VideoSummary | null => {
@@ -994,14 +1069,56 @@ export default function LandingPage() {
   }
 
   // handles a polygon being drawn
-  const handlePolygonDrawn = async (id: number, polygon: [number, number][], onSuccess?: () => void) => {
-    // quickfails: if camera doesn't exist or already has a polygon 
-    const camera = getCameraSummaryFromId(id);
-    if (!camera) return;
-    // else if (camera.polygon != null && camera.polygon.length > 0) return;
+  const handlePolygonDrawn = async (_id: number | null, polygon: [number, number][], onSuccess?: (cameraId: number | null) => void) => {
+    const subareaId = selectedSubareaRef.current;
+    if (subareaId == null) {
+      showToast("Select a sub-area before adding road polygons.", "warning");
+      return;
+    }
+
+    const nextRoadPolygons = [...getCurrentSubareaRoadPolygons(), polygon];
 
     try {
-      // perform our api call
+      await saveSubareaRoadPolygons(subareaId, nextRoadPolygons);
+      onSuccess?.(null);
+    } catch (error) {
+      showToast("Failed to save road polygon.", "error");
+      console.error(error);
+    }
+  }
+
+  const handleRequestAssignPolygon = (
+    polygon: [number, number][],
+    onSuccess?: (cameraId: number | null) => void,
+    sourceCameraId?: number | string | null,
+  ) => {
+    const assignableCameras = getAssignableCameras();
+    if (assignableCameras.length === 0) {
+      showToast("No cameras are available in this sub-area.", "warning");
+      return;
+    }
+
+    pendingPolygonOnSuccessRef.current = onSuccess ?? null;
+    setPendingPolygon(polygon);
+    setPendingPolygonSourceCameraId(sourceCameraId == null ? null : Number(sourceCameraId));
+    setAssignPolygonCameraId(selectedCameraRef.current ?? assignableCameras[0].id);
+    setEditAction("assignPolygon");
+  }
+
+  const handleAssignPolygonToCamera = async () => {
+    if (pendingPolygon == null || assignPolygonCameraId == null) return;
+
+    const id = assignPolygonCameraId;
+    const polygon = pendingPolygon;
+    const camera = getCameraSummaryFromId(id);
+    if (!camera) {
+      showToast("Selected camera was not found.", "error");
+      return;
+    }
+
+    setEditIsLoading(true);
+
+    try {
       const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/polygon/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1009,7 +1126,6 @@ export default function LandingPage() {
       })
       if (!res.ok) { console.error(await res.text()); return false; }
 
-      // patching local copies...
       const existingPolygon = camera.polygon;
       let nextPolygons: [number, number][][] = [];
       if (Array.isArray(existingPolygon) && existingPolygon.length > 0) {
@@ -1043,16 +1159,35 @@ export default function LandingPage() {
       }
 
       patchObjectInList("camera", id, {polygon: [...nextPolygons, polygon]})
+
+      if (pendingPolygonSourceCameraId == null) {
+        const subareaId = selectedSubareaRef.current;
+        if (subareaId != null) {
+          const nextRoadPolygons = removePolygonFromCollection(
+            allSubareasRef.current[subareaId]?.road_polygons,
+            polygon,
+          );
+
+          await saveSubareaRoadPolygons(subareaId, toPolygonCollection(nextRoadPolygons));
+        }
+      } else if (pendingPolygonSourceCameraId !== id) {
+        const sourceCamera = getCameraSummaryFromId(pendingPolygonSourceCameraId);
+        if (sourceCamera) {
+          const nextSourcePolygon = removePolygonFromCollection(sourceCamera.polygon, polygon);
+          patchObjectInList("camera", pendingPolygonSourceCameraId, { polygon: nextSourcePolygon });
+        }
+      }
+
       showToast(`Successfully set polygon to camera`, "success")
-      onSuccess();
+      pendingPolygonOnSuccessRef.current?.(id);
+      handleEditClose();
 
     } catch (exception) {
       showToast(`Failed to set polygon`, "error")
       console.error(exception)
     } finally {
-
+      setEditIsLoading(false);
     }
-    // onSuccess();
   }
 
   // asks the API to delete the given object
@@ -1346,6 +1481,8 @@ export default function LandingPage() {
             []
           }
 
+          roadPolygonItems={currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera" ? currentRoadPolygonItems : []}
+
           cameraItems = {
             
             //currentSelectionModeRef.current === "subarea" ?
@@ -1359,7 +1496,7 @@ export default function LandingPage() {
             currentSelectionModeRef.current === "subarea" ?
             allSubareasRef.current[selectedSubareaRef.current].camera_ids ?? [] :
             currentSelectionModeRef.current === "camera" ?
-            [ selectedCameraRef.current ] :
+            allSubareasRef.current[selectedSubareaRef.current].camera_ids ?? [] :
             []
           }
 
@@ -1378,8 +1515,9 @@ export default function LandingPage() {
           isPlacingCamera={isDrawing && drawTypeRef.current === "camera"}
           onCameraAdd={handleCameraAdded}
           onPolygonDrawn={handlePolygonDrawn}
+          onRequestAssignPolygon={handleRequestAssignPolygon}
 
-          hideEditControls={currentSelectionModeRef.current !== "camera"}
+          hideEditControls={!(currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera")}
           cleanMap={selectedSubareaId == null}
           showGeocoder
           hoveredAoiId={hoveredAoiId}
@@ -1392,7 +1530,7 @@ export default function LandingPage() {
           activeSubAreaId={highlightedSubareaId}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}
           cameraParentLocationId={selectedSubareaId}
-          hideCameraPolygons={false}
+          hideCameraPolygons={!(currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera")}
         />
       </Box>
 
@@ -1505,6 +1643,49 @@ export default function LandingPage() {
             sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
           >
             {editIsLoading ? <CircularProgress size={16} sx={{ color: "#fff" }} />  : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={ editAction === "assignPolygon" }
+        onClose={handleEditClose}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 320, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Assign Road Polygon</Typography>
+          <IconButton size="small" onClick={handleEditClose}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <FormControl fullWidth size="small">
+            <InputLabel id="assign-polygon-camera-label">Camera</InputLabel>
+            <Select
+              labelId="assign-polygon-camera-label"
+              label="Camera"
+              value={assignPolygonCameraId ?? ""}
+              onChange={(e) => setAssignPolygonCameraId(Number(e.target.value))}
+            >
+              {getAssignableCameras().map((camera) => (
+                <MenuItem key={`assign-polygon-camera-${camera.id}`} value={camera.id}>
+                  {camera.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={handleEditClose} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAssignPolygonToCamera}
+            disabled={editIsLoading || assignPolygonCameraId == null}
+            variant="contained"
+            sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
+          >
+            {editIsLoading ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Assign"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -55,6 +55,7 @@ type Camera = {
   id: number | string;
   lat: number;
   lng: number;
+  parentId?: number | null;
   polygon?: [number, number][] | [number, number][][];
   occurrences?: number;
 };
@@ -86,6 +87,7 @@ type SavedLocationRecord = {
 type CompletedPolygon = {
   points: [number, number][];
   cameraId: number | string | null;
+  subAreaId?: number | null;
   occurrences?: number;
 };
 
@@ -528,6 +530,7 @@ type MapProps = {
   aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
   subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;           // sub-area polygons rendered when an AOI is selected
   cameraItems?: Camera[] | null;                                                            // camera 
+  roadPolygonItems?: CompletedPolygon[] | null;                                              // road polygons stored for the current subarea
   currentSelectionMode?: "all" | SummaryType;                                               // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
 
   onObjectClick?: (type: SummaryType, id: number) => void;                                    // fires when user clicks a polygon of an AOI or subarea
@@ -535,7 +538,12 @@ type MapProps = {
   onRequestDelete?: (type: SummaryType, id: number) => void;                                  // fires when user requests to delete an object  
   
   onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a bounding box for an area or subarea
-  onPolygonDrawn?: (id: number, polygon: [number, number][], onSuccess: () => void) => void;  // runs when polygon has finished being drawn
+  onPolygonDrawn?: (id: number | null, polygon: [number, number][], onSuccess?: (cameraId: number | null) => void) => void;  // runs when polygon has finished being drawn
+  onRequestAssignPolygon?: (
+    polygon: [number, number][],
+    onSuccess?: (cameraId: number | null) => void,
+    sourceCameraId?: number | string | null,
+  ) => void;
 
   showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
   onMapReady?: () => void;                                                                  // triggers when map has been loaded
@@ -603,10 +611,12 @@ export default function MapView({
   hideCameraPolygons = false,
 
   cameraItems,
+  roadPolygonItems = [],
   currentSelectionMode,
   onRequestDelete,
   onRequestRename,
   onPolygonDrawn,
+  onRequestAssignPolygon,
 }: MapProps) {
 
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -1725,7 +1735,7 @@ export default function MapView({
     }
   }, [deleteSavedArea, restartPrimaryAoiDrawing, savedAoiId]);
 
-  const renderPolygonLayers = useCallback(() => {
+  const renderPolygonLayers = useCallback((polygonOverride?: CompletedPolygon[]) => {
     const map = mapRef.current;
     if (!map) return;
 
@@ -1746,13 +1756,19 @@ export default function MapView({
     const editingIdx = editingCompletedPolygonIndexRef.current;
     const isPointEditMode = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
 
-    const polygonFeatures = completedPolygonsRef.current.map((p, idx) => ({
+    const polygonSource = polygonOverride ?? completedPolygonsRef.current;
+    const polygonFeatures = polygonSource.map((p, idx) => ({
       type: "Feature" as const,
       properties: {
         polygonIndex: idx,
         cameraId: p.cameraId ?? null,
+        subAreaId: p.subAreaId ?? null,
         occurrences: p.occurrences ?? 0,
         isSelected: idx === selectedIdx,
+        isCameraMatch:
+          selectedCameraIdRef.current != null &&
+          p.cameraId != null &&
+          String(p.cameraId) === String(selectedCameraIdRef.current),
       },
       geometry: {
         type: "Polygon" as const,
@@ -1760,10 +1776,26 @@ export default function MapView({
       },
     }));
 
-    const selectedCameraPolygonId = selectedCameraIdRef.current != null ? String(selectedCameraIdRef.current) : null;
-    const filteredPolygonFeatures = selectedCameraPolygonId != null
-      ? polygonFeatures.filter((feature) => String(feature.properties.cameraId) === selectedCameraPolygonId)
-      : [];
+    const visibleIds = visibleCameraIdsRef.current;
+    const activeSubAreaId = cameraParentLocationIdRef.current;
+    const allowedIds = visibleIds != null ? new Set(visibleIds.map((id) => String(id))) : null;
+
+    const filteredPolygonFeatures = polygonFeatures.filter((feature) => {
+      const cameraId = feature.properties.cameraId;
+      const polygonSubAreaId = feature.properties.subAreaId;
+
+      if (allowedIds != null) {
+        if (cameraId != null) return allowedIds.has(String(cameraId));
+        return activeSubAreaId != null && polygonSubAreaId != null && String(polygonSubAreaId) === String(activeSubAreaId);
+      }
+
+      if (activeSubAreaId != null) {
+        if (cameraId != null && visibleIds && visibleIds.length > 0) return allowedIds?.has(String(cameraId)) ?? false;
+        return polygonSubAreaId != null && String(polygonSubAreaId) === String(activeSubAreaId);
+      }
+
+      return true;
+    });
 
     const pointFeatures: any[] = [];
     polygonPointsRef.current.forEach((pt, i) => {
@@ -1825,10 +1857,28 @@ export default function MapView({
       source: "polygons",
       paint: {
         "fill-color": [
-          "interpolate", ["linear"], ["get", "occurrences"],
-          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          "case",
+          ["==", ["get", "isSelected"], true],
+          "#ffb020",
+          ["==", ["get", "isCameraMatch"], true],
+          "#00e5ff",
+          ["==", ["get", "cameraId"], null],
+          "#dc2626",
+          [
+            "interpolate", ["linear"], ["get", "occurrences"],
+            0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          ],
         ] as any,
-        "fill-opacity": 0.30,
+        "fill-opacity": [
+          "case",
+          ["==", ["get", "isSelected"], true],
+          0.78,
+          ["==", ["get", "isCameraMatch"], true],
+          0.55,
+          ["==", ["get", "cameraId"], null],
+          0.30,
+          0.30,
+        ],
       },
     });
 
@@ -1840,13 +1890,26 @@ export default function MapView({
         "line-color": [
           "case",
           ["==", ["get", "isSelected"], true],
-          "#f97316",
+          "#ff7a00",
+          ["==", ["get", "isCameraMatch"], true],
+          "#00e5ff",
+          ["==", ["get", "cameraId"], null],
+          "#ef4444",
           [
             "interpolate", ["linear"], ["get", "occurrences"],
             0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
           ],
         ] as any,
-        "line-width": ["case", ["==", ["get", "isSelected"], true], 3.5, 2],
+        "line-width": [
+          "case",
+          ["==", ["get", "isSelected"], true],
+          6,
+          ["==", ["get", "isCameraMatch"], true],
+          5,
+          ["==", ["get", "cameraId"], null],
+          3.5,
+          2,
+        ],
       },
     });
 
@@ -2605,16 +2668,6 @@ export default function MapView({
     } catch { }
   }, []);
 
-  const savePolygonToCamera = useCallback(async (cameraId: number | string, points: [number, number][]) => {
-    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ polygon: points }),
-    });
-
-    return res.ok;
-  }, []);
-
   const savePolygonCollectionToCamera = useCallback(async (cameraId: number | string, polygons: [number, number][][]) => {
     const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
       method: "PATCH",
@@ -2706,7 +2759,7 @@ export default function MapView({
       camerasRef.current = [...camerasRef.current, cameraObj];
       // setCameras((prev) => [...prev, cameraObj])
     },
-    [completedPolygonsRef, removeCamera, savePolygonToCamera, selectedPolygonIndexRef, toolModeRef],
+    [completedPolygonsRef, removeCamera, selectedPolygonIndexRef, toolModeRef],
   );
 
   const CAMERAS_CACHE_KEY = "bp_cameras_v1";
@@ -2783,20 +2836,43 @@ export default function MapView({
     // add our new cameras to the list
     cameraItems.forEach((cam: Camera) => addCameraFromData(cam.lat, cam.lng, cam.id));
 
+    const roadPolygons = roadPolygonItems ?? [];
+
     const polygons: CompletedPolygon[] = cameraItems.flatMap((cam: Camera) =>
       asPolygonCollection(cam.polygon).map((poly) => ({
         points: poly,
         cameraId: cam.id,
+        subAreaId: cam.parentId ?? null,
         occurrences: cam.occurrences ?? 0,
       })),
     );
-    setCompletedPolygons(polygons);
-    renderPolygonLayers();
+    setCompletedPolygons([...roadPolygons, ...polygons]);
     onCamerasLoaded?.(cameraItems)
 
-  }, [cameraItems]);
+  }, [cameraItems, roadPolygonItems]);
 
   const onCameraPlacedOutsideRef = useLatestRef(onCameraPlacedOutside);
+
+  useEffect(() => {
+    if (cleanMap) return;
+    if (mode !== "map") return;
+
+    const roadPolygons = roadPolygonItems ?? [];
+    const cameraPolygons: CompletedPolygon[] = (cameraItems ?? []).flatMap((cam: Camera) =>
+      asPolygonCollection(cam.polygon).map((poly) => ({
+        points: poly,
+        cameraId: cam.id,
+        subAreaId: cam.parentId ?? null,
+        occurrences: cam.occurrences ?? 0,
+      })),
+    );
+    const combined = [...roadPolygons, ...cameraPolygons];
+
+    // Render immediately (before React processes the state update) so polygons appear
+    // in one render cycle instead of two.
+    renderPolygonLayers(combined);
+    setCompletedPolygons(combined);
+  }, [cameraItems, cleanMap, mode, roadPolygonItems, renderPolygonLayers]);
 
   useEffect(() => {
     setToolMode(isPlacingCamera ? "addCamera" : "none");
@@ -3260,16 +3336,19 @@ export default function MapView({
       map.setPaintProperty("polygon-points", "circle-opacity", 0);
       map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
       map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
-    } else if (selectedCameraIdRef.current == null) {
-      // No camera selected - hide all road polygons
-      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
-      map.setPaintProperty("polygon-line", "line-opacity", 0);
-      map.setPaintProperty("polygon-points", "circle-opacity", 0);
-      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
-      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     } else {
-      // Camera selected - keep the sub-area polygon visible
-      map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
+      // Keep road polygons visible at subarea/camera levels.
+      const selectedCameraId = selectedCameraIdRef.current;
+      if (selectedCameraId != null) {
+        map.setPaintProperty("polygon-fill", "fill-opacity", [
+          "case",
+          ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraId)],
+          0.55,
+          0.30,
+        ] as any);
+      } else {
+        map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
+      }
       map.setPaintProperty("polygon-line", "line-opacity", 1);
       // Show points while drawing or editing polygon vertices
       if (isPointEditing) {
@@ -3282,7 +3361,7 @@ export default function MapView({
         map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
       }
     }
-  }, [completedPolygons, selectedCameraIdRef, hideCameraPolygonsRef, toolMode]);
+  }, [completedPolygons, selectedCameraId, hideCameraPolygons, toolMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3290,20 +3369,6 @@ export default function MapView({
 
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
-
-      if ((activeTool === "addPoint" || activeTool === "removePoint") && mode === "map" && !hideCameraPolygonsRef.current) {
-        const polygonHit = map.queryRenderedFeatures(e.point, {
-          layers: ["polygon-fill"],
-        });
-
-        if (polygonHit.length > 0) {
-          const polygonIndex = Number(polygonHit[0].properties?.polygonIndex);
-          if (!Number.isNaN(polygonIndex) && polygonIndex !== selectedPolygonIndexRef.current) {
-            setSelectedPolygonIndex(polygonIndex);
-            return;
-          }
-        }
-      }
 
       if (activeTool === "none" && isEditMode && mode === "map" && !hideCameraPolygonsRef.current) {
         const features = map.queryRenderedFeatures(e.point, {
@@ -3314,18 +3379,6 @@ export default function MapView({
           const idx = Number(features[0].properties?.polygonIndex);
           if (!Number.isNaN(idx)) {
             setSelectedPolygonIndex(idx);
-
-            const selectedCameraId = selectedCameraIdRef.current;
-            const poly = completedPolygonsRef.current[idx];
-            if (selectedCameraId != null && poly && poly.cameraId == null) {
-              const ok = await savePolygonToCamera(selectedCameraId, poly.points);
-              if (ok) {
-                setCompletedPolygons((prev) =>
-                  prev.map((p, i) => (i === idx ? { ...p, cameraId: selectedCameraId } : p)),
-                );
-              }
-            }
-
             setShowPolygonModal(true);
           }
         }
@@ -3382,15 +3435,15 @@ export default function MapView({
             // handles polygon completion
             if (!isCompleted && idx === 0) {
               const currentPoints = polygonPointsRef.current;
-              const cameraId = Number(selectedCameraIdRef.current);
               setPolygonPoints([]);
 
               clearGuideline();
 
-              onPolygonDrawn(cameraId, currentPoints, () => {
+              onPolygonDrawn?.(null, currentPoints, (assignedCameraId: number | null) => {
                 const newPoly: CompletedPolygon = {
                   points: [...currentPoints],
-                  cameraId: cameraId,
+                  cameraId: assignedCameraId,
+                  subAreaId: cameraParentLocationIdRef.current ?? null,
                 };
 
                 // update completed polygon storage to instantly display this polygon
@@ -3879,6 +3932,18 @@ export default function MapView({
           body: JSON.stringify({ polygon: null }),
         });
       } catch { }
+    } else if (cameraParentLocationIdRef.current != null) {
+      try {
+        const remainingRoadPolygons = completedPolygonsRef.current
+          .filter((polygon, polygonIndex) => polygonIndex !== idx && polygon.cameraId == null)
+          .map((polygon) => polygon.points);
+
+        await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${cameraParentLocationIdRef.current}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ road_polygons: remainingRoadPolygons }),
+        });
+      } catch { }
     }
 
     setCompletedPolygons((prev) => prev.filter((_, i) => i !== idx));
@@ -3909,6 +3974,25 @@ export default function MapView({
     setPolygonPoints([...selectedPolygon.points]);
     setToolMode("addPoint");
   }, [completedPolygonsRef, selectedPolygonIndexRef]);
+
+  const assignPolygonToCamera = useCallback(() => {
+    const selectedIdx = selectedPolygonIndexRef.current;
+    if (selectedIdx == null) return;
+
+    const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+    if (!selectedPolygon) return;
+
+    onRequestAssignPolygon?.(selectedPolygon.points, (assignedCameraId: number | null) => {
+      if (assignedCameraId == null) return;
+
+      setCompletedPolygons((prev) =>
+        prev.map((polygon, idx) =>
+          idx === selectedIdx ? { ...polygon, cameraId: assignedCameraId } : polygon,
+        ),
+      );
+      setShowPolygonModal(false);
+    }, selectedPolygon.cameraId ?? null);
+  }, [completedPolygonsRef, onRequestAssignPolygon, selectedPolygonIndexRef]);
 
   const cancelEditingPolygon = useCallback(() => {
     setIsSavingEditedPolygon(false);
@@ -3943,6 +4027,8 @@ export default function MapView({
       setIsSavingEditedPolygon(false);
     }
   }, [clearGuideline, editCompletedPolygon, editingCompletedPolygonIndexRef, isSavingEditedPolygon, polygonPointsRef]);
+
+  const selectedPolygon = selectedPolygonIndex != null ? completedPolygons[selectedPolygonIndex] : null;
 
   return (
     <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
@@ -4007,6 +4093,10 @@ export default function MapView({
           <div className="polygon-modal__actions">
             <button onClick={startEditingPolygon} className="polygon-modal__btn polygon-modal__btn--primary">
               Edit Polygon
+            </button>
+
+            <button onClick={assignPolygonToCamera} className="polygon-modal__btn polygon-modal__btn--primary">
+              {selectedPolygon?.cameraId == null ? "Assign Polygon" : "Reassign Polygon"}
             </button>
 
             <button onClick={deletePolygon} className="polygon-modal__btn polygon-modal__btn--danger">
