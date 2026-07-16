@@ -1397,31 +1397,72 @@ export default function LandingPage() {
     referenceDistance: number, uploadThumbnail?: string
   ) => {
 
-    // create our FormData for sending to the api
-    const formData = new FormData();
-    formData.append('file', savedFile);
-    formData.append('video_name', videoName);
-    formData.append('camera_id', cameraId.toString());
-    formData.append('calibration_points', JSON.stringify(calibrationPoints));
-    formData.append('reference_points', JSON.stringify(originalReferencePoints));
-    formData.append('reference_distance_meters', referenceDistance.toString());
-    if (uploadThumbnail) formData.append('thumbnail', uploadThumbnail);
+    // ── Chunked upload constants ──────────────────────────────────────────────
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
+    const totalChunks = Math.ceil(savedFile.size / CHUNK_SIZE);
+
+    // generate a unique upload ID for this session so the server can stitch chunks
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
     try {
+      showToast(`Uploading "${videoName}" (0%)…`, "info");
 
-      // upload video :)
-      showToast(`Uploading "${videoName}"...`, "info");
-      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
+      // ── Phase 1: upload each chunk sequentially ───────────────────────────
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end   = Math.min(start + CHUNK_SIZE, savedFile.size);
+        const chunk = savedFile.slice(start, end);
 
-      // if fail, display a note — the user needs to know this
-      if (!res.ok) {
-        showToast("Failed to upload video", "error");
+        const chunkForm = new FormData();
+        chunkForm.append("upload_id",    uploadId);
+        chunkForm.append("chunk_index",  chunkIndex.toString());
+        chunkForm.append("total_chunks", totalChunks.toString());
+        chunkForm.append("chunk",        chunk, savedFile.name);
+
+        const chunkRes = await authFetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/upload-chunk/`,
+          { method: "POST", body: chunkForm }
+        );
+
+        if (!chunkRes.ok) {
+          const errText = await chunkRes.text().catch(() => "Unknown error");
+          showToast(`Upload failed on chunk ${chunkIndex + 1}/${totalChunks}: ${errText}`, "error");
+          return;
+        }
+
+        // update progress toast
+        const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+        showToast(`Uploading "${videoName}" (${pct}%)…`, "info");
+      }
+
+      // ── Phase 2: finalise / stitch and process ────────────────────────────
+      showToast(`Finalising "${videoName}"…`, "info");
+
+      const completeForm = new FormData();
+      completeForm.append("upload_id",                  uploadId);
+      completeForm.append("total_chunks",               totalChunks.toString());
+      completeForm.append("video_name",                 videoName);
+      completeForm.append("camera_id",                  cameraId.toString());
+      completeForm.append("calibration_points",         JSON.stringify(calibrationPoints));
+      completeForm.append("reference_points",           JSON.stringify(originalReferencePoints));
+      completeForm.append("reference_distance_meters",  referenceDistance.toString());
+      completeForm.append("original_filename",          savedFile.name);
+      if (uploadThumbnail) completeForm.append("thumbnail", uploadThumbnail);
+
+      const completeRes = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/upload-complete/`,
+        { method: "POST", body: completeForm }
+      );
+
+      if (!completeRes.ok) {
+        const errText = await completeRes.text().catch(() => "Unknown error");
+        showToast(`Failed to finalise upload: ${errText}`, "error");
         return;
       }
 
-      // parse and add to current list as pending
-      const data = await res.json();
+      const data = await completeRes.json();
 
+      // ── Phase 3: update local state ───────────────────────────────────────
       // Persist camera calibration in local state after a successful upload.
       patchObjectInList("camera", cameraId, {
         is_calibrated: true,
@@ -1441,13 +1482,14 @@ export default function LandingPage() {
 
       addNewVideoData(pendingVideo);
 
-      // else, note that we've finished processing and pass this onto the processing tracker
-      // afterwards, pass the video data onto addNewVideoData()
+      // note that upload finished and hand off to the processing tracker
       showToast(`"${videoName}" uploaded — processing started`, "info");
-      trackVideoProcessing(videoName, data.video_id)
+      trackVideoProcessing(videoName, data.video_id);
+
     } catch (exception) {
-      console.error(exception)
-    } finally {}
+      console.error(exception);
+      showToast(`An unexpected error occurred while uploading "${videoName}".`, "error");
+    }
   }
 
   

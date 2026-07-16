@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/cameras/<int:pk>/detect-road-features/', views.detect_road_features_latest, name='detect_road_features_latest'),
     path('api/cameras/<int:pk>/videos/', views.camera_videos_api, name='camera_videos_api'),
     path('api/upload_and_process/', views.upload_and_process_video, name='upload_and_process'),
+    path('api/upload-chunk/', views.upload_chunk, name='upload_chunk'),
+    path('api/upload-complete/', views.upload_complete, name='upload_complete'),
     
     # Aggregation endpoints
     path('api/behavior-timeline/', views.behavior_timeline_api, name='behavior_timeline_api'),
