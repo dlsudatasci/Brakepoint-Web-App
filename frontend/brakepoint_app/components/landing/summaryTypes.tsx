@@ -1,3 +1,8 @@
+import {
+	Point, Polygon, PolygonCollection,
+	toPolygonCollection, removePolygonFromCollection
+} from "@/components/landing/polygonFunctions"
+
 export type SummaryType = "area" | "subarea" | "camera"
 export type SubAreaType = "road_segment" | "intersection" | "junction";
 
@@ -79,7 +84,7 @@ export type LocationSummary = {
 
 // contains camera-specific information
 export type CameraSummary = LocationSummary & {
-	polygon?: [number, number][] | [number, number][][];
+	polygon?: Polygon | PolygonCollection;
 
     is_calibrated: boolean;
     calibration_points?: {x: number, y: number}[];
@@ -102,11 +107,11 @@ export type SubAreaSummary = LocationSummary & {
 	camera_ids?: number[]
     subarea_count: number;
     tags: string[];
-	road_polygons?: [number, number][][];
+	road_polygons?: PolygonCollection;
     // vehicle_breakdown: Record<string, number>;
 	vehicle_breakdown?: VehicleBreakdown;
     sub_area_type: SubAreaType | null;
-	geometry?: [number, number][]
+	geometry?: Polygon
 };
 
 // contains area-specific information
@@ -116,7 +121,7 @@ export type AOISummary = LocationSummary & {
     subarea_count: number;
     subareas?: SubAreaSummary[]; // deprecated — please use subarea_ids
 	subarea_ids?: number[];
-	geometry?: [number, number][]
+	geometry?: Polygon;
 };
 export type AreaSummary = AOISummary;
 
