@@ -774,6 +774,171 @@ def cameras_api(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
+def upload_chunk(request):
+    upload_id = request.POST.get('upload_id')
+    chunk_index = request.POST.get('chunk_index')
+    total_chunks = request.POST.get('total_chunks')
+    chunk_file = request.FILES.get('file')
+
+    if not all([upload_id, chunk_index, total_chunks, chunk_file]):
+        return Response({'error': 'Missing required fields (upload_id, chunk_index, total_chunks, file)'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        chunk_index = int(chunk_index)
+        total_chunks = int(total_chunks)
+    except ValueError:
+        return Response({'error': 'Invalid chunk_index or total_chunks'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sanitize upload_id
+    upload_id = os.path.basename(upload_id)
+    if not upload_id or upload_id in ['.', '..']:
+        return Response({'error': 'Invalid upload_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    project_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp')
+    upload_dir = os.path.join(project_tmp, 'uploads', upload_id)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    chunk_path = os.path.join(upload_dir, f'chunk_{chunk_index}')
+    with open(chunk_path, 'wb+') as destination:
+        for chunk in chunk_file.chunks():
+            destination.write(chunk)
+
+    return Response({
+        'success': True,
+        'message': f'Chunk {chunk_index} of {total_chunks} received successfully'
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_complete(request):
+    upload_id = request.data.get('upload_id')
+    video_name = request.data.get('video_name', 'Untitled Video')
+    camera_id = request.data.get('camera_id')
+    is_dry_run = str(request.data.get('is_dry_run', 'false')).lower() == 'true'
+    
+    calibration_points_json = request.data.get('calibration_points')
+    reference_points_json = request.data.get('reference_points')
+    reference_distance_str = request.data.get('reference_distance_meters')
+    use_sign_detection = str(request.data.get('use_sign_detection', 'false')).lower() == 'true'
+    upload_thumbnail = request.data.get('thumbnail')
+
+    if not upload_id:
+        return Response({'error': 'upload_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not camera_id:
+        return Response({'error': 'Camera ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Sanitize upload_id
+    upload_id = os.path.basename(upload_id)
+    if not upload_id or upload_id in ['.', '..']:
+        return Response({'error': 'Invalid upload_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    try:
+        camera = Camera.objects.get(pk=camera_id, user=user)
+    except Camera.DoesNotExist:
+        return Response({'error': 'Camera not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    project_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp')
+    upload_dir = os.path.join(project_tmp, 'uploads', upload_id)
+
+    if not os.path.exists(upload_dir):
+        return Response({'error': 'No upload session found for this upload_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        chunks = [f for f in os.listdir(upload_dir) if f.startswith('chunk_')]
+        chunks.sort(key=lambda x: int(x.split('_')[1]))
+    except Exception as exc:
+        return Response({'error': f'Failed to read chunks: {exc}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    if not chunks:
+        return Response({'error': 'No chunks found for this upload_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the stitched file
+    stitched_path = os.path.join(project_tmp, f'{upload_id}_stitched.mp4')
+    try:
+        with open(stitched_path, 'wb') as merged_file:
+            for chunk_name in chunks:
+                chunk_file_path = os.path.join(upload_dir, chunk_name)
+                with open(chunk_file_path, 'rb') as chunk_file:
+                    merged_file.write(chunk_file.read())
+    except Exception as exc:
+        if os.path.exists(stitched_path):
+            os.remove(stitched_path)
+        return Response({'error': f'Failed to stitch chunks: {exc}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # Clean up the chunks folder immediately to save space
+    import shutil
+    try:
+        shutil.rmtree(upload_dir)
+    except Exception:
+        pass
+
+    # Read and validate parsed JSON details
+    calibration_points = None
+    reference_points = None
+    reference_distance_meters = None
+    
+    if calibration_points_json:
+        calibration_points = json.loads(calibration_points_json) if isinstance(calibration_points_json, str) else calibration_points_json
+    
+    if reference_points_json:
+        reference_points = json.loads(reference_points_json) if isinstance(reference_points_json, str) else reference_points_json
+    
+    if reference_distance_str is not None:
+        try:
+            reference_distance_meters = float(reference_distance_str)
+        except ValueError:
+            if os.path.exists(stitched_path):
+                os.remove(stitched_path)
+            return Response({'error': 'Invalid reference distance value'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not calibration_points and camera.is_calibrated:
+        calibration_points = camera.calibration_points
+    if not reference_points and camera.is_calibrated:
+        reference_points = camera.reference_points
+    if reference_distance_meters is None and camera.is_calibrated:
+        reference_distance_meters = camera.reference_distance_meters
+
+    save_calibration = str(request.data.get('save_calibration', 'true')).lower() == 'true'
+    if save_calibration and calibration_points_json:
+        camera.calibration_points = calibration_points or []
+        camera.reference_points = reference_points or []
+        camera.reference_distance_meters = reference_distance_meters
+        camera.is_calibrated = True
+        camera.save()
+
+    video_record = Video.objects.create(
+        camera=camera,
+        filename=video_name,
+        calibration_points=calibration_points or [],
+        reference_points=reference_points or [],
+        reference_distance_meters=reference_distance_meters,
+        start_time_source='failed',
+        processing_status='processing',
+        processing_started_at=timezone.now(),
+        thumbnail=upload_thumbnail
+    )
+
+    request.is_dry_run = is_dry_run
+
+    return _process_video_file(
+        request=request,
+        video_record=video_record,
+        camera=camera,
+        temp_path=stitched_path,
+        original_filename=video_name,
+        content_type='video/mp4',
+        use_sign_detection=use_sign_detection,
+        calibration_points=calibration_points,
+        reference_points=reference_points,
+        reference_distance_meters=reference_distance_meters
+    )
+
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+@permission_classes([IsAuthenticated])
 def upload_and_process_video(request):
     """
     Receives uploaded video, saves temporarily, and runs both YOLO vehicle detection 
@@ -788,12 +953,12 @@ def upload_and_process_video(request):
         traceback.print_exc()
         return Response({'error': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 def _upload_and_process_video(request):
     user = request.user
     video_file = request.FILES.get('file')
     video_name = request.POST.get('video_name', 'Untitled Video')
     camera_id = request.POST.get('camera_id')
-    is_dry_run = request.POST.get('is_dry_run', 'false').lower() == 'true'
     
     if not video_file:
         return Response({'error': 'No video file provided'}, status=status.HTTP_400_BAD_REQUEST)
@@ -825,6 +990,7 @@ def _upload_and_process_video(request):
     reference_points_json = request.POST.get('reference_points')
     reference_distance_str = request.POST.get('reference_distance_meters')
     use_sign_detection = request.POST.get('use_sign_detection', 'false').lower() == 'true'
+    upload_thumbnail = request.POST.get('thumbnail')
     
     calibration_points = None
     reference_points = None
@@ -865,9 +1031,32 @@ def _upload_and_process_video(request):
         reference_distance_meters=reference_distance_meters,
         start_time_source='failed',
         processing_status='processing',
-        processing_started_at=timezone.now()
+        processing_started_at=timezone.now(),
+        thumbnail=upload_thumbnail
     )
 
+    project_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp')
+    os.makedirs(project_tmp, exist_ok=True)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", dir=project_tmp) as tmp_file:
+        for chunk in video_file.chunks():
+            tmp_file.write(chunk)
+        temp_path = tmp_file.name
+
+    return _process_video_file(
+        request=request,
+        video_record=video_record,
+        camera=camera,
+        temp_path=temp_path,
+        original_filename=video_file.name,
+        content_type=video_file.content_type,
+        use_sign_detection=use_sign_detection,
+        calibration_points=calibration_points,
+        reference_points=reference_points,
+        reference_distance_meters=reference_distance_meters
+    )
+
+
+def _process_video_file(request, video_record, camera, temp_path, original_filename, content_type, use_sign_detection, calibration_points, reference_points, reference_distance_meters):
     model_cfg = _get_model_service_settings()
 
     import re as _re
@@ -878,13 +1067,6 @@ def _upload_and_process_video(request):
             if _m:
                 _speed_limit = int(_m.group(1))
                 break
-
-    project_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp')
-    os.makedirs(project_tmp, exist_ok=True)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4", dir=project_tmp) as tmp_file:
-        for chunk in video_file.chunks():
-            tmp_file.write(chunk)
-        temp_path = tmp_file.name
 
     # Remote pipeline mode: send the uploaded file to the model-service and return immediately.
     if model_cfg["enabled"]:
@@ -917,13 +1099,13 @@ def _upload_and_process_video(request):
 
         try:
             with open(temp_path, 'rb') as src:
-                files = {'file': (video_file.name or f"video-{video_record.id}.mp4", src, video_file.content_type or 'video/mp4')}
+                files = {'file': (original_filename or f"video-{video_record.id}.mp4", src, content_type or 'video/mp4')}
                 remote_resp = requests.post(
                     model_cfg["submit_url"],
                     data=form_data,
                     files=files,
                     headers=headers,
-                    timeout=120,
+                    timeout=600,
                 )
 
             if not remote_resp.ok:
@@ -967,7 +1149,7 @@ def _upload_and_process_video(request):
                     os.remove(temp_path)
                 except Exception:
                     pass
-    
+
     try:
         import cv2
         import base64
@@ -994,7 +1176,6 @@ def _upload_and_process_video(request):
             frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             video_record.resolution = f"{frame_width}x{frame_height}"
             
-            # Generate thumbnail from the first frame.
             try:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = cap.read()
@@ -1027,18 +1208,14 @@ def _upload_and_process_video(request):
         
         import threading
 
-        def process_video_background(is_dry_run):
-            """Process video in background thread"""
+        def process_video_background(is_dry_run_flag):
             from django.db import connection
-            import time
             
             connection.close()
             
             try:
-                # Get fresh video instance
                 video_obj = Video.objects.get(pk=video_record.id)
                 
-                # Run YOLO vehicle detection
                 yolo_results = run_detection_on_video(
                     temp_path, 
                     calibration_points, 
@@ -1070,9 +1247,8 @@ def _upload_and_process_video(request):
                     video_obj.meter_per_pixel = yolo_results.get('meter_per_pixel', None)
                     video_obj.jeepney_hotspot = yolo_results.get('jeepney_hotspot', False)
 
-                    if is_dry_run:
+                    if is_dry_run_flag:
                         camera.refresh_from_db()
-
                         camera.calibration_points = calibration_points or []
                         camera.reference_points = reference_points or []
                         camera.reference_distance_meters = reference_distance_meters
@@ -1095,7 +1271,6 @@ def _upload_and_process_video(request):
                 print(f"[Error] Video {video_record.id} processing failed: {e}", flush=True)
                 import traceback
                 traceback.print_exc()
-                # Retry DB connection before saving failure state
                 for _attempt in range(3):
                     try:
                         connection.close()
@@ -1113,7 +1288,6 @@ def _upload_and_process_video(request):
                         import time
                         time.sleep(2)
             finally:
-                # Clean up temp file
                 if os.path.exists(temp_path):
                     try:
                         os.remove(temp_path)
@@ -1121,7 +1295,8 @@ def _upload_and_process_video(request):
                         print(f"[Error] Could not delete temp file: {cleanup_error}", flush=True)
                 connection.close()
         
-        thread = threading.Thread(target=process_video_background, args=(is_dry_run,), daemon=True)
+        is_dry_run_flag = getattr(request, 'is_dry_run', False)
+        thread = threading.Thread(target=process_video_background, args=(is_dry_run_flag,), daemon=True)
         thread.start()
 
     except Exception as e:
