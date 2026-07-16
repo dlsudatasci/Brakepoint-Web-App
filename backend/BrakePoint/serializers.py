@@ -24,7 +24,9 @@ class SavedLocationSerializer(serializers.ModelSerializer):
             "pitch",
             "geometry",
             "bounds",
+            "road_polygons",
             "location_type",
+            "sub_area_type",
             "parent",
             "created_at",
             "camera_count",
@@ -37,10 +39,19 @@ class SavedLocationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["user", "created_at"]
 class SignupSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=True, allow_blank=False)
     password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
         fields = ['username','email','password']
+
+    def validate_email(self, value):
+        email = value.strip()
+        if not email:
+            raise serializers.ValidationError("This field may not be blank.")
+        return email
+
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -57,7 +68,7 @@ class VideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Video
         fields = [
-            'id', 'camera', 'filename', 'uploaded_at',
+            'id', 'camera', 'filename', 'uploaded_at', 'start_time', 'start_time_source',
             'duration_seconds', 'fps', 'resolution', 'file_size_mb', 'thumbnail',
             'calibration_points', 'reference_points', 'reference_distance_meters', 'meter_per_pixel',
             'vehicles', 'speeding_count', 'swerving_count', 'abrupt_stopping_count', 'vehicle_breakdown', 'jeepney_hotspot',

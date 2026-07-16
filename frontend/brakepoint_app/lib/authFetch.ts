@@ -47,6 +47,8 @@ async function refreshAccessToken(): Promise<string | null> {
  *   1. Attaches the stored JWT access token as a Bearer header
  *   2. On 401, attempts a silent token refresh and retries once
  *   3. If the refresh also fails, clears stored tokens and redirects to /logIn
+ *      You can also change this by setting the onFail variable to add different functionality
+ *      and redirectToLogin = false to disable this automatic direct.
  *
  * Usage:
  *   const res = await authFetch(`${API_URL}/api/cameras/`);
@@ -55,7 +57,9 @@ async function refreshAccessToken(): Promise<string | null> {
  */
 export async function authFetch(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  onFail: (response?: any) => void = () => {},
+  redirectToLogin: boolean = true,
 ): Promise<Response> {
   const token =
     typeof window !== "undefined"
@@ -85,7 +89,9 @@ export async function authFetch(
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
         localStorage.removeItem("username");
-        window.location.href = "/logIn";
+
+        onFail(response);
+        if (redirectToLogin) window.location.href = "/logIn";
       }
       // Throw so callers' catch blocks can handle this as a real error
       throw new Error("Session expired. Please log in again.");

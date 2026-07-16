@@ -3,6 +3,7 @@ import { Button } from "@mui/material";
 
 export default function NotificationDebugButton() {
   const { addNotification, trackVideoProcessing, showToast } = useNotifications();
+  const debugId = 930002
 
   return (
     <>
@@ -31,12 +32,12 @@ export default function NotificationDebugButton() {
         variant="text"
         onClick={() => {
           // Use a videoId you know exists in your backend
-          trackVideoProcessing("Debug: Processing Notification", 123);
+          trackVideoProcessing("Debug: Processing Notification", debugId);
           showToast("Started debug processing poll", "info");
         }}
         sx={{ ml: 2 }}
       >
-        Start Processing Poll (videoId=123)
+        Start Processing Poll (videoId={debugId})
       </Button>
     </>
   );

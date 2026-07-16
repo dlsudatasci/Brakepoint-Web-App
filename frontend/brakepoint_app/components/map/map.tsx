@@ -5,7 +5,6 @@ import ReactDOM from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import MaplibreGeocoder, { MaplibreGeocoderApi, MaplibreGeocoderFeatureResults } from "@maplibre/maplibre-gl-geocoder";
 import { MaplibreTerradrawControl } from "@watergis/maplibre-gl-terradraw";
-import SideTab from "@components/map/sideTab";
 
 import "@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
@@ -13,6 +12,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
 
 import ModeEditIcon from "@mui/icons-material/ModeEdit";
+import EditOffIcon from "@mui/icons-material/EditOff";
+import UndoIcon from "@mui/icons-material/Undo";
+import LayersClearOutlinedIcon from '@mui/icons-material/LayersClearOutlined';
+
 
 import { authFetch } from "@/lib/authFetch";
 import {
@@ -24,18 +27,40 @@ import {
   loadSignImages,
   resolveBrakePointClass,
 } from "@/lib/mapillary";
+import { SummaryType } from "../landing/summaryTypes";
 
+/*
+    mapMode - how is this map used?
+    — explore:    area/subarea creation for explore tab
+    — map:        subarea configuration map with camera and polygon editing
+    — heatmap:    subarea monitoring map with heatmap
+    — dashboard:  simple map with subarea pins at the dashboard
+*/
 type MapMode = "explore" | "map" | "heatmap" | "dashboard";
-type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint" | "assignCamera";
 
+/*
+    toolMode - what is the currently active tool (for mapMode = "map")
+      — none:         no tool is currently active; default map behavior
+      — addCamera:    adds a camera on click
+      — removeCamera: removes selected camera on click
+      — addPoint:     adds a polygon point on click
+      — removePoint:  removes a polygon on click
+      — assignCamera: assigns a camera to a polygon area
+*/
+type ToolMode = "none" | "addCamera" | "removeCamera" | "addPoint" | "removePoint";
+
+// location and details of a single camera
+// obtained from api/cameras; class Camera in models.py
 type Camera = {
   id: number | string;
   lat: number;
   lng: number;
-  polygon?: [number, number][];
+  parentId?: number | null;
+  polygon?: [number, number][] | [number, number][][];
   occurrences?: number;
 };
 
+// a marker to display with mapMode = "dashboard"
 type DashboardMarker = {
   id: number | string;
   lat: number;
@@ -45,6 +70,8 @@ type DashboardMarker = {
   popupBody?: string;
 };
 
+// a saved location; can be cached
+// obtained from api/saved-locations; class SavedLocation in models.py
 type SavedLocationRecord = {
   id: number;
   name: string;
@@ -56,12 +83,84 @@ type SavedLocationRecord = {
   parent_id: number | null;
 };
 
+// a completed polygon created by the user
 type CompletedPolygon = {
   points: [number, number][];
   cameraId: number | string | null;
+  subAreaId?: number | null;
   occurrences?: number;
 };
 
+function asPolygonCollection(
+  value: [number, number][] | [number, number][][] | undefined | null,
+): [number, number][][] {
+  if (!Array.isArray(value) || value.length === 0) return [];
+
+  const first = value[0] as any;
+  const isPair =
+    Array.isArray(first) &&
+    first.length === 2 &&
+    typeof first[0] === "number" &&
+    typeof first[1] === "number";
+
+  if (isPair) return [value as [number, number][]];
+
+  const isPolygon =
+    Array.isArray(first) &&
+    Array.isArray(first[0]) &&
+    first[0].length === 2 &&
+    typeof first[0][0] === "number" &&
+    typeof first[0][1] === "number";
+
+  return isPolygon ? (value as [number, number][][]) : [];
+}
+
+function distanceSq(a: [number, number], b: [number, number]): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+function nearestEdgeInsertIndex(points: [number, number][], point: [number, number]): number {
+  if (points.length < 2) return points.length;
+
+  let bestSegmentIndex = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const abLenSq = abx * abx + aby * aby;
+
+    if (abLenSq === 0) {
+      const d = distanceSq(point, a);
+      if (d < bestDist) {
+        bestDist = d;
+        bestSegmentIndex = i;
+      }
+      continue;
+    }
+
+    const apx = point[0] - a[0];
+    const apy = point[1] - a[1];
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+    const projection: [number, number] = [a[0] + t * abx, a[1] + t * aby];
+    const d = distanceSq(point, projection);
+
+    if (d < bestDist) {
+      bestDist = d;
+      bestSegmentIndex = i;
+    }
+  }
+
+  const insertAfter = bestSegmentIndex + 1;
+  return insertAfter > points.length ? points.length : insertAfter;
+}
+
+// a single TerraDraw feature
+// obtained from TerraDraw.getSnapshot()
 type TerraDrawFeature = {
   id: string;
   type: "Feature";
@@ -76,6 +175,7 @@ type TerraDrawFeature = {
   };
 };
 
+// a focus area for TerraDraw to use for map panning, etc
 type FocusArea = {
   kind: "primary" | "sub";
   label: string;
@@ -85,28 +185,16 @@ type FocusArea = {
   minZoom: number;
 };
 
+/*
+    explorePhase - what is the current state of the map (for mapMode = "explore")
+    — idle:             map is idle
+    — drawing-primary:  user is creating a new area
+    — locked-primary:   map has been recently panned and locked to the primary AOI
+    — drawing-sub:      user is creating a new subarea
+*/
 type ExplorePhase = "idle" | "drawing-primary" | "locked-primary" | "drawing-sub";
 
-type MapProps = {
-  mode: MapMode;
-
-  dashboardMarkers?: DashboardMarker[];
-  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;
-
-  onCameraClick?: (cameraId: Camera["id"]) => void;
-  onCameraAdd?: (cameraId: Camera["id"], lat: number, lng: number, camera: Camera) => void;
-  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;
-  onCamerasLoaded?: (cameras: Camera[]) => void;
-  selectedCameraId?: Camera["id"] | null;
-
-  refreshTrigger: number;
-  goTo?: [number, number] | null;
-  goToBounds?: [[number, number], [number, number]] | null;
-
-  showMapillarySigns?: boolean;
-  onMapReady?: (map: maplibregl.Map) => void;
-};
-
+// a MapLibre marker for each subarea (mode = "dashboard")
 type DashMarkerEntry = {
   marker: maplibregl.Marker;
   popup?: maplibregl.Popup;
@@ -115,6 +203,7 @@ type DashMarkerEntry = {
   labelEl: HTMLElement;
 };
 
+// a MapLibre marker for each camera (mode = "map" | "heatmap")
 type CameraMarkerEntry = {
   id: number | string;
   marker: maplibregl.Marker;
@@ -135,6 +224,7 @@ function normalizeBounds(bounds: SavedLocationRecord["bounds"], ring: [number, n
   return rectToBoundingBox(ring);
 }
 
+// converts a SavedLocationRecord object (obtained through api, etc) to a format suitable for FocusArea
 function savedLocationToFocusArea(loc: SavedLocationRecord, kind: "primary" | "sub"): FocusArea | null {
   if (!loc.geometry || loc.geometry.length < 4) return null;
 
@@ -239,6 +329,7 @@ function disableRotationInteractions(map: maplibregl.Map) {
   map.dragPan.enable();
 }
 
+// deprecated -cy
 class ToggleEditButton implements maplibregl.IControl {
   private onToggle: (isEdit: boolean) => void;
   private container: HTMLElement | null = null;
@@ -272,6 +363,212 @@ class ToggleEditButton implements maplibregl.IControl {
   }
 }
 
+class createToggleButtons implements maplibregl.IControl {
+  private onToggle: (toolMode: "none" | "addPoint" | "removePoint") => void;
+  private container: HTMLElement | null = null;
+  private toolMode: "none" | "addPoint" | "removePoint" = "none";
+  private allBtns: {
+    "addPoint": HTMLElement | null;
+    "removePoint": HTMLElement | null;
+  } = { "addPoint": null, "removePoint": null };
+
+  constructor(onToggle: (toolMode: "none" | "addPoint" | "removePoint") => void) {
+    this.onToggle = onToggle;
+  }
+
+  // updates the button styles
+  updateButtonStyles = (
+    oldToolMode: "none" | "addPoint" | "removePoint",
+    newToolMode: "none" | "addPoint" | "removePoint",
+  ) => {
+    if (oldToolMode != "none") {
+      this.allBtns[oldToolMode].style.backgroundColor = "";
+    }
+    if (newToolMode != "none") {
+      this.allBtns[newToolMode].style.backgroundColor = "#e0e4e9ff";
+    }
+  }
+
+  // triggers when one of the buttons in this edit button selection is toggled on/off
+  onButtonClick = (
+    btnToolMode: "none" | "addPoint" | "removePoint"
+  ) => {
+    // disable the tool
+    if (this.toolMode == btnToolMode) {
+      this.updateButtonStyles(this.toolMode, "none");
+      this.toolMode = "none";
+    }
+    // enables this tool
+    else if (this.toolMode == "none") {
+      this.updateButtonStyles("none", btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    // switches to a new tool
+    else {
+      this.updateButtonStyles(this.toolMode, btnToolMode);
+      this.toolMode = btnToolMode;
+    }
+    this.onToggle(this.toolMode);
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    // this.allBtns.addCamera.title = "Add camera";
+    // this.allBtns.removeCamera.title = "Remove camera";
+    this.allBtns.addPoint.title = "Add point";
+    this.allBtns.removePoint.title = "Remove point";
+
+    // render icon for the toolbar
+    // ReactDOM.createRoot(this.allBtns.addCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    // ReactDOM.createRoot(this.allBtns.removeCamera).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.addPoint).render(<ModeEditIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.removePoint).render(<EditOffIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    // this.allBtns.addCamera.onclick = () => { this.onButtonClick("addCamera") };
+    // this.allBtns.removeCamera.onclick = () => { this.onButtonClick("removeCamera") };
+    this.allBtns.addPoint.onclick = () => { this.onButtonClick("addPoint") };
+    this.allBtns.removePoint.onclick = () => { this.onButtonClick("removePoint") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  }
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+}
+
+class createPolygonEditButtons implements maplibregl.IControl {
+  private onToggle: (type: "undo" | "discard") => void;
+  private container: HTMLElement | null = null;
+  private allBtns: {
+    "undo": HTMLElement | null;
+    "discard": HTMLElement | null;
+  } = { "undo": null, "discard": null }
+
+
+  constructor(onToggle: (type: "undo" | "discard") => void) {
+    this.onToggle = onToggle;
+  }
+
+  onAdd() {
+    // create base container
+    this.container = document.createElement("div");
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    // create buttons
+    for (const newBtnName of Object.keys(this.allBtns)) {
+      this.allBtns[newBtnName] = document.createElement("button")
+    }
+
+    // tooltip titles
+    this.allBtns.undo.title = "Undo last point";
+    this.allBtns.discard.title = "Discard current polygon";
+
+    // render icon for the toolbar
+    ReactDOM.createRoot(this.allBtns.undo).render(<UndoIcon sx={{ width: 16 }} />);
+    ReactDOM.createRoot(this.allBtns.discard).render(<LayersClearOutlinedIcon sx={{ width: 16 }} />);
+
+    // on-click triggers
+    this.allBtns.undo.onclick = () => { this.onToggle("undo") };
+    this.allBtns.discard.onclick = () => { this.onToggle("discard") };
+
+    // add all buttons to container
+    for (const newBtn of Object.values(this.allBtns)) {
+      this.container.appendChild(newBtn);
+    }
+
+    // return container
+    return this.container;
+  };
+
+  onRemove() {
+    this.container?.parentNode?.removeChild(this.container);
+    this.container = null;
+  }
+
+}
+
+
+
+
+// definition of types for the props for Map
+type MapProps = {
+  mode: MapMode;                                                                            // how or where is this map used? enables certain features based on type of map
+
+  dashboardMarkers?: DashboardMarker[];                                                     // markers to show (mode = "dashboard")
+  onDashboardMarkerClick?: (id: DashboardMarker["id"]) => void;                             // triggers when a marker is clicked (mode = "dashboard")
+
+  onCameraClick?: (cameraId: Camera["id"]) => void;                                         // triggers when a camera is clicked (mode = "map" | "heatmap")
+  onCameraAdd?: (lat: number, lng: number) => void;                                         // triggers when user creates a camera (mode = "map" | "heatmap")
+  onVisibleCamerasChange?: (visibleCameraIds: Camera["id"][]) => void;                      // triggers when list of cameras visible in the map changes (mode = "map" | "heatmap")
+  onCamerasLoaded?: (cameras: Camera[]) => void;                                            // triggers when cameras are loaded for the first time (mode = "map" | "heatmap")
+  selectedCameraId?: Camera["id"] | null;                                                   // the currently selected camera (mode = "map" | "heatmap")
+  visibleCameraIds?: number[] | null;                                                       // when set, only show markers for cameras with these ids (level 3+)
+
+  refreshTrigger: boolean;                                                                  // invert to force a refresh
+  goTo?: [number, number] | null;                                                           // center coordinates for the map to pan to
+  goToBounds?: [[number, number], [number, number]] | null;                                 // bounding box for the map to pan to
+  mapMaxBounds?: [[number, number], [number, number]] | null;                               // when set, restricts panning to this padded bounding box
+  
+  aoiItems?: { id: number; name: string; ring: [number, number][] }[];                      // AOI geometry rings to render as blue overlays
+  subAreaItems?: { id: number; name: string; ring: [number, number][] }[] | null;           // sub-area polygons rendered when an AOI is selected
+  cameraItems?: Camera[] | null;                                                            // camera 
+  roadPolygonItems?: CompletedPolygon[] | null;                                              // road polygons stored for the current subarea
+  currentSelectionMode?: "all" | SummaryType;                                               // the current active "selection mode" (all aoi/home, aoi, subarea, camera)
+
+  onObjectClick?: (type: SummaryType, id: number) => void;                                    // fires when user clicks a polygon of an AOI or subarea
+  onRequestRename?: (type: SummaryType, id: number) => void;                                  // fires when user requests to rename an object
+  onRequestDelete?: (type: SummaryType, id: number) => void;                                  // fires when user requests to delete an object  
+  
+  onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a bounding box for an area or subarea
+  onPolygonDrawn?: (id: number | null, polygon: [number, number][], onSuccess?: (cameraId: number | null) => void) => void;  // runs when polygon has finished being drawn
+  onRequestAssignPolygon?: (
+    polygon: [number, number][],
+    onSuccess?: (cameraId: number | null) => void,
+    sourceCameraId?: number | string | null,
+  ) => void;
+
+  showMapillarySigns?: boolean;                                                             // display map signs from mapillary?
+  onMapReady?: () => void;                                                                  // triggers when map has been loaded
+  onAoiSaved?: () => void;                                                                  // called after a new AOI is saved (mode = "explore")
+  hideEditControls?: boolean;                                                               // suppress camera editing buttons (mode = "map")
+  cleanMap?: boolean;                                                                       // hide all cameras and polygons (landing page)
+  isDrawingAOI?: boolean;                                                                   // enable lightweight rectangle drawing for AOI creation
+  hoveredAoiId?: number | null;                                                             // id of AOI card being hovered — highlights that polygon
+  activeAoiId?: number | null;                                                              // id of selected AOI — shows polygon and marker in orange
+  onAoiClick?: (id: number) => void;                                                        // fired when user clicks an AOI polygon
+  hideAoiMarkers?: boolean;                                                                 // suppress AOI marker rendering (used in sub-level view to show polygon only)
+  hoveredSubAreaId?: number | null;                                                         // id of road segment card being hovered — highlights that blue polygon
+  activeSubAreaId?: number | null;                                                          // id of selected sub-area — shows polygon and marker in orange
+  onSubAreaClick?: (id: number) => void;                                                    // fired when user clicks a sub-area polygon
+  onSubAreaHover?: (id: number | null) => void;                                             // fired when user hovers/leaves a sub-area polygon
+  hideSubAreaMarkers?: boolean;                                                             // suppress sub-area centroid label markers (e.g. at camera level)
+  disableSubAreaInteraction?: boolean;                                                      // disable click and hover cursor on sub-area polygons (e.g. at camera level)
+  goToBoundsPadding?: { top: number; right: number; bottom: number; left: number };         // custom padding for fitBounds (accounts for sidebars)
+  showGeocoder?: boolean;                                                                   // show the search bar (landing page)
+  isPlacingCamera?: boolean;                                                                // when true, activates the "click map to place camera" tool mode externally
+  cameraParentLocationId?: number | null;                                                   // saved_location id to assign to newly created cameras
+  onCameraPlacedOutside?: () => void;                                                       // called when user clicks outside the current subarea polygon while placing a camera
+  hideCameraPolygons?: boolean;                                                             // when true, hide camera-associated road polygons (level 3)
+};
+
 export default function MapView({
   mode,
   dashboardMarkers,
@@ -286,23 +583,64 @@ export default function MapView({
   goToBounds,
   showMapillarySigns = true,
   onMapReady,
+  onAoiSaved,
+  hideEditControls = false,
+  cleanMap = false,
+  isDrawingAOI = false,
+  onAoiDrawn,
+  aoiItems,
+  hoveredAoiId,
+  activeAoiId,
+  onObjectClick,
+  onAoiClick,
+  hideAoiMarkers = false,
+  hoveredSubAreaId,
+  activeSubAreaId,
+  onSubAreaClick,
+  onSubAreaHover,
+  hideSubAreaMarkers = false,
+  disableSubAreaInteraction = false,
+  goToBoundsPadding,
+  showGeocoder = false,
+  mapMaxBounds,
+  subAreaItems,
+  isPlacingCamera = false,
+  cameraParentLocationId = null,
+  onCameraPlacedOutside,
+  visibleCameraIds = null,
+  hideCameraPolygons = false,
+
+  cameraItems,
+  roadPolygonItems = [],
+  currentSelectionMode,
+  onRequestDelete,
+  onRequestRename,
+  onPolygonDrawn,
+  onRequestAssignPolygon,
 }: MapProps) {
+
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-
+  const mapLoadedRef = useRef(false);
   const [open, setOpen] = useState(true);
-
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(true);
   const [toolMode, setToolMode] = useState<ToolMode>("none");
-
+  const cameraParentLocationIdRef = useRef(cameraParentLocationId);
+  cameraParentLocationIdRef.current = cameraParentLocationId;
+  const visibleCameraIdsRef = useRef(visibleCameraIds);
+  visibleCameraIdsRef.current = visibleCameraIds;
+  const hideCameraPolygonsRef = useRef(hideCameraPolygons);
+  hideCameraPolygonsRef.current = hideCameraPolygons;
+  const selectedCameraIdRef = useRef(selectedCameraId);
+  selectedCameraIdRef.current = selectedCameraId;
   const [showPolygonModal, setShowPolygonModal] = useState(false);
   const [cameras, setCameras] = useState<CameraMarkerEntry[]>([]);
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
   const [completedPolygons, setCompletedPolygons] = useState<CompletedPolygon[]>([]);
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
+  const [editingCompletedPolygonIndex, setEditingCompletedPolygonIndex] = useState<number | null>(null);
+  const [isSavingEditedPolygon, setIsSavingEditedPolygon] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
-
-
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
     savedSubAreaIds: Record<number, number>;
@@ -310,6 +648,7 @@ export default function MapView({
     subFocusAreas: FocusArea[];
   } | null>(() => {
     if (mode !== "explore") return null;
+    if (onAoiSaved) return null;
     try {
       const raw = sessionStorage.getItem("bp_explore_v1");
       if (!raw) return null;
@@ -353,25 +692,24 @@ export default function MapView({
   const [focusError, setFocusError] = useState<string | null>(null);
   const [hoverSubAreaIndex, setHoverSubAreaIndex] = useState<number | null>(null);
   const [selectedSubAreaIndex, setSelectedSubAreaIndex] = useState<number | null>(null);
-
   const camerasRef = useRef<CameraMarkerEntry[]>([]);
+
   const dashboardRegistryRef = useRef<Map<string, DashMarkerEntry>>(new Map());
   const openDashboardPopupRef = useRef<maplibregl.Popup | null>(null);
-
-  const editControlRef = useRef<ToggleEditButton | null>(null);
+  const editControlRef = useRef<createToggleButtons | null>(null);
+  const polygonEditControlRef = useRef<createPolygonEditButtons | null>(null);
   const geocoderControlRef = useRef<MaplibreGeocoder | null>(null);
   const drawControlRef = useRef<MaplibreTerradrawControl | null>(null);
-
   const rectIdRef = useRef<string | null>(null);
   const lockAfterFitRef = useRef(false);
-  const isFirstGoToRef = useRef(true);
+  const isFirstGoToRef = useRef(false);
   const enforcingRef = useRef(false);
   const defaultMinZoomRef = useRef(0);
   const defaultMaxZoomRef = useRef(22);
   const loadAbortRef = useRef<AbortController | null>(null);
-
   const toolModeRef = useLatestRef(toolMode);
   const selectedPolygonIndexRef = useLatestRef(selectedPolygonIndex);
+  const editingCompletedPolygonIndexRef = useLatestRef(editingCompletedPolygonIndex);
   const completedPolygonsRef = useLatestRef(completedPolygons);
   const polygonPointsRef = useLatestRef(polygonPoints);
   const primaryFocusAreaRef = useLatestRef(primaryFocusArea);
@@ -382,6 +720,20 @@ export default function MapView({
   const modeRef = useLatestRef(mode);
   const goToRef = useLatestRef(goTo ?? null);
   const goToBoundsRef = useLatestRef(goToBounds ?? null);
+  const onAoiSavedRef = useLatestRef(onAoiSaved ?? null);
+  const onAoiDrawnRef = useLatestRef(onAoiDrawn ?? null);
+  const onObjectClickRef = useLatestRef(onObjectClick ?? null);
+  const onRequestRenameRef = useLatestRef(onRequestRename ?? null);
+  const onRequestDeleteRef = useLatestRef(onRequestDelete ?? null);
+  const onSubAreaHoverRef = useLatestRef(onSubAreaHover ?? null);
+  const disableSubAreaInteractionRef = useRef(disableSubAreaInteraction);
+  disableSubAreaInteractionRef.current = disableSubAreaInteraction;
+  const latestActiveSubAreaIdRef = useRef(activeSubAreaId ?? null);
+  latestActiveSubAreaIdRef.current = activeSubAreaId ?? null;
+  const isDrawingAOIRef = useRef(isDrawingAOI);
+  isDrawingAOIRef.current = isDrawingAOI;
+  const lastDrawingFinishTimeRef = useRef(0);
+  const aoiDrawControlRef = useRef<MaplibreTerradrawControl | null>(null);
   const [savedAoiId, setSavedAoiId] = useState<number | null>(
     exploreInitFromCache?.savedAoiId ?? null,
   );
@@ -391,12 +743,12 @@ export default function MapView({
 
   const hasLoadedExploreAreasRef = useRef(false);
 
-  const style = "https://tiles.openfreemap.org/styles/liberty";
+  // const style = "https://tiles.openfreemap.org/styles/liberty";
+  const style = "./map-style.json"
   const lng = 120.9842;
   const lat = 14.5995;
   const zoom = 10;
 
-  const isAssigningCamera = toolMode === "assignCamera";
   const isDrawingPrimary = explorePhase === "drawing-primary";
   const isDrawingSub = explorePhase === "drawing-sub";
   const isDrawingFocusArea = isDrawingPrimary || isDrawingSub;
@@ -499,7 +851,7 @@ export default function MapView({
             initZoom = v.zoom;
           }
         }
-      } catch {}
+      } catch { }
     }
     return new maplibregl.Map({
       container: mapContainer.current!,
@@ -629,13 +981,13 @@ export default function MapView({
   const cleanupDashEntry = (entry: DashMarkerEntry) => {
     try {
       entry.popupRoot?.unmount();
-    } catch {}
+    } catch { }
     try {
       entry.popup?.remove();
-    } catch {}
+    } catch { }
     try {
       entry.marker.remove();
-    } catch {}
+    } catch { }
   };
 
   const makeDashboardMarkerElement = (label: string | undefined) => {
@@ -686,7 +1038,7 @@ export default function MapView({
     popup.on("close", () => {
       try {
         root.unmount();
-      } catch {}
+      } catch { }
     });
 
     entry.marker.setPopup(popup);
@@ -849,7 +1201,7 @@ export default function MapView({
             EXPLORE_VIEWPORT_KEY,
             JSON.stringify({ center: map.getCenter().toArray(), zoom: map.getZoom() }),
           );
-        } catch {}
+        } catch { }
       });
     });
   }, []);
@@ -929,10 +1281,14 @@ export default function MapView({
   );
 
   const loadSavedExploreAreas = useCallback(async () => {
+    if (onAoiSavedRef.current) {
+      startPrimaryDrawingMode();
+      return;
+    }
     try {
       const raw = sessionStorage.getItem(EXPLORE_CACHE_KEY);
       if (raw) applyExploreLocations(JSON.parse(raw) as SavedLocationRecord[]);
-    } catch {}
+    } catch { }
 
     try {
       const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
@@ -949,7 +1305,7 @@ export default function MapView({
       if (!data.success || !Array.isArray(data.saved_locations)) return;
 
       const savedLocations = data.saved_locations as SavedLocationRecord[];
-      try { sessionStorage.setItem(EXPLORE_CACHE_KEY, JSON.stringify(savedLocations)); } catch {}
+      try { sessionStorage.setItem(EXPLORE_CACHE_KEY, JSON.stringify(savedLocations)); } catch { }
 
       const savedAoi = savedLocations.find((loc) => loc.location_type === "aoi");
       if (!savedAoi) {
@@ -1059,7 +1415,7 @@ export default function MapView({
     if (!currentPrimaryArea) {
       try {
         di?.setMode?.("rectangle");
-      } catch {}
+      } catch { }
       return;
     }
 
@@ -1067,7 +1423,7 @@ export default function MapView({
     if (!restored) {
       try {
         di?.setMode?.("rectangle");
-      } catch {}
+      } catch { }
     }
   }, [clearTerradrawSelection, primaryFocusAreaRef, restoreDefaultExploreCamera, restoreFocusAreaToTerradraw]);
 
@@ -1091,7 +1447,7 @@ export default function MapView({
         const di = drawControlRef.current?.getTerraDrawInstance?.();
         try {
           di?.setMode?.("rectangle");
-        } catch {}
+        } catch { }
       }
     },
     [applyLockedFocusToMap, clearTerradrawSelection, primaryFocusAreaRef, restoreFocusAreaToTerradraw, subFocusAreasRef],
@@ -1218,6 +1574,15 @@ export default function MapView({
         return;
       }
 
+      if (onAoiSavedRef.current) {
+        await createSavedArea({ name: label, coords: ring, locationType: "aoi" });
+        clearTerradrawSelection();
+        setFocusError(null);
+        di.setMode?.("select");
+        onAoiSavedRef.current();
+        return;
+      }
+
       if (savedAoiId) {
         await updateSavedArea({
           id: savedAoiId,
@@ -1255,6 +1620,7 @@ export default function MapView({
     savedAoiId,
     savedSubAreaIds,
     subFocusAreasRef,
+    clearTerradrawSelection,
     createSavedArea,
     updateSavedArea,
   ]);
@@ -1369,7 +1735,7 @@ export default function MapView({
     }
   }, [deleteSavedArea, restartPrimaryAoiDrawing, savedAoiId]);
 
-  const renderPolygonLayers = useCallback(() => {
+  const renderPolygonLayers = useCallback((polygonOverride?: CompletedPolygon[]) => {
     const map = mapRef.current;
     if (!map) return;
 
@@ -1386,12 +1752,23 @@ export default function MapView({
     safeRemoveLayer("polygon-guide");
     safeRemoveSource("polygon-guide");
 
-    const polygonFeatures = completedPolygonsRef.current.map((p, idx) => ({
+    const selectedIdx = selectedPolygonIndexRef.current;
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    const isPointEditMode = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
+
+    const polygonSource = polygonOverride ?? completedPolygonsRef.current;
+    const polygonFeatures = polygonSource.map((p, idx) => ({
       type: "Feature" as const,
       properties: {
         polygonIndex: idx,
         cameraId: p.cameraId ?? null,
+        subAreaId: p.subAreaId ?? null,
         occurrences: p.occurrences ?? 0,
+        isSelected: idx === selectedIdx,
+        isCameraMatch:
+          selectedCameraIdRef.current != null &&
+          p.cameraId != null &&
+          String(p.cameraId) === String(selectedCameraIdRef.current),
       },
       geometry: {
         type: "Polygon" as const,
@@ -1399,12 +1776,34 @@ export default function MapView({
       },
     }));
 
+    const visibleIds = visibleCameraIdsRef.current;
+    const activeSubAreaId = cameraParentLocationIdRef.current;
+    const allowedIds = visibleIds != null ? new Set(visibleIds.map((id) => String(id))) : null;
+
+    const filteredPolygonFeatures = polygonFeatures.filter((feature) => {
+      const cameraId = feature.properties.cameraId;
+      const polygonSubAreaId = feature.properties.subAreaId;
+
+      if (allowedIds != null) {
+        if (cameraId != null) return allowedIds.has(String(cameraId));
+        return activeSubAreaId != null && polygonSubAreaId != null && String(polygonSubAreaId) === String(activeSubAreaId);
+      }
+
+      if (activeSubAreaId != null) {
+        if (cameraId != null && visibleIds && visibleIds.length > 0) return allowedIds?.has(String(cameraId)) ?? false;
+        return polygonSubAreaId != null && String(polygonSubAreaId) === String(activeSubAreaId);
+      }
+
+      return true;
+    });
+
     const pointFeatures: any[] = [];
     polygonPointsRef.current.forEach((pt, i) => {
       pointFeatures.push({
         type: "Feature",
         properties: {
           index: i,
+          polygonIndex: null,
           isCompleted: false,
           isFirst: i === 0,
           canClose: i === 0 && polygonPointsRef.current.length >= 3,
@@ -1412,20 +1811,30 @@ export default function MapView({
         geometry: { type: "Point", coordinates: pt },
       });
     });
-    completedPolygonsRef.current.forEach((p, polygonIndex) => {
-      p.points.forEach((pt, i) => {
-        pointFeatures.push({
-          type: "Feature",
-          properties: { index: i, polygonIndex, isCompleted: true },
-          geometry: { type: "Point", coordinates: pt },
-        });
-      });
-    });
 
+    if (isPointEditMode && selectedIdx != null && editingIdx == null && polygonPointsRef.current.length === 0) {
+      const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+      if (selectedPolygon) {
+        selectedPolygon.points.forEach((pt, i) => {
+          pointFeatures.push({
+            type: "Feature",
+            properties: {
+              index: i,
+              polygonIndex: selectedIdx,
+              isCompleted: true,
+              isFirst: false,
+              canClose: false,
+            },
+            geometry: { type: "Point", coordinates: pt },
+          });
+        });
+      }
+    }
+    
     const existingPolygonSrc = map.getSource("polygons") as maplibregl.GeoJSONSource | undefined;
     const existingPointSrc = map.getSource("polygon-points") as maplibregl.GeoJSONSource | undefined;
     if (existingPolygonSrc && existingPointSrc) {
-      existingPolygonSrc.setData({ type: "FeatureCollection", features: polygonFeatures } as any);
+      existingPolygonSrc.setData({ type: "FeatureCollection", features: filteredPolygonFeatures } as any);
       existingPointSrc.setData({ type: "FeatureCollection", features: pointFeatures } as any);
       return;
     }
@@ -1439,7 +1848,7 @@ export default function MapView({
 
     map.addSource("polygons", {
       type: "geojson",
-      data: { type: "FeatureCollection", features: polygonFeatures } as any,
+      data: { type: "FeatureCollection", features: filteredPolygonFeatures } as any,
     });
 
     map.addLayer({
@@ -1448,10 +1857,28 @@ export default function MapView({
       source: "polygons",
       paint: {
         "fill-color": [
-          "interpolate", ["linear"], ["get", "occurrences"],
-          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          "case",
+          ["==", ["get", "isSelected"], true],
+          "#ffb020",
+          ["==", ["get", "isCameraMatch"], true],
+          "#00e5ff",
+          ["==", ["get", "cameraId"], null],
+          "#dc2626",
+          [
+            "interpolate", ["linear"], ["get", "occurrences"],
+            0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          ],
         ] as any,
-        "fill-opacity": 0.30,
+        "fill-opacity": [
+          "case",
+          ["==", ["get", "isSelected"], true],
+          0.78,
+          ["==", ["get", "isCameraMatch"], true],
+          0.55,
+          ["==", ["get", "cameraId"], null],
+          0.30,
+          0.30,
+        ],
       },
     });
 
@@ -1461,10 +1888,28 @@ export default function MapView({
       source: "polygons",
       paint: {
         "line-color": [
-          "interpolate", ["linear"], ["get", "occurrences"],
-          0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          "case",
+          ["==", ["get", "isSelected"], true],
+          "#ff7a00",
+          ["==", ["get", "isCameraMatch"], true],
+          "#00e5ff",
+          ["==", ["get", "cameraId"], null],
+          "#ef4444",
+          [
+            "interpolate", ["linear"], ["get", "occurrences"],
+            0, "#1d1f3f", 1, "#2a6b4a", 5, "#f5c518", 15, "#e85d04", 30, "#9b1c1c",
+          ],
         ] as any,
-        "line-width": 2,
+        "line-width": [
+          "case",
+          ["==", ["get", "isSelected"], true],
+          6,
+          ["==", ["get", "isCameraMatch"], true],
+          5,
+          ["==", ["get", "cameraId"], null],
+          3.5,
+          2,
+        ],
       },
     });
 
@@ -1479,7 +1924,7 @@ export default function MapView({
       source: "polygon-points",
       paint: {
         "circle-radius": ["case", ["==", ["get", "canClose"], true], 8, ["==", ["get", "isFirst"], true], 7, 5],
-        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#5c6bc0"],
+        "circle-color": ["case", ["==", ["get", "canClose"], true], "#4CAF50", ["==", ["get", "isCompleted"], false], "#1d1f3f", "#f97316"],
         "circle-stroke-width": ["case", ["==", ["get", "canClose"], true], 3, 2],
         "circle-stroke-color": "#ffffff",
         "circle-opacity": 0.95,
@@ -1492,7 +1937,14 @@ export default function MapView({
       source: "polygon-points",
       paint: { "circle-radius": 12, "circle-opacity": 0 },
     });
-  }, [completedPolygonsRef, polygonPointsRef]);
+
+    if (hideCameraPolygonsRef.current) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
+      map.setPaintProperty("polygon-line", "line-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+    }
+  }, [completedPolygonsRef, editingCompletedPolygonIndexRef, polygonPointsRef, selectedPolygonIndexRef, toolModeRef]);
 
   const clearGuideline = useCallback(() => {
     const map = mapRef.current;
@@ -1606,8 +2058,552 @@ export default function MapView({
   }, [mode, loadSavedExploreAreas]);
 
   useEffect(() => {
+    if (mode !== "explore") return;
+    if (!onAoiSavedRef.current) return;
+    if (explorePhase === "idle") startPrimaryDrawingMode();
+  }, [explorePhase, mode, startPrimaryDrawingMode]);
+
+  useEffect(() => {
     if (toolMode !== "addPoint") clearGuideline();
   }, [clearGuideline, toolMode]);
+
+  useEffect(() => {
+    if (toolMode === "addPoint" || toolMode === "removePoint") return;
+    if (editingCompletedPolygonIndexRef.current == null) return;
+
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+  }, [editingCompletedPolygonIndexRef, toolMode]);
+
+  // AOI rectangle drawing — independent of explore mode
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+
+    if (isDrawingAOI) {
+      if (aoiDrawControlRef.current) return;
+
+      const drawControl = new MaplibreTerradrawControl({
+        modes: ["select", "rectangle"],
+        open: false,
+        showDeleteConfirmation: false,
+      });
+      map.addControl(drawControl, "bottom-right");
+      aoiDrawControlRef.current = drawControl;
+
+      const di = drawControl.getTerraDrawInstance();
+      if (di) {
+        try { di.setMode("rectangle"); } catch { }
+
+        const onFinish = () => {
+          try {
+            const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
+            const polys = snapshot.filter((f) => f?.geometry?.type === "Polygon");
+            if (polys.length === 0) return;
+            const ring = polys[polys.length - 1].geometry.coordinates[0] as [number, number][];
+
+            let area = 0;
+            for (let i = 0; i < ring.length; i++) {
+              const [x1, y1] = ring[i];
+              const [x2, y2] = ring[(i + 1) % ring.length];
+              area += x1 * y2 - x2 * y1;
+            }
+            if (Math.abs(area / 2) < 1e-8) {
+              try { di.clear?.(); di.setMode("rectangle"); } catch { }
+              return;
+            }
+
+            lastDrawingFinishTimeRef.current = Date.now();
+
+            const clearDrawing = () => {
+              try { di.clear?.(); di.setMode("rectangle"); } catch { }
+            };
+            onAoiDrawnRef.current?.(ring, clearDrawing);
+          } catch (err) {
+            console.warn("AOI drawing error (likely degenerate polygon):", err);
+            try { di.clear?.(); di.setMode("rectangle"); } catch { }
+          }
+        };
+
+        try { di.on("finish", onFinish); } catch { }
+      }
+    } else {
+      if (aoiDrawControlRef.current) {
+        try { map.removeControl(aoiDrawControlRef.current); } catch { }
+        aoiDrawControlRef.current = null;
+      }
+    }
+  }, [isDrawingAOI]);
+
+  const [polygonReloadKey, setPolygonReloadKey] = useState(0);
+  const latestAoiItemsRef = useRef(aoiItems ?? []);
+  latestAoiItemsRef.current = aoiItems ?? [];
+  const latestActiveAoiIdRef = useRef(activeAoiId ?? null);
+  latestActiveAoiIdRef.current = activeAoiId ?? null;
+  const aoiLayersReadyRef = useRef(false);
+  const aoiCleanupRef = useRef<(() => void) | null>(null);
+  const aoiPendingSetupRef = useRef(false);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const SOURCE = "aoi-polygons";
+    const FILL = "aoi-fill";
+    const LINE = "aoi-line";
+
+    const toFC = (items: NonNullable<typeof aoiItems>, activeId: number | null) => ({
+      type: "FeatureCollection" as const,
+      features: items.map((item) => ({
+        type: "Feature" as const,
+        id: item.id,
+        geometry: { type: "Polygon" as const, coordinates: [item.ring] },
+        properties: { id: item.id, selected: item.id === activeId },
+      })),
+    });
+
+    if (aoiLayersReadyRef.current && map.getSource(SOURCE)) {
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(aoiItems ?? [], activeAoiId ?? null) as any);
+      return;
+    }
+
+    // First-time setup
+    const setup = () => {
+      // Remove any previously registered handlers before re-adding them (prevents
+      // double-firing after a visibility change that resets aoiLayersReadyRef).
+      if (aoiCleanupRef.current) { aoiCleanupRef.current(); aoiCleanupRef.current = null; }
+
+      if (map.getLayer(FILL)) map.removeLayer(FILL);
+      if (map.getLayer(LINE)) map.removeLayer(LINE);
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestAoiItemsRef.current, latestActiveAoiIdRef.current) as any });
+      map.addLayer({
+        id: FILL, type: "fill", source: SOURCE,
+        paint: {
+          "fill-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#06b6d4"],
+          "fill-opacity": ["case", ["==", ["get", "selected"], true], 0.35, ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
+        },
+      });
+      map.addLayer({
+        id: LINE, type: "line", source: SOURCE,
+        paint: {
+          "line-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#06b6d4"],
+          "line-width": ["case", ["==", ["get", "selected"], true], 3, ["boolean", ["feature-state", "hovered"], false], 3, 2],
+          "line-opacity": ["case", ["==", ["get", "selected"], true], 1, ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+        },
+      });
+
+      const clickHandler = (e: any) => {
+        if (isDrawingAOIRef.current) return; // ignore clicks while drawing a new AOI
+        if ((latestSubAreaItemsRef.current ?? []).length > 0) return;
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return; // ignore clicks immediately after finishing a draw
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onObjectClickRef.current?.("area", Number(id));
+      };
+
+      map.on("click", FILL, clickHandler);
+
+      aoiLayersReadyRef.current = true;
+      aoiPendingSetupRef.current = false;
+      aoiCleanupRef.current = () => {
+        try {
+          map.off("click", FILL, clickHandler);
+          if (map.getLayer(FILL)) map.removeLayer(FILL);
+          if (map.getLayer(LINE)) map.removeLayer(LINE);
+          if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+        } catch { }
+        aoiLayersReadyRef.current = false;
+      };
+    };
+
+    if (mapLoadedRef.current) {
+      setup();
+    } else if (!aoiPendingSetupRef.current) {
+      aoiPendingSetupRef.current = true;
+      map.once("load", setup);
+    }
+  }, [aoiItems, activeAoiId, polygonReloadKey]);
+
+  useEffect(() => {
+    return () => { aoiCleanupRef.current?.(); aoiCleanupRef.current = null; };
+  }, []);
+
+  // Hover highlight via feature-state
+  const prevHoveredAoiIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const SOURCE = "aoi-polygons";
+    if (!map.getSource(SOURCE)) return;
+
+    const prev = prevHoveredAoiIdRef.current;
+    if (prev != null) {
+      try { map.setFeatureState({ source: SOURCE, id: prev }, { hovered: false }); } catch { }
+    }
+    if (hoveredAoiId != null) {
+      try { map.setFeatureState({ source: SOURCE, id: hoveredAoiId }, { hovered: true }); } catch { }
+    }
+    prevHoveredAoiIdRef.current = hoveredAoiId ?? null;
+  }, [hoveredAoiId]);
+
+  // Sub-area polygons
+  const latestSubAreaItemsRef = useRef(subAreaItems ?? []);
+  latestSubAreaItemsRef.current = subAreaItems ?? [];
+  const subAreaLayersReadyRef = useRef(false);
+  const subAreaCleanupRef = useRef<(() => void) | null>(null);
+  const subAreaPendingSetupRef = useRef(false);
+  const subAreaClickHandlerRef = useRef<((e: any) => void) | null>(null);
+  const subAreaEnterHandlerRef = useRef<((e: any) => void) | null>(null);
+  const aoiMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map());
+  const subAreaMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map());
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const SOURCE = "sub-area-polygons";
+    const FILL = "sub-area-fill";
+    const LINE = "sub-area-line";
+
+    const toFC = (items: NonNullable<typeof subAreaItems>, activeId: number | null) => ({
+      type: "FeatureCollection" as const,
+      features: items.map((item) => ({
+        type: "Feature" as const,
+        id: item.id,
+        geometry: { type: "Polygon" as const, coordinates: [item.ring] },
+        properties: { id: item.id, selected: item.id === activeId },
+      })),
+    });
+
+    // Fast path — layers exist: just swap data
+    if (subAreaLayersReadyRef.current && map.getSource(SOURCE)) {
+      (map.getSource(SOURCE) as maplibregl.GeoJSONSource).setData(toFC(subAreaItems ?? [], activeSubAreaId ?? null) as any);
+      return;
+    }
+
+    // Nothing to render yet
+    if (!subAreaItems || subAreaItems.length === 0) return;
+
+    const setup = () => {
+      // Remove any previously registered handlers before re-adding them (prevents
+      // double-firing after a visibility change that resets subAreaLayersReadyRef).
+      if (subAreaCleanupRef.current) { subAreaCleanupRef.current(); subAreaCleanupRef.current = null; }
+
+      if (map.getLayer(FILL)) map.removeLayer(FILL);
+      if (map.getLayer(LINE)) map.removeLayer(LINE);
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+
+      map.addSource(SOURCE, { type: "geojson", data: toFC(latestSubAreaItemsRef.current, latestActiveSubAreaIdRef.current) as any });
+      map.addLayer({
+        id: FILL, type: "fill", source: SOURCE,
+        paint: {
+          "fill-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#1e40af"],
+          "fill-opacity": ["case", ["==", ["get", "selected"], true], 0.35, ["boolean", ["feature-state", "hovered"], false], 0.28, 0.12],
+        },
+      });
+      map.addLayer({
+        id: LINE, type: "line", source: SOURCE,
+        paint: {
+          "line-color": ["case", ["==", ["get", "selected"], true], "#f97316", "#1e40af"],
+          "line-width": ["case", ["==", ["get", "selected"], true], 3, ["boolean", ["feature-state", "hovered"], false], 3, 2],
+          "line-opacity": ["case", ["==", ["get", "selected"], true], 1, ["boolean", ["feature-state", "hovered"], false], 1, 0.85],
+        },
+      });
+
+      const clickHandler = (e: any) => {
+        if (isDrawingAOIRef.current) return;
+        if (Date.now() - lastDrawingFinishTimeRef.current < 500) return;
+        if (disableSubAreaInteractionRef.current) return;
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onObjectClickRef.current?.("subarea", Number(id));
+      };
+      const enterHandler = (e: any) => {
+        if (disableSubAreaInteractionRef.current) return;
+        //map.getCanvas().style.cursor = "pointer";
+        const id = e.features?.[0]?.properties?.id;
+        if (id != null) onSubAreaHoverRef.current?.(Number(id));
+      };
+      const leaveHandler = () => {
+        map.getCanvas().style.cursor = "";
+        onSubAreaHoverRef.current?.(null);
+      };
+
+      subAreaClickHandlerRef.current = clickHandler;
+      subAreaEnterHandlerRef.current = enterHandler;
+
+      // Only register click/enter if interaction is currently enabled
+      if (!disableSubAreaInteractionRef.current) {
+        map.on("click", FILL, clickHandler);
+        map.on("mouseenter", FILL, enterHandler);
+      }
+      map.on("mouseleave", FILL, leaveHandler);
+
+      subAreaLayersReadyRef.current = true;
+      subAreaPendingSetupRef.current = false;
+      subAreaCleanupRef.current = () => {
+        try {
+          map.off("click", FILL, clickHandler);
+          map.off("mouseenter", FILL, enterHandler);
+          map.off("mouseleave", FILL, leaveHandler);
+          if (map.getLayer(FILL)) map.removeLayer(FILL);
+          if (map.getLayer(LINE)) map.removeLayer(LINE);
+          if (map.getSource(SOURCE)) map.removeSource(SOURCE);
+        } catch { }
+        subAreaLayersReadyRef.current = false;
+      };
+    };
+
+    if (mapLoadedRef.current) {
+      setup();
+    } else if (!subAreaPendingSetupRef.current) {
+      subAreaPendingSetupRef.current = true;
+      map.once("load", setup);
+    }
+  }, [subAreaItems, activeSubAreaId, polygonReloadKey]);
+
+  // Directly toggle MapLibre click/hover handlers when disableSubAreaInteraction changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const FILL = "sub-area-fill";
+    if (!subAreaLayersReadyRef.current || !map.getLayer(FILL)) return;
+    if (disableSubAreaInteraction) {
+      if (subAreaClickHandlerRef.current) map.off("click", FILL, subAreaClickHandlerRef.current);
+      if (subAreaEnterHandlerRef.current) map.off("mouseenter", FILL, subAreaEnterHandlerRef.current);
+      map.getCanvas().style.cursor = "";
+      onSubAreaHoverRef.current?.(null);
+    } else {
+      // Re-add (remove first to prevent double-registration)
+      if (subAreaClickHandlerRef.current) {
+        map.off("click", FILL, subAreaClickHandlerRef.current);
+        map.on("click", FILL, subAreaClickHandlerRef.current);
+      }
+      if (subAreaEnterHandlerRef.current) {
+        map.off("mouseenter", FILL, subAreaEnterHandlerRef.current);
+        map.on("mouseenter", FILL, subAreaEnterHandlerRef.current);
+      }
+    }
+  }, [disableSubAreaInteraction]);
+
+  useEffect(() => {
+    return () => { subAreaCleanupRef.current?.(); subAreaCleanupRef.current = null; };
+  }, []);
+
+  // Re-apply polygon layers when the browser tab becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const map = mapRef.current;
+      if (!map) return;
+      // Reset ready flags so the AOI / sub-area effects re-run full layer setup
+      aoiLayersReadyRef.current = false;
+      subAreaLayersReadyRef.current = false;
+      setPolygonReloadKey((k) => k + 1);
+      map.triggerRepaint();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // AOI polygon centroid label markers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const items = aoiItems ?? [];
+    const registry = aoiMarkersRef.current;
+
+    // In sub-level view, remove all AOI markers (the polygon still renders via aoiItems)
+    if (hideAoiMarkers) {
+      for (const [id, marker] of registry) {
+        marker.remove();
+        registry.delete(id);
+      }
+      return;
+    }
+
+    // Remove stale markers
+    for (const [id, marker] of registry) {
+      if (!items.find((a) => a.id === id)) {
+        marker.remove();
+        registry.delete(id);
+      }
+    }
+
+    // Add or update markers
+    for (const item of items) {
+      if (registry.has(item.id)) {
+        const wrap = registry.get(item.id)!.getElement() as HTMLElement;
+        const pill = wrap.firstElementChild as HTMLElement | null;
+        const nameSpan = pill?.querySelector(".aoi-pin-name") as HTMLElement | null;
+        if (nameSpan) nameSpan.textContent = item.name;
+      } else {
+        const wrap = document.createElement("div");
+        const pill = document.createElement("div");
+        pill.className = "aoi-label-pin";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "aoi-pin-name";
+        nameSpan.textContent = item.name;
+        pill.appendChild(nameSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "aoi-pin-btn aoi-pin-btn--edit";
+        editBtn.title = "Rename";
+        editBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("area", item.id); });
+        pill.appendChild(editBtn);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "aoi-pin-btn aoi-pin-btn--delete";
+        deleteBtn.title = "Delete";
+        deleteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("area", item.id); });
+        pill.appendChild(deleteBtn);
+
+        wrap.appendChild(pill);
+        const lngs = item.ring.map((p) => p[0]);
+        const lats = item.ring.map((p) => p[1]);
+        const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        registry.set(item.id, marker);
+      }
+    }
+  }, [aoiItems, hideAoiMarkers]);
+
+  // Update selected class on AOI markers when activeAoiId changes
+  useEffect(() => {
+    for (const [id, marker] of aoiMarkersRef.current) {
+      const pill = marker.getElement().firstElementChild as HTMLElement | null;
+      if (!pill) continue;
+      pill.className = id === activeAoiId ? "aoi-label-pin aoi-label-pin--selected" : "aoi-label-pin";
+    }
+  }, [activeAoiId]);
+
+  useEffect(() => {
+    return () => {
+      for (const marker of aoiMarkersRef.current.values()) marker.remove();
+      aoiMarkersRef.current.clear();
+    };
+  }, []);
+
+  // Toggle CSS class on map container for sub-area label visibility
+  useEffect(() => {
+    const el = mapContainer.current;
+    if (!el) return;
+    el.classList.toggle("hide-subarea-labels", hideSubAreaMarkers);
+  }, [hideSubAreaMarkers]);
+
+  // Sub-area polygon centroid label markers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const registry = subAreaMarkersRef.current;
+
+    // When markers are hidden, remove all and bail
+    if (hideSubAreaMarkers) {
+      for (const marker of registry.values()) marker.remove();
+      registry.clear();
+      return;
+    }
+
+    const items = subAreaItems ?? [];
+
+    // Remove stale markers
+    for (const [id, marker] of registry) {
+      if (!items.find((a) => a.id === id)) {
+        marker.remove();
+        registry.delete(id);
+      }
+    }
+
+    // Add or update markers
+    for (const item of items) {
+      if (registry.has(item.id)) {
+        const wrap = registry.get(item.id)!.getElement() as HTMLElement;
+        const pill = wrap.firstElementChild as HTMLElement | null;
+        const nameSpan = pill?.querySelector(".sub-area-pin-name") as HTMLElement | null;
+        if (nameSpan) nameSpan.textContent = item.name;
+      } else {
+        const wrap = document.createElement("div");
+        const pill = document.createElement("div");
+        pill.className = "sub-area-label-pin";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "sub-area-pin-name";
+        nameSpan.textContent = item.name;
+        pill.appendChild(nameSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "sub-area-pin-btn sub-area-pin-btn--edit";
+        editBtn.title = "Rename";
+        editBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestRenameRef.current?.("subarea", item.id); });
+        pill.appendChild(editBtn);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "sub-area-pin-btn sub-area-pin-btn--delete";
+        deleteBtn.title = "Delete";
+        deleteBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+        deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); onRequestDeleteRef.current?.("subarea", item.id); });
+        pill.appendChild(deleteBtn);
+
+        wrap.appendChild(pill);
+        const lngs = item.ring.map((p) => p[0]);
+        const lats = item.ring.map((p) => p[1]);
+        const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        registry.set(item.id, marker);
+      }
+    }
+  }, [subAreaItems, hideSubAreaMarkers]);
+
+  // Update selected class on sub-area markers when activeSubAreaId changes
+  useEffect(() => {
+    for (const [id, marker] of subAreaMarkersRef.current) {
+      const pill = marker.getElement().firstElementChild as HTMLElement | null;
+      if (!pill) continue;
+      pill.className = id === activeSubAreaId ? "sub-area-label-pin sub-area-label-pin--selected" : "sub-area-label-pin";
+    }
+  }, [activeSubAreaId]);
+
+  useEffect(() => {
+    return () => {
+      for (const marker of subAreaMarkersRef.current.values()) marker.remove();
+      subAreaMarkersRef.current.clear();
+    };
+  }, []);
+
+  // Hover highlight for sub-area polygons (feature-state)
+  const prevHoveredSubAreaIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const SOURCE = "sub-area-polygons";
+    if (!map.getSource(SOURCE)) return;
+
+    const prev = prevHoveredSubAreaIdRef.current;
+    if (prev != null) {
+      try { map.setFeatureState({ source: SOURCE, id: prev }, { hovered: false }); } catch { }
+    }
+    if (hoveredSubAreaId != null) {
+      try { map.setFeatureState({ source: SOURCE, id: hoveredSubAreaId }, { hovered: true }); } catch { }
+    }
+    prevHoveredSubAreaIdRef.current = hoveredSubAreaId ?? null;
+  }, [hoveredSubAreaId]);
+
+  // Max-bounds lock
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try { map.setMaxBounds(mapMaxBounds ?? null); } catch { }
+  }, [mapMaxBounds]);
 
   const cancelFocusDrawing = useCallback(() => {
     clearTerradrawSelection();
@@ -1669,18 +2665,44 @@ export default function MapView({
 
       camerasRef.current = camerasRef.current.filter((c) => String(c.id) !== String(cameraId));
       setCameras((prev) => prev.filter((c) => String(c.id) !== String(cameraId)));
-    } catch {}
+    } catch { }
   }, []);
 
-  const savePolygonToCamera = useCallback(async (cameraId: number | string, points: [number, number][]) => {
+  const savePolygonCollectionToCamera = useCallback(async (cameraId: number | string, polygons: [number, number][][]) => {
     const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ polygon: points }),
+      body: JSON.stringify({ polygon: polygons }),
     });
 
     return res.ok;
   }, []);
+
+  const editCompletedPolygon = useCallback(async (polygonIndex: number, nextPoints: [number, number][]) => {
+    const currentPolygons = completedPolygonsRef.current;
+    const target = currentPolygons[polygonIndex];
+    if (!target) return false;
+
+    const nextPolygons = currentPolygons.map((polygon, idx) =>
+      idx === polygonIndex ? { ...polygon, points: nextPoints } : polygon,
+    );
+
+    setCompletedPolygons(nextPolygons);
+
+    if (target.cameraId == null) return true;
+
+    const groupedPolygons = nextPolygons
+      .filter((polygon) => String(polygon.cameraId) === String(target.cameraId))
+      .map((polygon) => polygon.points);
+
+    const ok = await savePolygonCollectionToCamera(target.cameraId, groupedPolygons);
+    if (!ok) {
+      setCompletedPolygons(currentPolygons);
+      return false;
+    }
+
+    return true;
+  }, [completedPolygonsRef, savePolygonCollectionToCamera]);
 
   const addCameraFromData = useCallback(
     (cameraLat: number, cameraLng: number, id: number | string) => {
@@ -1691,7 +2713,7 @@ export default function MapView({
       el.className = "camera-marker";
       el.style.cursor = "pointer";
       el.innerHTML = `
-        <svg width="32" height="32" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <svg width="48" height="48" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"
                 fill="currentColor"
                 stroke="#fff"
@@ -1701,8 +2723,11 @@ export default function MapView({
       el.style.color = "#999";
       el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.3))";
 
-      const isSelected = selectedCameraId != null && String(id) === String(selectedCameraId);
+      const isSelected = selectedCameraIdRef.current != null && String(id) === String(selectedCameraIdRef.current);
       el.style.color = isSelected ? "#161b4c" : "#999";
+      if (visibleCameraIdsRef.current != null && !visibleCameraIdsRef.current.includes(Number(id))) {
+         el.style.display = "none";
+      }
 
       const marker = new maplibregl.Marker({
         element: el,
@@ -1728,36 +2753,19 @@ export default function MapView({
           return;
         }
 
-        if (toolModeRef.current === "assignCamera") {
-          const polyIdx = selectedPolygonIndexRef.current;
-          if (polyIdx == null) return;
-
-          const poly = completedPolygonsRef.current[polyIdx];
-          if (!poly) return;
-
-          const ok = await savePolygonToCamera(id, poly.points);
-          if (!ok) return;
-
-          setCompletedPolygons((prev) => prev.map((p, i) => (i === polyIdx ? { ...p, cameraId: id } : p)));
-
-          setToolMode("none");
-          setShowPolygonModal(false);
-          setSelectedPolygonIndex(null);
-          return;
-        }
-
-        onCameraClick?.(id);
+        onObjectClickRef.current?.("camera", Number(id));
       });
 
       camerasRef.current = [...camerasRef.current, cameraObj];
-      setCameras((prev) => [...prev, cameraObj]);
+      // setCameras((prev) => [...prev, cameraObj])
     },
-    [completedPolygonsRef, onCameraClick, removeCamera, savePolygonToCamera, selectedPolygonIndexRef, toolModeRef, selectedCameraId],
+    [completedPolygonsRef, removeCamera, selectedPolygonIndexRef, toolModeRef],
   );
 
   const CAMERAS_CACHE_KEY = "bp_cameras_v1";
 
   const loadCamerasFromDatabase = useCallback(async () => {
+    /*
     try {
       const raw = sessionStorage.getItem(CAMERAS_CACHE_KEY);
       if (raw) {
@@ -1776,7 +2784,7 @@ export default function MapView({
         if (cachedPolygons.length > 0) setCompletedPolygons(cachedPolygons);
         onCamerasLoaded?.(cached);
       }
-    } catch {}
+    } catch { }
 
     loadAbortRef.current?.abort();
     const controller = new AbortController();
@@ -1796,7 +2804,7 @@ export default function MapView({
       if (controller.signal.aborted) return;
       if (!data?.success || !data?.cameras) return;
 
-      try { sessionStorage.setItem(CAMERAS_CACHE_KEY, JSON.stringify(data.cameras)); } catch {}
+      try { sessionStorage.setItem(CAMERAS_CACHE_KEY, JSON.stringify(data.cameras)); } catch { }
 
       camerasRef.current.forEach((c) => c.marker?.remove());
       camerasRef.current = [];
@@ -1817,15 +2825,85 @@ export default function MapView({
     } catch (err: any) {
       if (err?.name === "AbortError") return;
     }
-  }, [addCameraFromData, onCamerasLoaded]);
 
+    */
+
+    // clear any existing
+    camerasRef.current.forEach((c) => c.marker?.remove());
+    camerasRef.current = [];
+    setCameras([]);
+
+    // add our new cameras to the list
+    cameraItems.forEach((cam: Camera) => addCameraFromData(cam.lat, cam.lng, cam.id));
+
+    const roadPolygons = roadPolygonItems ?? [];
+
+    const polygons: CompletedPolygon[] = cameraItems.flatMap((cam: Camera) =>
+      asPolygonCollection(cam.polygon).map((poly) => ({
+        points: poly,
+        cameraId: cam.id,
+        subAreaId: cam.parentId ?? null,
+        occurrences: cam.occurrences ?? 0,
+      })),
+    );
+    setCompletedPolygons([...roadPolygons, ...polygons]);
+    onCamerasLoaded?.(cameraItems)
+
+  }, [cameraItems, roadPolygonItems]);
+
+  const onCameraPlacedOutsideRef = useLatestRef(onCameraPlacedOutside);
+
+  useEffect(() => {
+    if (cleanMap) return;
+    if (mode !== "map") return;
+
+    const roadPolygons = roadPolygonItems ?? [];
+    const cameraPolygons: CompletedPolygon[] = (cameraItems ?? []).flatMap((cam: Camera) =>
+      asPolygonCollection(cam.polygon).map((poly) => ({
+        points: poly,
+        cameraId: cam.id,
+        subAreaId: cam.parentId ?? null,
+        occurrences: cam.occurrences ?? 0,
+      })),
+    );
+    const combined = [...roadPolygons, ...cameraPolygons];
+
+    // Render immediately (before React processes the state update) so polygons appear
+    // in one render cycle instead of two.
+    renderPolygonLayers(combined);
+    setCompletedPolygons(combined);
+  }, [cameraItems, cleanMap, mode, roadPolygonItems, renderPolygonLayers]);
+
+  useEffect(() => {
+    setToolMode(isPlacingCamera ? "addCamera" : "none");
+  }, [isPlacingCamera]);
+
+  /*
   const addCamera = useCallback(
     async (cameraLat: number, cameraLng: number) => {
       try {
+        const body: Record<string, any> = { lat: cameraLat, lng: cameraLng };
+        if (cameraParentLocationIdRef.current != null) {
+          body.saved_location = cameraParentLocationIdRef.current;
+          // Validate point is within the subarea bounding box
+          const parentSubArea = latestSubAreaItemsRef.current.find(
+            (s) => s.id === cameraParentLocationIdRef.current,
+          );
+          if (parentSubArea && parentSubArea.ring.length >= 3) {
+            const lngs = parentSubArea.ring.map((p) => p[0]);
+            const lats = parentSubArea.ring.map((p) => p[1]);
+            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            if (cameraLng < minLng || cameraLng > maxLng || cameraLat < minLat || cameraLat > maxLat) {
+              onCameraPlacedOutsideRef.current?.();
+              return;
+            }
+          }
+        }
         const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat: cameraLat, lng: cameraLng }),
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) return;
@@ -1833,12 +2911,19 @@ export default function MapView({
         const data = await response.json();
         if (!data?.success || !data?.camera) return;
 
+        // ensure the new camera is immediately visible regardless of visibleCameraIds timing
+        if (visibleCameraIdsRef.current != null) {
+           visibleCameraIdsRef.current = [...visibleCameraIdsRef.current, data.camera.id];
+        }
         addCameraFromData(data.camera.lat, data.camera.lng, data.camera.id);
         onCameraAdd?.(data.camera.id, data.camera.lat, data.camera.lng, data.camera);
-      } catch {}
+      } catch { }
+
+      onCameraAdd(cameraLat, cameraLng);
     },
     [addCameraFromData, onCameraAdd],
   );
+  */
 
   const assignCameraToSavedLocation = useCallback(async (cameraId: number, savedLocationId: number) => {
     await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/assign-saved-location/`, {
@@ -1869,8 +2954,7 @@ export default function MapView({
 
     const map = createMap();
     mapRef.current = map;
-    isFirstGoToRef.current = true; 
-    onMapReady?.(map);
+    isFirstGoToRef.current = true;
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
@@ -1878,18 +2962,19 @@ export default function MapView({
     defaultMaxZoomRef.current = map.getMaxZoom();
 
     const onViewportSave = () => {
- 
+
       if (modeRef.current === "explore") return;
       try {
         sessionStorage.setItem(
           VIEWPORT_CACHE_KEY,
           JSON.stringify({ center: map.getCenter().toArray(), zoom: map.getZoom() }),
         );
-      } catch {}
+      } catch { }
     };
     map.on("moveend", onViewportSave);
 
     map.once("load", () => {
+      mapLoadedRef.current = true;
       add3DBuildingsLayer(map);
       restoreDefaultExploreCamera(map);
 
@@ -1917,20 +3002,22 @@ export default function MapView({
 
       try {
         map.remove();
-      } catch {}
+      } catch { }
 
       mapRef.current = null;
+      mapLoadedRef.current = false;
       editControlRef.current = null;
       drawControlRef.current = null;
       geocoderControlRef.current = null;
+      aoiDrawControlRef.current = null;
     };
-  }, [add3DBuildingsLayer, createMap, onMapReady, restoreDefaultExploreCamera]);
+  }, [add3DBuildingsLayer, createMap, restoreDefaultExploreCamera]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (mode === "map" || mode === "explore") {
+    if ( /* mode === "map" || */ mode === "explore" || showGeocoder) {
       if (!geocoderControlRef.current) {
         const geocoder = new MaplibreGeocoder(geocoderApi, {
           maplibregl,
@@ -1983,7 +3070,7 @@ export default function MapView({
                 if (id !== keepId) {
                   try {
                     di.removeFeatures([id]);
-                  } catch {}
+                  } catch { }
                 }
               }
 
@@ -1994,15 +3081,63 @@ export default function MapView({
           };
 
           syncTerradrawState();
-          try { di.on("finish", syncTerradrawState); } catch {}
-          try { di.on("select", syncTerradrawState); } catch {}
-          try { di.on("change", syncTerradrawState); } catch {}
+          try { di.on("finish", syncTerradrawState); } catch { }
+          try { di.on("select", syncTerradrawState); } catch { }
+          try { di.on("change", syncTerradrawState); } catch { }
         }
       }
       rectIdRef.current = null;
     }
 
     if (mode === "map") {
+
+    // handles visibility of the map point toolbox 
+    if (!hideEditControls) {
+      if (!editControlRef.current) {
+        editControlRef.current = new createToggleButtons((toolMode) => {
+          // brings up the primary toolbox
+          setToolMode(toolMode);
+
+          // if setting to add polygon, bring up the add polygon specific menu options
+          if (toolMode == "addPoint") {
+            polygonEditControlRef.current = new createPolygonEditButtons((onPress) => {
+              if (polygonPointsRef.current.length > 0) {
+                // handle actions for polygon undo/discard
+                if (onPress === "undo") {
+                  setPolygonPoints((prev) => prev.slice(0, -1));
+                } else if (onPress === "discard") {
+                  setPolygonPoints([]);
+                  clearGuideline();
+                  }
+                }
+              });
+              map.addControl(polygonEditControlRef.current, "bottom-right");
+            }
+
+            // if moving away from it, remove them
+          else if (polygonEditControlRef.current) {
+            map.removeControl(polygonEditControlRef.current);
+            polygonEditControlRef.current = null;
+          }
+        });
+        map.addControl(editControlRef.current, "bottom-right");
+      }
+    } else {
+      // if they should not be present, remove them and clear all related variables
+      if (polygonEditControlRef.current) {
+        map.removeControl(polygonEditControlRef.current);
+        polygonEditControlRef.current = null;
+      }
+      if (editControlRef.current) {
+        map.removeControl(editControlRef.current);
+        editControlRef.current = null;
+      }
+      setToolMode("none");
+      setPolygonPoints([]);
+      clearGuideline();
+    }  // end hideEditControls check
+      
+      /*
       if (!editControlRef.current) {
         editControlRef.current = new ToggleEditButton((isEdit) => {
           setIsEditMode(isEdit);
@@ -2010,12 +3145,34 @@ export default function MapView({
         });
         map.addControl(editControlRef.current, "bottom-right");
       }
+      
     } else {
       if (editControlRef.current) {
         map.removeControl(editControlRef.current);
         editControlRef.current = null;
       }
-      setIsEditMode(false);
+    */
+      /*
+                      <button
+                        onClick={() => }
+                        className="edit-toolbar__btn edit-toolbar__btn--undo"
+                        title="Undo last point"
+                      >
+                        ↩ Undo
+                      </button>
+                      <button
+                        onClick={() => {
+      
+                        }}
+                        className="edit-toolbar__btn edit-toolbar__btn--clear"
+                        title="Discard current polygon"
+                      >
+                        ✕ Clear
+                      </button>
+      */
+
+
+      setIsEditMode(true);
       setToolMode("none");
     }
 
@@ -2039,6 +3196,7 @@ export default function MapView({
     geocoderApi,
     mode,
     removeHeatmapLayers,
+    hideEditControls,
   ]);
 
   useEffect(() => {
@@ -2046,11 +3204,12 @@ export default function MapView({
     if (!map) return;
 
     const isFirst = isFirstGoToRef.current;
+    if (goToRef.current === null && isFirstGoToRef.current) { isFirstGoToRef.current = false; }
 
     if (goToBounds) {
       isFirstGoToRef.current = false;
       map.fitBounds(goToBounds, {
-        padding: 60,
+        padding: goToBoundsPadding ?? 60,
         duration: isFirst ? 0 : 500,
         essential: true,
       });
@@ -2061,9 +3220,9 @@ export default function MapView({
 
     isFirstGoToRef.current = false;
     if (isFirst) {
-      map.jumpTo({ center: goTo, zoom: 18 });
+      map.jumpTo({ center: goTo, zoom: 15, });
     } else {
-      map.flyTo({ center: goTo, zoom: 18, duration: 500, essential: true });
+      map.flyTo({ center: goTo, duration: 500, essential: true });
     }
   }, [goTo, goToBounds]);
 
@@ -2105,33 +3264,6 @@ export default function MapView({
                 "icon-ignore-placement": true,
               },
             }, belowLayer);
-
-            map.on("click", MAPILLARY_LAYER_ID, (e: any) => {
-              const feature = e.features?.[0];
-              if (!feature) return;
-
-              const val = feature.properties?.value ?? "";
-              const cls = resolveBrakePointClass(val) ?? val;
-
-              new maplibregl.Popup({ offset: 10, closeButton: false })
-                .setLngLat(e.lngLat)
-                .setHTML(
-                  `<div style="font-family:Montserrat,sans-serif;padding:4px 2px">
-                    <strong style="font-size:13px">${cls}</strong>
-                    <br/>
-                    <span style="font-size:11px;color:#666">${val}</span>
-                  </div>`,
-                )
-                .addTo(map);
-            });
-
-            map.on("mouseenter", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "pointer";
-            });
-
-            map.on("mouseleave", MAPILLARY_LAYER_ID, () => {
-              map.getCanvas().style.cursor = "";
-            });
           });
         }
       } else {
@@ -2145,18 +3277,20 @@ export default function MapView({
   }, [showMapillarySigns]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map" && mode !== "heatmap") return;
     loadCamerasFromDatabase();
 
     return () => {
       loadAbortRef.current?.abort();
     };
-  }, [loadCamerasFromDatabase, mode]);
+  }, [cleanMap, loadCamerasFromDatabase, mode]);
 
   useEffect(() => {
+    if (cleanMap) return;
     if (mode !== "map") return;
-    if (refreshTrigger > 0 && mapRef.current) loadCamerasFromDatabase();
-  }, [loadCamerasFromDatabase, mode, refreshTrigger]);
+    if (refreshTrigger != false && mapRef.current) loadCamerasFromDatabase();
+  }, [cleanMap, loadCamerasFromDatabase, mode, refreshTrigger]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2193,18 +3327,41 @@ export default function MapView({
     const map = mapRef.current;
     if (!map) return;
     if (!map.getLayer("polygon-fill")) return;
+    
+    const isPointEditing = toolModeRef.current === "addPoint" || toolModeRef.current === "removePoint";
 
-    const selected = selectedCameraId != null ? String(selectedCameraId) : null;
-
-    if (selected == null) {
-      map.setPaintProperty("polygon-fill", "fill-opacity", 0.08);
-      map.setPaintProperty("polygon-line", "line-opacity", 0.25);
+    if (hideCameraPolygonsRef.current) {
+      map.setPaintProperty("polygon-fill", "fill-opacity", 0);
+      map.setPaintProperty("polygon-line", "line-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-opacity", 0);
+      map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+      map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
     } else {
-      map.setPaintProperty("polygon-fill", "fill-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 0.35, 0.05]);
-
-      map.setPaintProperty("polygon-line", "line-opacity", ["case", ["==", ["to-string", ["get", "cameraId"]], selected], 1, 0.15]);
+      // Keep road polygons visible at subarea/camera levels.
+      const selectedCameraId = selectedCameraIdRef.current;
+      if (selectedCameraId != null) {
+        map.setPaintProperty("polygon-fill", "fill-opacity", [
+          "case",
+          ["==", ["to-string", ["get", "cameraId"]], String(selectedCameraId)],
+          0.55,
+          0.30,
+        ] as any);
+      } else {
+        map.setPaintProperty("polygon-fill", "fill-opacity", 0.30);
+      }
+      map.setPaintProperty("polygon-line", "line-opacity", 1);
+      // Show points while drawing or editing polygon vertices
+      if (isPointEditing) {
+        map.setPaintProperty("polygon-points", "circle-opacity", 0.95);
+        map.setPaintProperty("polygon-points", "circle-stroke-opacity", 1);
+        map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+      } else {
+        map.setPaintProperty("polygon-points", "circle-opacity", 0);
+        map.setPaintProperty("polygon-points", "circle-stroke-opacity", 0);
+        map.setPaintProperty("polygon-points-clickable", "circle-opacity", 0);
+      }
     }
-  }, [completedPolygons, selectedCameraId]);
+  }, [completedPolygons, selectedCameraId, hideCameraPolygons, toolMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2213,7 +3370,7 @@ export default function MapView({
     const handleMapClick = async (e: maplibregl.MapMouseEvent) => {
       const activeTool = toolModeRef.current;
 
-      if (activeTool === "none" && !isEditMode && mode === "map") {
+      if (activeTool === "none" && isEditMode && mode === "map" && !hideCameraPolygonsRef.current) {
         const features = map.queryRenderedFeatures(e.point, {
           layers: ["polygon-fill"],
         });
@@ -2230,12 +3387,41 @@ export default function MapView({
 
       if (!isEditMode && activeTool !== "none") return;
 
+      // place a camera onto the map
       if (activeTool === "addCamera") {
-        await addCamera(e.lngLat.lat, e.lngLat.lng);
+        onCameraAdd(e.lngLat.lat, e.lngLat.lng);
         return;
       }
 
+      // creates a new polygon point 
       if (activeTool === "addPoint") {
+        if (editingCompletedPolygonIndexRef.current != null) {
+          const hit = map.queryRenderedFeatures(e.point, {
+            layers: ["polygon-points", "polygon-points-clickable"],
+          });
+
+          if (hit.length > 0) {
+            const props: any = hit[0].properties ?? {};
+            const idx = Number(props.index);
+            const canClose = props.canClose === true || props.canClose === "true";
+
+            if (!Number.isNaN(idx) && idx === 0 && canClose) {
+              await saveEditedPolygon();
+              return;
+            }
+          }
+
+          const clickedPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+          setPolygonPoints((prev) => {
+            if (prev.length < 2) return [...prev, clickedPoint];
+            const insertIndex = nearestEdgeInsertIndex(prev, clickedPoint);
+            const nextPoints = [...prev];
+            nextPoints.splice(insertIndex, 0, clickedPoint);
+            return nextPoints;
+          });
+          return;
+        }
+
         if (polygonPointsRef.current.length >= 3) {
           const hit = map.queryRenderedFeatures(e.point, {
             layers: ["polygon-points", "polygon-points-clickable"],
@@ -2246,7 +3432,31 @@ export default function MapView({
             const idx = Number(props.index);
             const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
+            // handles polygon completion
             if (!isCompleted && idx === 0) {
+              const currentPoints = polygonPointsRef.current;
+              setPolygonPoints([]);
+
+              clearGuideline();
+
+              onPolygonDrawn?.(null, currentPoints, (assignedCameraId: number | null) => {
+                const newPoly: CompletedPolygon = {
+                  points: [...currentPoints],
+                  cameraId: assignedCameraId,
+                  subAreaId: cameraParentLocationIdRef.current ?? null,
+                };
+
+                // update completed polygon storage to instantly display this polygon
+                // though it /will/ reload again anyway when leaving and returning :>
+                let newCompletedPolygons = completedPolygonsRef.current;
+                newCompletedPolygons = [...newCompletedPolygons, newPoly];
+                setCompletedPolygons(newCompletedPolygons);
+
+                setShowSuccessNotification(true);
+                window.setTimeout(() => setShowSuccessNotification(false), 1500)
+              });
+
+              /*
               const newPoly: CompletedPolygon = {
                 points: [...polygonPointsRef.current],
                 cameraId: null,
@@ -2257,6 +3467,7 @@ export default function MapView({
               clearGuideline();
               setShowSuccessNotification(true);
               window.setTimeout(() => setShowSuccessNotification(false), 1500);
+              */
               return;
             }
           }
@@ -2277,7 +3488,9 @@ export default function MapView({
           const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
           if (!isCompleted && !Number.isNaN(idx)) {
-            setPolygonPoints((prev) => prev.filter((_, i) => i !== idx));
+            const minimum = editingCompletedPolygonIndexRef.current != null ? 3 : 1;
+            setPolygonPoints((prev) => (prev.length <= minimum ? prev : prev.filter((_, i) => i !== idx)));
+            return;
           }
         }
       }
@@ -2295,7 +3508,18 @@ export default function MapView({
       map.off("click", handleMapClick);
       map.off("mousemove", handleMouseMove);
     };
-  }, [addCamera, clearGuideline, isEditMode, mode, renderGuideline, toolModeRef, polygonPointsRef]);
+  }, [
+    onCameraAdd,
+    clearGuideline,
+    completedPolygonsRef,
+    editingCompletedPolygonIndexRef,
+    isEditMode,
+    mode,
+    renderGuideline,
+    selectedPolygonIndexRef,
+    toolModeRef,
+    polygonPointsRef,
+  ]);
 
   useEffect(() => {
     const selected = selectedCameraId != null ? String(selectedCameraId) : null;
@@ -2312,17 +3536,94 @@ export default function MapView({
     }
   }, [selectedCameraId]);
 
+  // when the array of all visible cameras is changed, adjust the markers accordingly
+  useEffect(() => {
+    for (const c of camerasRef.current) {
+      const visible = visibleCameraIds == null || visibleCameraIds.includes(Number(c.id));
+      c.element.style.display = visible ? "" : "none";
+    }
+  }, [visibleCameraIds]);
+
+
+
+  // commented out — would've turned the cursor to a pointer iff hovering oevr area and selectionMode == all, or hovering over subarea and selectionMode == any
+  // ended up with a too buggy implementation and was removed for now
+  /*
+  useEffect(() => {
+    console.log("init!")
+    const map = mapRef.current;
+    if (!map) return;
+
+    /*
+    if (currentSelectionMode === "all") {
+      events.onAoiEnter?.unsubscribe();
+      events.onAoiLeave?.unsubscribe();
+      map.off("mouseenter", onAoiEnter);
+      map.off("mouseleave", onAoiLeave);
+      events.onAoiEnter = map.on("mouseenter", "aoi-fill", onAoiEnter)
+      events.onAoiLeave = map.on("mouseleave", "aoi-fill", onAoiLeave)
+    } else if (currentSelectionMode === "area") {
+      events.onSubEnter?.unsubscribe();
+      events.onSubLeave?.unsubscribe();
+      map.off("mouseenter", onSubEnter);
+      map.off("mouseleave", onSubLeave);
+      events.onSubEnter = map.on("mouseenter", "sub-area-fill", onSubEnter)
+      events.onSubLeave = map.on("mouseleave", "sub-area-fill", onSubLeave)
+    }
+
+    mapRef.current = map;
+
+    // events for the custom cursor for entering AoIs and subareas
+    map.on('mouseenter', "aoi-fill", (e: any) => {
+      console.log("enter-aoi: ", selectionMode, true, cursorIsOverSubarea)
+      setCursorIsOverArea(true);
+      handleAoiHoverCursorChange(canvas, true, cursorIsOverSubarea);
+    })
+
+    map.on('mouseenter', "sub-area-fill", (e: any) => {
+      console.log("enter-sub: ", selectionMode, true, true)
+      setCursorIsOverSubarea(true);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, true);
+    })
+
+    map.on('mouseleave', "aoi-fill", (e: any) => {
+      console.log("leave-aoi: ", selectionMode, false, cursorIsOverSubarea)
+      setCursorIsOverArea(false);
+      handleAoiHoverCursorChange(canvas, false, cursorIsOverSubarea);
+    })
+
+    map.on('mouseleave', "sub-area-fill", (e: any) => {
+      console.log("leave-sub: ", selectionMode, true, false)
+      setCursorIsOverSubarea(false);
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, false);
+    })
+
+    // events for the custom cursor for entering and leaving a Mapillary icon
+    map.on('mouseenter', MAPILLARY_LAYER_ID, (e: any) => {
+      canvas.classList.add("map-pointer")
+    })
+    map.on('mouseleave', MAPILLARY_LAYER_ID, (e: any) => {
+      handleAoiHoverCursorChange(canvas, cursorIsOverArea, cursorIsOverSubarea);
+    })
+  }, [])
+  */
+
+  // handle the main cursor logic for tool mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const canvas = map.getCanvas();
-    canvas.classList.remove("map-crosshair", "map-remove");
+    canvas.classList.remove("map-crosshair", "map-cam-crosshair", "map-remove");
     canvas.style.cursor = "";
 
-    if (!isEditMode) return;
+    if (!isEditMode && !isDrawingAOI) return;
 
-    if (toolMode === "addCamera" || toolMode === "addPoint") {
+    if (toolMode === "addCamera") {
+      canvas.classList.add("map-cam-crosshair");
+    }
+
+    if (isDrawingAOI || toolMode === "addPoint") {
       canvas.classList.add("map-crosshair");
     }
 
@@ -2330,10 +3631,8 @@ export default function MapView({
       canvas.classList.add("map-remove");
     }
 
-    if (toolMode === "assignCamera") {
-      canvas.style.cursor = "pointer";
-    }
-  }, [isEditMode, toolMode]);
+  }, [isEditMode, toolMode, isDrawingAOI, currentSelectionMode]);
+
 
   useEffect(() => {
     if (mode !== "explore") return;
@@ -2500,8 +3799,6 @@ export default function MapView({
     };
   }, [mode, primaryFocusArea, subFocusAreas, activeSubAreaIndex, selectedSubAreaIndex]);
 
-  // Lightweight hover effect: update fill-opacity via setPaintProperty so we
-  // don't rebuild the entire GeoJSON FeatureCollection on every mousemove.
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.getLayer("focus-areas-fill")) return;
@@ -2620,12 +3917,6 @@ export default function MapView({
     }
   }, [dashboardMarkers, mode, onDashboardMarkerClick]);
 
-  const beginAssignCamera = useCallback(() => {
-    if (selectedPolygonIndexRef.current == null) return;
-    setShowPolygonModal(false);
-    setToolMode("assignCamera");
-  }, [selectedPolygonIndexRef]);
-
   const deletePolygon = useCallback(async () => {
     const idx = selectedPolygonIndexRef.current;
     if (idx == null) return;
@@ -2640,211 +3931,149 @@ export default function MapView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ polygon: null }),
         });
-      } catch {}
+      } catch { }
+    } else if (cameraParentLocationIdRef.current != null) {
+      try {
+        const remainingRoadPolygons = completedPolygonsRef.current
+          .filter((polygon, polygonIndex) => polygonIndex !== idx && polygon.cameraId == null)
+          .map((polygon) => polygon.points);
+
+        await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${cameraParentLocationIdRef.current}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ road_polygons: remainingRoadPolygons }),
+        });
+      } catch { }
     }
 
     setCompletedPolygons((prev) => prev.filter((_, i) => i !== idx));
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, [completedPolygonsRef, selectedPolygonIndexRef]);
 
   const cancelPolygonModal = useCallback(() => {
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
     setToolMode("none");
   }, []);
 
+  const startEditingPolygon = useCallback(() => {
+    const selectedIdx = selectedPolygonIndexRef.current;
+    if (selectedIdx == null) return;
+
+    const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+    if (!selectedPolygon || selectedPolygon.points.length < 3) return;
+
+    setShowPolygonModal(false);
+    setEditingCompletedPolygonIndex(selectedIdx);
+    setPolygonPoints([...selectedPolygon.points]);
+    setToolMode("addPoint");
+  }, [completedPolygonsRef, selectedPolygonIndexRef]);
+
+  const assignPolygonToCamera = useCallback(() => {
+    const selectedIdx = selectedPolygonIndexRef.current;
+    if (selectedIdx == null) return;
+
+    const selectedPolygon = completedPolygonsRef.current[selectedIdx];
+    if (!selectedPolygon) return;
+
+    onRequestAssignPolygon?.(selectedPolygon.points, (assignedCameraId: number | null) => {
+      if (assignedCameraId == null) return;
+
+      setCompletedPolygons((prev) =>
+        prev.map((polygon, idx) =>
+          idx === selectedIdx ? { ...polygon, cameraId: assignedCameraId } : polygon,
+        ),
+      );
+      setShowPolygonModal(false);
+    }, selectedPolygon.cameraId ?? null);
+  }, [completedPolygonsRef, onRequestAssignPolygon, selectedPolygonIndexRef]);
+
+  const cancelEditingPolygon = useCallback(() => {
+    setIsSavingEditedPolygon(false);
+    setEditingCompletedPolygonIndex(null);
+    setPolygonPoints([]);
+    clearGuideline();
+    setToolMode("none");
+  }, [clearGuideline]);
+
+  const saveEditedPolygon = useCallback(async () => {
+    const editingIdx = editingCompletedPolygonIndexRef.current;
+    if (editingIdx == null) return;
+
+    const nextPoints = polygonPointsRef.current;
+    if (nextPoints.length < 3) return;
+
+    if (isSavingEditedPolygon) return;
+
+    setIsSavingEditedPolygon(true);
+
+    try {
+      const ok = await editCompletedPolygon(editingIdx, nextPoints);
+      if (!ok) return;
+
+      setEditingCompletedPolygonIndex(null);
+      setPolygonPoints([]);
+      clearGuideline();
+      setToolMode("none");
+      setShowSuccessNotification(true);
+      window.setTimeout(() => setShowSuccessNotification(false), 1500);
+    } finally {
+      setIsSavingEditedPolygon(false);
+    }
+  }, [clearGuideline, editCompletedPolygon, editingCompletedPolygonIndexRef, isSavingEditedPolygon, polygonPointsRef]);
+
+  const selectedPolygon = selectedPolygonIndex != null ? completedPolygons[selectedPolygonIndex] : null;
+
   return (
-    <div className="map-wrap">
+    <div className={`map-wrap${showGeocoder ? " landing-map" : ""}`}>
       <div ref={mapContainer} className="map" />
-      {mode === "explore" && (
-          <SideTab side="top" open={open} invisible={true} onToggle={() => setOpen(!open)} style={{"display": "flex", "flexDirection": "column", "gap": "0.5em", "alignItems": "center"}}>
-            <>
-              <div className="explore-toolbar explore-toolbar--primary-panel">
-                <span className="explore-toolbar__step">
-                  {explorePhase === "drawing-sub"
-                    ? activeSubAreaIndex != null
-                      ? "Step 3 · Edit selected sub-area"
-                      : "Step 3 · Draw a sub-area"
-                    : explorePhase === "drawing-primary"
-                      ? primaryFocusArea
-                        ? "Step 2 · Adjust AOI"
-                        : "Step 1 · Draw the AOI"
-                      : primaryFocusArea
-                        ? "Step 3 · Manage sub-areas"
-                        : "Step 1 · Search and draw the AOI"}
-                </span>
-
-                <span className="explore-toolbar__label">
-                  {primaryFocusArea ? `AOI: ${primaryFocusArea.label}` : "Draw an AOI"}
-                  {subFocusAreas.length > 0 ? ` / ${subFocusAreas.length} sub-area${subFocusAreas.length > 1 ? "s" : ""}` : ""}
-                </span>
-
-                <div className="explore-toolbar__group">
-                  {primaryFocusArea && (
-                    <button
-                      onClick={() => fitToFocusArea(primaryFocusArea)}
-                      className="explore-toolbar__btn explore-toolbar__btn--neutral"
-                      disabled={isDrawingFocusArea}
-                    >
-                      Reset View
-                    </button>
-                  )}
-
-                  {!isDrawingFocusArea ? (
-                    <>
-                      <button onClick={handleEditAoi} className="explore-toolbar__btn explore-toolbar__btn--outline" disabled={!hasConfirmedPrimary}>
-                        Edit AOI
-                      </button>
-
-                      <button
-                        onClick={deletePrimaryFocusArea}
-                        className="explore-toolbar__btn explore-toolbar__btn--danger"
-                        disabled={!hasConfirmedPrimary}
-                      >
-                        Delete AOI
-                      </button>
-
-                      <button
-                        onClick={beginSubFocusDrawing}
-                        className="explore-toolbar__btn explore-toolbar__btn--primary"
-                        disabled={!hasConfirmedPrimary}
-                      >
-                        Add Sub-area
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          if (selectedSubAreaIndex != null) {
-                            handleEditSubArea(selectedSubAreaIndex);
-                          }
-                        }}
-                        className="explore-toolbar__btn explore-toolbar__btn--sub"
-                        disabled={!hasSelectedSubArea}
-                      >
-                        Edit Selected
-                      </button>
-
-                      <button
-                        onClick={deleteSelectedSubArea}
-                        className="explore-toolbar__btn explore-toolbar__btn--danger"
-                        disabled={!hasSelectedSubArea}
-                      >
-                        Delete Selected
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={handleConfirmAoi} className="explore-toolbar__btn explore-toolbar__btn--primary">
-                        {explorePhase === "drawing-sub"
-                          ? activeSubAreaIndex != null
-                            ? "Confirm Sub-area Edit"
-                            : "Confirm Sub-area"
-                          : primaryFocusArea
-                            ? "Confirm AOI Edit"
-                            : "Confirm AOI"}
-                      </button>
-
-                      <button onClick={cancelFocusDrawing} className="explore-toolbar__btn explore-toolbar__btn--neutral">
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {subFocusAreas.length > 0 && (
-                <div className="explore-toolbar explore-toolbar--secondary">
-                  <span className="explore-toolbar__label">Sub-areas</span>
-
-                  {subFocusAreas.map((area, index) => (
-                    <button
-                      key={`${area.label}-${index}`}
-                      onClick={() => setSelectedSubAreaIndex(index)}
-                      className={`explore-toolbar__btn explore-toolbar__btn--sub ${selectedSubAreaIndex === index ? "is-active" : ""}`}
-                      disabled={isDrawingFocusArea}
-                    >
-                      {area.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {focusError && <div className="explore-error">{focusError}</div>}
-
-            </>
-          </SideTab>
-      )}
-
-      <div className="explore-status">
-        {explorePhase === "drawing-sub"
-          ? activeSubAreaIndex != null
-            ? "Adjust the selected sub-area, then click Confirm Sub-area Edit."
-            : "Draw a smaller sub-area inside the AOI, then click Confirm Sub-area."
-          : explorePhase === "drawing-primary"
-            ? primaryFocusArea
-              ? "Adjust the AOI rectangle, then click Confirm AOI Edit."
-              : "Draw the AOI rectangle, then click Confirm AOI."
-            : primaryFocusArea
-              ? selectedSubAreaIndex != null
-                ? "Sub-area selected. You can edit it, delete it, or add another sub-area."
-                : "AOI confirmed. Add sub-areas or select an existing sub-area."
-              : "Search for a place if needed, then draw an AOI rectangle."}
-      </div>
 
       {isEditMode && mode === "map" && (
         <>
-          <div className="edit-toolbar">
-            {(
-              [
-                { key: "addCamera", label: "＋ Camera" },
-                { key: "removeCamera", label: "− Camera" },
-                { key: "addPoint", label: "＋ Polygon" },
-                { key: "removePoint", label: "− Point" },
-              ] as const
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setToolMode((cur) => (cur === key ? "none" : key))}
-                className={`edit-toolbar__btn edit-toolbar__btn--${key} ${toolMode === key ? "is-active" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-
-            {toolMode === "addPoint" && polygonPoints.length > 0 && (
-              <>
-                <div className="edit-toolbar__divider" />
-                <button
-                  onClick={() => setPolygonPoints((prev) => prev.slice(0, -1))}
-                  className="edit-toolbar__btn edit-toolbar__btn--undo"
-                  title="Undo last point"
-                >
-                  ↩ Undo
-                </button>
-                <button
-                  onClick={() => {
-                    setPolygonPoints([]);
-                    clearGuideline();
-                  }}
-                  className="edit-toolbar__btn edit-toolbar__btn--clear"
-                  title="Discard current polygon"
-                >
-                  ✕ Clear
-                </button>
-              </>
-            )}
-          </div>
-
-          {toolMode === "addPoint" && (
+          {(toolMode === "addPoint" || toolMode === "removePoint") && (
             <div className="map-hint">
-              {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
-              {polygonPoints.length === 1 && "Click to add more points"}
-              {polygonPoints.length === 2 && "Click to add at least one more point"}
-              {polygonPoints.length >= 3 && (
+              {editingCompletedPolygonIndex != null ? (
                 <>
-                  Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                  <div>Edit mode: switch to delete point mode to remove vertices, or click the green starting point / Save Polygon to close it.</div>
+                  <div className="map-hint__actions">
+                    <button
+                      onClick={() => setToolMode("addPoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--addPoint ${toolMode === "addPoint" ? "is-active" : ""}`}
+                    >
+                      Add Point
+                    </button>
+                    <button
+                      onClick={() => setToolMode("removePoint")}
+                      className={`edit-toolbar__btn edit-toolbar__btn--removePoint ${toolMode === "removePoint" ? "is-active" : ""}`}
+                    >
+                      Delete Point
+                    </button>
+                  </div>
+                  <div className="map-hint__actions">
+                    <button onClick={saveEditedPolygon} className="polygon-modal__btn polygon-modal__btn--primary" disabled={isSavingEditedPolygon || polygonPoints.length < 3}>
+                      {isSavingEditedPolygon ? "Saving..." : "Save Polygon"}
+                    </button>
+                    <button onClick={cancelEditingPolygon} className="polygon-modal__btn polygon-modal__btn--ghost">
+                      Cancel Edit
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {polygonPoints.length === 0 && "Click on the map to start drawing a polygon"}
+                  {polygonPoints.length === 1 && "Click to add more points"}
+                  {polygonPoints.length === 2 && "Click to add at least one more point"}
+                  {polygonPoints.length >= 3 && (
+                    <>
+                      Click the <span className="map-hint__accent">green starting point</span> to close the polygon
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -2858,14 +4087,16 @@ export default function MapView({
         </div>
       )}
 
-      {isAssigningCamera && <div className="assign-camera-banner">Click on the camera you want this polygon assigned to</div>}
-
       {showPolygonModal && (
         <div className="polygon-modal">
           <h3 className="polygon-modal__title">Polygon Options</h3>
           <div className="polygon-modal__actions">
-            <button onClick={beginAssignCamera} className="polygon-modal__btn polygon-modal__btn--primary">
-              Assign to Camera
+            <button onClick={startEditingPolygon} className="polygon-modal__btn polygon-modal__btn--primary">
+              Edit Polygon
+            </button>
+
+            <button onClick={assignPolygonToCamera} className="polygon-modal__btn polygon-modal__btn--primary">
+              {selectedPolygon?.cameraId == null ? "Assign Polygon" : "Reassign Polygon"}
             </button>
 
             <button onClick={deletePolygon} className="polygon-modal__btn polygon-modal__btn--danger">

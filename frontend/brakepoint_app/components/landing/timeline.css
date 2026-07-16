@@ -1,0 +1,70 @@
+
+/* classes related to adb statistics */
+.adb-stats-container {
+	display: grid;
+	grid-template-columns: auto auto;
+	gap: 0.5em;
+	
+	width: 100%;
+	border-radius: 16px;
+	box-sizing: 'border-box';
+}
+
+.adb-stats {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	padding: 0.75em;
+
+	border: 2px solid #aaaaaa;
+	border-radius: 8px;
+}
+
+/* title */
+.adb-stats > .adb-stats-header {
+	font-weight: 500;
+	font-size: 110%;
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+.adb-stats > .adb-stats-row {
+	display: flex;
+	flex-direction: row;
+	width: 100%;
+	justify-content: space-between;
+}
+.adb-stats > .adb-stats-row > div:nth-child(1) { text-align: left; }
+.adb-stats > .adb-stats-row > div:nth-child(2) { text-align: right; }
+
+/* colors per adb-stats */
+.adb-stats.adb-red { border-color: #ef5350; background-color: #ef535022; }
+.adb-stats.adb-yellow { border-color: #ffa726; background-color: #ffa72622; }
+.adb-stats.adb-green { border-color: #66bb6a; background-color: #66bb6a22; }
+.adb-stats.adb-cyan { border-color: #06b6d4; background-color: #06b6d422; }
+.adb-stats.adb-blue { border-color: #5c6bc0; background-color: #5c6bc022; }
+.adb-stats.adb-purple { border-color: #a855f7; background-color: #a855f722; }
+
+/* respective colored dots */
+.adb-stats-header:before {
+	content: "";
+	display: inline-block;
+	width: 16px;
+	height: 16px;
+	border-radius: 100%;
+	background-color: #fff;
+}
+.adb-stats.adb-red > .adb-stats-header::before { background-color: #ef5350; }
+.adb-stats.adb-yellow > .adb-stats-header::before { background-color: #ffa726; }
+.adb-stats.adb-green > .adb-stats-header::before { background-color: #66bb6a; }
+.adb-stats.adb-cyan > .adb-stats-header::before { background-color: #06b6d4; }
+.adb-stats.adb-blue > .adb-stats-header:before { background-color: #5c6bc0; }
+.adb-stats.adb-purple > .adb-stats-header::before { background-color: #a855f7; }
+
+.adb-chart-container {
+	background-color: white;
+	border-color: #aaa;
+	border: 2px solid white;
+	border-radius: 8px;
+	padding: 1em;
+}

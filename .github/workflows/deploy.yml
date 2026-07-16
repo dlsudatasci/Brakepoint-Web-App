@@ -1,6 +1,5 @@
-﻿name: Deploy to Production
+﻿name: Deploy Production
 
-# Fires only when code lands on main (i.e. after a PR is merged).
 on:
   push:
     branches:
@@ -8,28 +7,28 @@ on:
 
 jobs:
   deploy:
-    name: SSH deploy to 103.231.240.148:32011
+    name: SSH deploy to ALTDSI-INT01-Prod
     runs-on: ubuntu-latest
 
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: 103.231.240.148
+          host: altdsidccf.dlsu.edu.ph
           username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: 32011
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 13011
           script: |
             set -euo pipefail
 
-            PROJECT="/root/BrakePoint-Web-App"
+            PROJECT="/root/Brakepoint-Web-App"
             BACKEND_SVC="brakepoint-backend"
             FRONTEND_SVC="brakepoint-frontend"
             VENV="$PROJECT/.venv/bin"
 
             cd "$PROJECT"
 
-            echo "=== Pulling latest code ==="
+            echo "=== Pulling latest code (main) ==="
             git fetch origin main
             git reset --hard origin/main
 
@@ -50,7 +49,7 @@ jobs:
                 sed -i "/^\[Service\]/a WorkingDirectory=$PROJECT/backend" "$SERVICE_FILE"
               fi
               if ! grep -q 'DJANGO_SETTINGS_MODULE' "$SERVICE_FILE"; then
-                sed -i "/^\[Service\]/a Environment=DJANGO_SETTINGS_MODULE=BrakePoint_Project.settings" "$SERVICE_FILE"
+                sed -i "/^\[Service\]/a Environment=DJANGO_SETTINGS_MODULE=BrakePoint_Project.production_settings" "$SERVICE_FILE"
               fi
               systemctl daemon-reload
               echo "Service file patched."
@@ -84,7 +83,7 @@ jobs:
               journalctl -u "$BACKEND_SVC" -n 100 --no-pager
               exit 1
             fi
-            timeout 90 bash -c \
+            timeout 120 bash -c \
               'until curl -sf http://localhost:8000/api/check-auth/ > /dev/null; do sleep 3; done' \
               || { echo "ERROR: backend timed out"; journalctl -u "$BACKEND_SVC" -n 50 --no-pager; exit 1; }
 
@@ -94,11 +93,11 @@ jobs:
         run: |
           sleep 10
           curl --fail --max-time 30 --retry 5 --retry-delay 5 \
-            http://103.231.240.148:32010 \
+            http://altdsidccf.dlsu.edu.ph:13010 \
             -o /dev/null -w "HTTP %{http_code}\n"
 
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::Deploy failed - check logs above."
-          echo "::error::To roll back: ssh -p 32011 root@103.231.240.148 'cd /root/BrakePoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"
+          echo "::error::To roll back: ssh -p 13011 root@altdsidccf.dlsu.edu.ph 'cd /root/Brakepoint-Web-App && git reset --hard HEAD~1 && systemctl restart brakepoint-backend brakepoint-frontend'"

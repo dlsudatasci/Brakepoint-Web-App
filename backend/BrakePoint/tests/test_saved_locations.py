@@ -188,6 +188,19 @@ def test_update_subarea_name(auth_client, sub_location):
     assert sub_location.name == "Renamed"
 
 
+@pytest.mark.django_db
+def test_update_subarea_road_polygons(auth_client, sub_location):
+    road_polygons = [
+        [[120.985, 14.595], [120.99, 14.595], [120.99, 14.6], [120.985, 14.6]],
+    ]
+
+    resp = auth_client.patch(detail_url(sub_location.id), {"road_polygons": road_polygons}, format="json")
+    assert resp.status_code == 200
+
+    sub_location.refresh_from_db()
+    assert sub_location.road_polygons == road_polygons
+
+
 # Delete / cascade tests 
 
 @pytest.mark.django_db

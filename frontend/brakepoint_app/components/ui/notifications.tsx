@@ -22,6 +22,7 @@ export default function Notification() {
 
   const handleNotificationClick = (event: React.MouseEvent<HTMLElement>) => {
     setNotificationAnchor(event.currentTarget);
+    notifications.filter(n => !n.read).forEach(n => markAsRead(n.id));
   };
 
   const handleNotificationClose = () => {
@@ -51,7 +52,7 @@ export default function Notification() {
           "&:hover": { backgroundColor: "#f5f5f5" },
         }}
       >
-        <Badge badgeContent={unreadCount} color="error">
+        <Badge badgeContent={unreadCount} color="error" invisible={unreadCount === 0}>
           <NotificationsIcon />
         </Badge>
       </IconButton>

@@ -23,30 +23,16 @@
   border-radius: 8px;
 }
 
+.landing-map .maplibregl-ctrl-geocoder {
+  left: 460px;
+}
+
 .maplibregl-ctrl-geocoder .suggestions {
   border-radius: 8px;
 }
 
 input[type="search"]::-webkit-search-cancel-button {
   display: none !important;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Cursor modes                                                               */
-/* -------------------------------------------------------------------------- */
-
-.map-crosshair {
-  cursor:
-    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="black" stroke-width="2"/><circle cx="12" cy="12" r="8" fill="none" stroke="white" stroke-width="1"/><line x1="12" y1="0" x2="12" y2="24" stroke="black" stroke-width="2"/><line x1="12" y1="0" x2="12" y2="24" stroke="white" stroke-width="1"/><line x1="0" y1="12" x2="24" y2="12" stroke="black" stroke-width="2"/><line x1="0" y1="12" x2="24" y2="12" stroke="white" stroke-width="1"/></svg>')
-      12 12,
-    crosshair !important;
-}
-
-.map-remove {
-  cursor:
-    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red" stroke="white" stroke-width="2"/><line x1="8" y1="12" x2="16" y2="12" stroke="white" stroke-width="3"/></svg>')
-      12 12,
-    pointer !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -96,6 +82,131 @@ input[type="search"]::-webkit-search-cancel-button {
   padding: 0 6px;
 }
 
+/* -------------------------------------------------------------------------- */
+/* AOI and sub-area polygon centroid label pins                               */
+/* -------------------------------------------------------------------------- */
+
+.aoi-label-pin,
+.sub-area-label-pin {
+  padding: 1em;
+
+  display: flex;
+  flex-direction: row;
+  gap: 0.25em;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 1.5em;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.aoi-label-pin--selected,
+.sub-area-label-pin--selected {
+  font-weight: 700;
+}
+
+.aoi-label-pin {
+  background: #0c92aa;
+  color: #fff;
+}
+
+.aoi-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.sub-area-label-pin {
+  background: #1e40af;
+  color: #fff;
+}
+
+.sub-area-label-pin--selected {
+  background: #f97316;
+  color: #fff;
+}
+
+.aoi-label-pin::after,
+.sub-area-label-pin::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+}
+
+.hide-subarea-labels .sub-area-label-pin {
+  display: none !important;
+}
+
+.aoi-label-pin::after {
+  border-top: 10px solid #0c92aa;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.aoi-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside AOI marker pill */
+.aoi-pin-name {
+  pointer-events: none;
+}
+
+.aoi-pin-btn,
+.sub-area-pin-btn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0 0 0 5px;
+  color: inherit;
+  opacity: 1;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.aoi-pin-btn:hover,
+.sub-area-pin-btn:hover {
+  opacity: 0.5;
+}
+
+.aoi-label-pin--selected .aoi-pin-btn {
+  display: inline-flex;
+}
+
+.sub-area-label-pin::after {
+  border-top: 10px solid #1e40af;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+.sub-area-label-pin--selected::after {
+  border-top: 10px solid #f97316;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+}
+
+/* Icon buttons inside sub-area marker pill */
+.sub-area-pin-name {
+  pointer-events: none;
+}
+
+.sub-area-label-pin--selected .sub-area-pin-btn {
+  display: inline-flex;
+}
+
 .dash-popup {
   width: 320px;
 }
@@ -120,8 +231,68 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Cursor modes                                                               */
+/* -------------------------------------------------------------------------- */
+/* Open Hand (Default) */
+.maplibregl-canvas {
+  cursor: url("/cursors/grab.svg") 10 0,
+  grab
+}
+
+/* Closed Hand */
+.maplibregl-canvas:active {
+  cursor: url("/cursors/grabbing.svg") 10 0,
+  grabbing
+}
+
+.map-cursor,
+.aoi-label-pin,
+.sub-area-label-pin {
+  cursor:
+    url('/cursors/cursor.svg') 2 0,
+    default
+}
+
+.map-pointer,
+.aoi-pin-btn,
+.sub-area-pin-btn {
+  cursor:
+    url('/cursors/pointer.svg') 7 0,
+    pointer;
+}
+
+.map-cam-crosshair {
+  cursor: url("/cursors/grabbing-camera.svg") 8 0,
+  crosshair !important;
+}
+
+.map-remove {
+  cursor:
+    url('/cursors/cursor-delete.svg') 1 0,
+    cursor !important;
+}
+
+.map-crosshair {
+  cursor:
+    url('/cursors/crosshair.svg') 10 10,
+    progress !important;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Shared floating UI                                                         */
 /* -------------------------------------------------------------------------- */
+
+.explore-toolbar-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+.explore-toolbar-header > span {
+  width: 33%;
+}
+.explore-toolbar-header > span:nth-child(1) { text-align: left; }
+.explore-toolbar-header > span:nth-child(2) { text-align: center; }
+.explore-toolbar-header > span:nth-child(3) { text-align: right; }
 
 .explore-toolbar-row,
 .edit-toolbar,
@@ -154,8 +325,8 @@ input[type="search"]::-webkit-search-cancel-button {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  /*background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);*/
   backdrop-filter: blur(8px);
   pointer-events: auto;
 }
@@ -179,7 +350,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .edit-toolbar {
-  top: 12px;
+  bottom: 12px;
   z-index: 1200;
   justify-content: center;
 }
@@ -311,6 +482,9 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .explore-status,
 .map-hint {
+  position: fixed;
+  left: calc(475px + (100vw - 475px) / 2);
+  transform: translateX(-50%);
   z-index: 1190;
   padding: 8px 18px;
   border-radius: 10px;
@@ -343,6 +517,22 @@ input[type="search"]::-webkit-search-cancel-button {
   font-weight: 700;
 }
 
+.map-hint__actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.map-hint__actions:first-of-type {
+  margin-top: 8px;
+}
+
+.map-hint__actions > * {
+  pointer-events: auto;
+}
 .explore-error {
   top: 168px;
   z-index: 1190;

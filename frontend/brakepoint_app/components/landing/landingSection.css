@@ -1,0 +1,73 @@
+.landingSection > .landingSectionHeader {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin: 0.5em 0;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderLabel {
+	display: flex;
+	flex-direction: column;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderToolbox {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 0.25em;
+
+	height: inherit;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderLabel > h1 {
+	line-height: 110%;
+	font-size: 140%;
+	font-weight: 600;
+	margin: 0;
+	align-self: center;
+
+	/* flexy purely for the sake of when the chip is used */
+	display: flex;
+	align-items: center;
+	gap: 0.3em;
+	flex-direction: row;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-title > h1 {
+	line-height: 100%;
+	font-size: 190%;
+	font-weight: 730;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-header > h1 {
+	font-weight: 600;
+}
+
+.landingSection > .landingSectionHeader > .landingSectionHeaderLabel.landingSectionHeader-subheader > h1 {
+	font-size: 130%;
+	font-weight: 500;
+}
+
+.chip-counter {
+	display: inline-block;
+	font-size: 75%;
+
+	border: 3.1px solid #161b4c;
+	padding: 0em 0.75em;
+	border-radius: 1000px;
+}
+
+.landingSection > .landingSectionContents {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5em;
+}
+
+.addButton-active > .MuiIconButton-root {
+	background-color: #161b4c;
+	color: white;
+}
+
+.addButton-inactive > .MuiIconButton-root {
+	background-color: #161b4c00;
+}

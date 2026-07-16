@@ -70,6 +70,8 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://103.231.240.148:32010",
+    "http://altdsidccf.dlsu.edu.ph:15010",
+    "http://altdsidccf.dlsu.edu.ph:13010"
 ]
 
 SESSION_COOKIE_SAMESITE = None 

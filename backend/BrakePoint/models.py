@@ -3,11 +3,16 @@ from django.contrib.auth.models import User
 
 class SavedLocation(models.Model):
     LOCATION_TYPES = [
-
         ("aoi", "Area of Interest"),
         ("sub_area", "Sub Area"),
     ]
-    
+
+    SUB_AREA_TYPES = [
+        ("road_segment", "Road Segment"),
+        ("intersection", "Intersection"),
+        ("junction", "Junction"),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='saved_locations')
     name = models.CharField(max_length=255)
     lat = models.FloatField()
@@ -16,15 +21,22 @@ class SavedLocation(models.Model):
     bearing = models.FloatField(default=0.0)
     pitch = models.FloatField(default=0.0)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     geometry = models.JSONField(null=True, blank=True)
     bounds = models.JSONField(null=True, blank=True)
+    road_polygons = models.JSONField(default=list, blank=True, null=True)
     location_type = models.CharField(
         max_length=20,
         choices=LOCATION_TYPES,
         default="sub_area",
     )
     parent_id = models.IntegerField(null=True, blank=True)
+    sub_area_type = models.CharField(
+        max_length=20,
+        choices=SUB_AREA_TYPES,
+        null=True,
+        blank=True,
+    )
    
     
     class Meta:
@@ -85,6 +97,18 @@ class SavedLocation(models.Model):
         return behaviors if behaviors else ['No Data']
 
     @property
+    def total_vehicle_breakdown(self):
+        """Aggregate vehicle-type breakdown across all completed videos at this location"""
+        from collections import Counter
+        counter = Counter()
+        for v in Video.objects.filter(
+            camera__saved_location=self, processing_status='completed'
+        ):
+            if isinstance(v.vehicle_breakdown, dict):
+                counter.update(v.vehicle_breakdown)
+        return dict(counter)
+
+    @property
     def camera_count(self):
         """Number of cameras linked to this location"""
         return self.cameras.count()
@@ -142,6 +166,8 @@ class Video(models.Model):
     camera = models.ForeignKey(Camera, on_delete=models.CASCADE, related_name='videos')
     filename = models.CharField(max_length=255)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    start_time = models.DateTimeField(null=True, blank=True)
+    start_time_source = models.CharField(max_length=20, default='failed', blank=True)
     
     # Video metadata
     duration_seconds = models.FloatField(null=True, blank=True)

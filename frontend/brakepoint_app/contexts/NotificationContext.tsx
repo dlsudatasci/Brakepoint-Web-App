@@ -18,7 +18,7 @@ interface Notification {
   progress?: number;
 }
 
-type ToastSeverity = "success" | "info" | "error";
+type ToastSeverity = "success" | "info" | "warning" | "error";
 
 interface ToastState {
   open: boolean;
@@ -36,7 +36,7 @@ interface NotificationContextType {
   completeProcessing: (id: string, success: boolean, data?: any) => void;
   updateProgress: (id: string, stage: string, progress: number) => void;
 
-  trackVideoProcessing: (videoName: string, videoId: number) => string;
+  trackVideoProcessing: (videoName: string, videoId: number, onComplete?: (fullData: any) => void) => string;
 
   removeNotification: (id: string) => void;
   markAsRead: (id: string) => void;
@@ -76,11 +76,17 @@ function safeParseNotifications(raw: string | null): Notification[] {
   }
 }
 
+let runAfterProcessingCompleted: (video: any) => void = () => {};
+export function setRunAfterProcessingCompleted(newFunction: (video: any) => void) {
+  runAfterProcessingCompleted = newFunction;
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   const [toast, setToast] = useState<ToastState>({ open: false, message: "", severity: "info" });
+
 
   const pollersRef = useRef<Map<number, number>>(new Map());
 
@@ -88,6 +94,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const intervalId = pollersRef.current.get(videoId);
     if (intervalId) window.clearInterval(intervalId);
     pollersRef.current.delete(videoId);
+  }, []);
+
+  const clearAll = useCallback(() => {
+    pollersRef.current.forEach((intervalId) => window.clearInterval(intervalId));
+    pollersRef.current.clear();
+    setNotifications([]);
   }, []);
 
   useEffect(() => {
@@ -116,6 +128,15 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const hideToast = useCallback(() => {
     setToast((prev) => ({ ...prev, open: false }));
   }, []);
+
+  // Auto-clear draw error after 5 seconds
+  const ERROR_LENGTH_SECONDS = 5;
+  const AUTO_HIDE_TOAST = true;
+  useEffect(() => {
+    if (!AUTO_HIDE_TOAST || toast != null || !toast) return;
+    const t = setTimeout(() => hideToast(), ERROR_LENGTH_SECONDS*1000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const addNotification = useCallback((videoName: string, success: boolean, data?: any) => {
     const now = Date.now();
@@ -173,14 +194,27 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, processingStage: stage, progress } : n)));
   }, []);
 
-  const startPollingForVideo = useCallback(
-    (notifId: string, videoId: number) => {
+  const startPollingForVideo = useCallback((notifId: string, videoId: number) => {
       if (pollersRef.current.has(videoId)) return;
 
       const intervalId = window.setInterval(async () => {
         try {
-          const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`);
-          if (!response.ok) return;
+
+          const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/videos/${videoId}/progress/`, {}, (newResp) => {
+            // emergency contingency for a 401 UNAUTHORIZED
+            if (newResp.status === 401) {
+              stopPolling(videoId);
+              clearAll()
+            }
+          });
+          if (!response.ok) {
+            // if 404 NOT FOUND stop processing immediately
+            if (response.status === 404) {
+              stopPolling(videoId);
+              completeProcessing(notifId, false)
+            }
+            return;
+          };
 
           const data = await response.json();
           if (!data?.success) return;
@@ -201,11 +235,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
             if (videoResponse.ok) {
               const fullData = await videoResponse.json();
-              if (fullData.success && fullData.video) {
+              if (fullData.success && fullData.videos) {
+                runAfterProcessingCompleted(fullData.videos);
                 videoData = {
-                  yolo_results: { total_unique: fullData.video.vehicles || 0 },
-                  sign_results: { unique_signs: fullData.video.signs || 0 },
-                };
+                  yolo_results: { total_unique: fullData.videos.vehicles || 0 },
+                  sign_results: { unique_signs: fullData.videos.signs || 0 },
+                }
               }
             }
 
@@ -226,6 +261,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     [completeProcessing, stopPolling, updateProgress],
   );
 
+  // onComplete are for extra functions to piggyback on the completion of this task
   const trackVideoProcessing = useCallback(
     (videoName: string, videoId: number) => {
       const notifId = addProcessingNotification(videoName, videoId);
@@ -256,12 +292,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  }, []);
-
-  const clearAll = useCallback(() => {
-    pollersRef.current.forEach((intervalId) => window.clearInterval(intervalId));
-    pollersRef.current.clear();
-    setNotifications([]);
   }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
