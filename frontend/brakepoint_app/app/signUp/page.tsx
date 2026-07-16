@@ -43,14 +43,15 @@ export default function SignUpPage() {
     return "Signup failed. Please try again.";
   };
 
+  // redirect to /landing if already logged in
   useEffect(() => {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        router.replace('/landing');
-      } else {
-        setIsCheckingAuth(false);
-      }
-    }, [router]);
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      router.replace('/landing');
+    } else {
+      setIsCheckingAuth(false);
+    }
+  }, [router]);
 
     if (isCheckingAuth) {
       return null;
