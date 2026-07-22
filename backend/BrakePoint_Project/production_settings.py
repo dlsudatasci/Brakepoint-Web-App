@@ -16,7 +16,9 @@ SECRET_KEY = _os.environ["SECRET_KEY"]
 ALLOWED_HOSTS = [
     "103.231.240.148",
     _os.getenv("ALLOWED_HOST", ""),
-    "altdsidccf.dlsu.edu.ph"
+    "altdsidccf.dlsu.edu.ph",
+    "localhost",
+    "127.0.0.1",
 ]
 
 # Collected static files root (run collectstatic during deploy)

@@ -24,6 +24,7 @@ class SavedLocationSerializer(serializers.ModelSerializer):
             "pitch",
             "geometry",
             "bounds",
+            "road_polygons",
             "location_type",
             "sub_area_type",
             "parent",

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   Box, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Button, IconButton, CircularProgress, Typography,
+  FormControl, InputLabel, Select, MenuItem,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SideMenu from "@/components/landing/sideMenu";
@@ -32,6 +33,11 @@ import {
   AOIRecord, SubareaRecord, CameraRecord, VideoRecord,
   convertRecordToArray,
 } from "@/components/landing/summaryTypes";
+import {
+  Point, Polygon, PolygonCollection,
+  toPolygonCollection, addPolygonToCollection, removePolygonFromCollection, patchPolygonFromCollection,
+  isPoint, isPolygon, isPolygonCollection,
+} from "@/components/landing/polygonFunctions"
 
 const Map = dynamic(() => import("@/components/map/map"), { ssr: false });
 
@@ -102,18 +108,22 @@ export default function LandingPage() {
   drawIsLoadingRef.current = drawIsLoading;
 
   // when updated, zoom to this location
-  const [mapGoTo, setMapGoTo] = useState<[number, number] | null>(null)
-  const mapGoToRef = useRef<[number, number] | null>(null);
+  const [mapGoTo, setMapGoTo] = useState<Point | null>(null)
+  const mapGoToRef = useRef<Point | null>(null);
   mapGoToRef.current = mapGoTo;
 
   // handles states for editing and deletingareas/subareas/cameras
-  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "resetCalibration" | "addVideo" | "editVideo">(null);
+  const [editAction, setEditAction] = useState<null | "rename" | "delete" | "recalibrate" | "resetCalibration" | "addVideo" | "editVideo" | "assignPolygon">(null);
   const [editObjectType, setEditObjectType] = useState<null | SummaryType | "video">(null);
   const [editId, setEditId] = useState<null | number>(null);
   const [editName, setEditName] = useState("");
   const [editIsLoading, setEditIsLoading] = useState<boolean>(false);
   const [recalibrateVideoId, setRecalibrateVideoId] = useState<number | null>(null);
   const [recalibrateThumbnail, setRecalibrateThumbnail] = useState<string | null>(null);
+  const [pendingPolygon, setPendingPolygon] = useState<Polygon | null>(null);
+  const [pendingPolygonSourceCameraId, setPendingPolygonSourceCameraId] = useState<number | null>(null);
+  const [assignPolygonCameraId, setAssignPolygonCameraId] = useState<number | "deassign" | null>(null);
+  const pendingPolygonOnSuccessRef = useRef<((cameraId: number | null) => void) | null>(null);
 
   // legacy states — move above when currently being used
   const [hoveredAoiId, setHoveredAoiId] = useState<number | null>(null);
@@ -290,6 +300,7 @@ export default function LandingPage() {
   
   // checks if this object is present in the [Object]Record map 
   function idIsPresentInMap(type: SummaryType | "video", id: number): boolean {
+    if (id == null) { return false; }
     switch (type) {
       case "area":
         return id in allAoisRef.current
@@ -366,6 +377,7 @@ export default function LandingPage() {
         name: obj.name,
         lat: obj.lat,
         lng: obj.lng,
+        parentId: obj.parent ?? null,
         polygon: obj.polygon ?? undefined,
         occurrences: undefined,
       }
@@ -542,6 +554,60 @@ export default function LandingPage() {
     setEditName("");
     setRecalibrateVideoId(null);
     setRecalibrateThumbnail(null);
+    setPendingPolygon(null);
+    setPendingPolygonSourceCameraId(null);
+    setAssignPolygonCameraId(null);
+    pendingPolygonOnSuccessRef.current = null;
+  };
+
+  const currentRoadPolygonItems = useMemo(() => {
+    if (selectedSubareaId == null) return [];
+
+    const roadPolygons = toPolygonCollection(allSubareas[selectedSubareaId]?.road_polygons);
+    return roadPolygons.map((points) => ({
+      points,
+      cameraId: null,
+      subAreaId: selectedSubareaId,
+      occurrences: 0,
+    }));
+  }, [allSubareas, selectedSubareaId]);
+
+  // saves a new polygon collection to a subarea, and appends it to the local copy if successful.
+  // only use as part of a wider handler function — do not use this function directly as an action handler function
+  const saveSubareaRoadPolygons = async (subareaId: number, nextRoadPolygons: PolygonCollection) => {
+    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${subareaId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ road_polygons: nextRoadPolygons }),
+    });
+
+    if (!res.ok) { throw new Error(await res.text()); }
+
+    patchObjectInList("subarea", subareaId, { road_polygons: nextRoadPolygons });
+  };
+
+  // saves a new polygon collection to a subarea, and appends it to the local copy if successful.
+  // only use as part of a wider handler function — do not use this function directly as an action handler function
+  const saveCameraRoadPolygons = async (cameraId: number, nextRoadPolygons: PolygonCollection) => {
+    const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/polygon/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ polygon: nextRoadPolygons }),
+    })
+    if (!res.ok) { throw new Error(await res.text()); }
+
+    patchObjectInList("camera", cameraId, { polygon: nextRoadPolygons });
+  }
+
+  // Gets a list of all cameras that can be assigned to this monitored lane / polygon.
+  const getAssignableCameras = () => {
+    if (selectedSubareaRef.current == null) return []; // quickfail
+    const allowedCameraIds = getSubareaSummaryFromId(selectedSubareaRef.current)?.camera_ids ?? [];
+    if (allowedCameraIds.length === 0) return [];
+
+    return allowedCameraIds
+      .map((cameraId) => allCamerasRef.current[cameraId])
+      .filter((camera): camera is CameraSummary => camera != null);
   };
 
   const getLatestVideoThumbnailForCamera = (cameraId: number): VideoSummary | null => {
@@ -993,68 +1059,6 @@ export default function LandingPage() {
       }
   }
 
-  // handles a polygon being drawn
-  const handlePolygonDrawn = async (id: number, polygon: [number, number][], onSuccess?: () => void) => {
-    // quickfails: if camera doesn't exist or already has a polygon 
-    const camera = getCameraSummaryFromId(id);
-    if (!camera) return;
-    // else if (camera.polygon != null && camera.polygon.length > 0) return;
-
-    try {
-      // perform our api call
-      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/polygon/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ polygon: polygon }),
-      })
-      if (!res.ok) { console.error(await res.text()); return false; }
-
-      // patching local copies...
-      const existingPolygon = camera.polygon;
-      let nextPolygons: [number, number][][] = [];
-      if (Array.isArray(existingPolygon) && existingPolygon.length > 0) {
-        const first = existingPolygon[0] as any;
-        const isSinglePolygon =
-          Array.isArray(first) &&
-          first.length === 2 &&
-          typeof first[0] === "number" &&
-          typeof first[1] === "number";
-
-        if (isSinglePolygon) {
-          nextPolygons = [existingPolygon as [number, number][]];
-        } else {
-          const isPolygonCollection = (existingPolygon as any[]).every(
-            (poly) =>
-              Array.isArray(poly) &&
-              poly.every(
-                (pt: any) =>
-                  Array.isArray(pt) &&
-                  pt.length === 2 &&
-                  typeof pt[0] === "number" &&
-                  typeof pt[1] === "number",
-              ),
-          );
-          if (isPolygonCollection) {
-            nextPolygons = (existingPolygon as any[]).map(
-              (poly) => poly as [number, number][],
-            );
-          }
-        }
-      }
-
-      patchObjectInList("camera", id, {polygon: [...nextPolygons, polygon]})
-      showToast(`Successfully set polygon to camera`, "success")
-      onSuccess();
-
-    } catch (exception) {
-      showToast(`Failed to set polygon`, "error")
-      console.error(exception)
-    } finally {
-
-    }
-    // onSuccess();
-  }
-
   // asks the API to delete the given object
   const handleDeleteObject = async () =>  {
     if (editAction !== "delete") return; // quickfail
@@ -1112,6 +1116,7 @@ export default function LandingPage() {
       
       // deleting camera
       else if (type === "camera") { 
+        const thisCamera = getCameraSummaryFromId(id);
         const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${id}/`, {
           method: "DELETE",
         })
@@ -1120,12 +1125,17 @@ export default function LandingPage() {
         // done — in this case, delete in our local camera list and update the subarea list accordingly
         if (selectedCameraRef.current === id) handleBack() // perform a return if this is selected
 
-        const parentOfThis = allCamerasRef.current[id]?.parent;
+        // save things we'll work on later
+        const allAssignedPolygons = thisCamera?.polygon;
+        const parentOfThis = thisCamera?.parent;
+
+        // delete this camera from the list
         setAllCameras((prev) => {
           const { [id]: _removed, ...rest } = prev;
           return rest;
         });
 
+        // change the subarea accordingly
         if (parentOfThis != null) {
           setAllSubareas((prev) => {
             const existingParent = prev[parentOfThis];
@@ -1141,6 +1151,11 @@ export default function LandingPage() {
               },
             };
           });
+          
+          // now that the camera has been deleted, reassign polygons back to the subarea
+          if (allAssignedPolygons != null) {
+            await saveSubareaRoadPolygons(parentOfThis, toPolygonCollection(allAssignedPolygons));
+          }
         }
       }
 
@@ -1167,7 +1182,7 @@ export default function LandingPage() {
       showToast(`Successfuly deleted ${type} "${oldName}"`, "success")
 
     } catch (exception) {
-      showToast(`Failed to delete ${type} "${oldName}"`)
+      showToast(`Failed to delete ${type} "${oldName}"`, "error")
       console.error(exception)
     } finally {
       // cleanup
@@ -1175,6 +1190,184 @@ export default function LandingPage() {
       setEditIsLoading(false)
       forceTriggerRefresh();
     }
+  }
+
+  // handles a polygon being drawn
+  const handlePolygonDrawn = async (_id: number | null, polygon: [number, number][], onSuccess?: (cameraId: number | null) => void) => {
+    // get the current subarea if possible, otherwise quickfail and abort function
+    const thisSubarea = getSubareaSummaryFromId(selectedSubareaRef.current);
+    if (!thisSubarea) {
+      showToast("Select a sub-area before adding road polygons.", "warning");
+      return;
+    }
+
+    // append to road polygon list
+    const nextRoadPolygons = [...(thisSubarea.road_polygons ?? []), polygon];
+
+    // and save!
+    try {
+      await saveSubareaRoadPolygons(thisSubarea.id, nextRoadPolygons);
+      showToast(`Successfully created monitored lane within subarea ${thisSubarea.name}`);
+      onSuccess?.(null);
+    } catch (error) {
+      showToast("Failed to save monitored lane.", "error");
+      console.error(error);
+    }
+  }
+
+  // triggers when user selects the menu option to assign a created polygon to a camera on the map
+  const handleRequestAssignPolygon = (
+    polygon: [number, number][],
+    onSuccess?: (cameraId: number | null) => void,
+    sourceCameraId?: number | string | null,
+  ) => {
+    const assignableCameras = getAssignableCameras();
+    if (assignableCameras.length === 0) {
+      showToast("No cameras are available in this sub-area.", "warning");
+      return;
+    }
+
+    pendingPolygonOnSuccessRef.current = onSuccess ?? null;
+    setPendingPolygon(polygon);
+    setPendingPolygonSourceCameraId(sourceCameraId == null ? null : Number(sourceCameraId));
+    setAssignPolygonCameraId(selectedCameraRef.current ?? assignableCameras[0].id);
+    setEditAction("assignPolygon");
+  }
+
+  // handles sending the api request to assign this polygon to a camera
+  const handleAssignPolygonToCamera = async () => {
+    // quickfail — make sure that we are actually trying to assign a polygon to a camera and have all the data we need
+    if (editAction != "assignPolygon" || pendingPolygon == null || assignPolygonCameraId == null) return;
+
+    // set local variables
+    const id = assignPolygonCameraId !== "deassign" ? assignPolygonCameraId : null;
+    const polygon = pendingPolygon;
+    const currentSubarea = getSubareaSummaryFromId(selectedSubareaRef.current);
+    const sourceCameraId = pendingPolygonSourceCameraId ?? null
+
+    // if same as before, ignore request
+    if ((sourceCameraId ?? null) === id) return;
+
+    setEditIsLoading(true);
+
+    try {
+      if (id !== null) {
+        const camera = getCameraSummaryFromId(id);
+        const sourceCamera = getCameraSummaryFromId(sourceCameraId)
+        if (!camera) { showToast("Selected camera was not found.", "error"); return; }
+
+        const updatedPolygonList_currentCamera = addPolygonToCollection(camera.polygon, polygon);
+        await saveCameraRoadPolygons(id, updatedPolygonList_currentCamera);
+
+        // deassign from original camera or from main subarea
+        if (sourceCamera) {
+          // from original camera, if and only if that is present
+          const updatedPolygonList_sourceCamera = removePolygonFromCollection(sourceCamera.polygon, polygon);
+          await saveCameraRoadPolygons(sourceCameraId, updatedPolygonList_sourceCamera);
+        } else {
+          // from main subarea
+          const updatedPolygonList_subarea = removePolygonFromCollection(currentSubarea.road_polygons, polygon);
+          await saveSubareaRoadPolygons(currentSubarea.id, updatedPolygonList_subarea);
+        }
+
+        showToast(`Successfully set monitored lane to camera ${camera.name}`, "success")
+        pendingPolygonOnSuccessRef.current?.(id);
+        handleEditClose();
+      } else {
+        // deassigning this polygon
+        const sourceCamera = getCameraSummaryFromId(sourceCameraId);
+        if (!sourceCamera) return; // quickfail if no old camera
+        const updatedPolygonList_camera = removePolygonFromCollection(sourceCamera.polygon, polygon);
+        const updatedPolygonList_subarea = addPolygonToCollection(currentSubarea.road_polygons, polygon);
+        
+        // pass api requests
+        await saveCameraRoadPolygons(sourceCamera.id, updatedPolygonList_camera);
+        await saveSubareaRoadPolygons(currentSubarea.id, updatedPolygonList_subarea);
+
+        showToast(`Successfully deassigned monitored lane from camera ${sourceCamera.name}`, "success")
+        pendingPolygonOnSuccessRef.current?.(id);
+        handleEditClose();
+      }
+
+    } catch (exception) {
+      showToast(`Failed to set monitored lane`, "error")
+      console.error(exception)
+    } finally {
+      setEditIsLoading(false);
+    }
+  }
+
+  // updates a polygon's points
+  const handleEditPolygon = async (oldPolygon: Polygon, newPolygon: Polygon, cameraId?: number) => {
+    if (!isPolygon(oldPolygon) || !isPolygon(newPolygon)) return; // quickfail
+
+    try {
+      if (cameraId) {
+        const camera = getCameraSummaryFromId(cameraId);
+        if (!camera) return;
+        const updatedPolygonList = patchPolygonFromCollection(camera.polygon, oldPolygon, newPolygon);
+
+        // api call
+        await saveCameraRoadPolygons(cameraId, updatedPolygonList);
+
+        // and done!
+        showToast(`Successfully edited points of monitored lane attached to camera ${camera.name}`);
+        
+      } else {
+        const subarea = getSubareaSummaryFromId(selectedSubareaRef.current);
+        if (!subarea) return;
+        const updatedPolygonList = patchPolygonFromCollection(subarea.road_polygons, oldPolygon, newPolygon);
+
+        // api call
+        await saveSubareaRoadPolygons(subarea.id, updatedPolygonList);
+
+        // and done!
+        showToast(`Successfully edited points of monitored lane in subarea ${subarea.name}`);
+      }
+    } catch (exception) {
+      showToast(`Failed to update points of monitored lane`, "error")
+      console.error(exception)
+    } finally {
+
+    }
+  }
+
+  // deletes a polygon object
+  // polygons are stored differently so handle them with a different function
+  const handleDeletePolygon = async (polygonToDelete: Polygon, cameraId?: number, onSuccess: () => void = () => {}) => {
+    if (!isPolygon(polygonToDelete)) return; // quickfail
+
+    try {
+      if (cameraId) {
+        // if attached to camera, remove it from the camera
+        const camera = getCameraSummaryFromId(cameraId);
+        if (!camera) return;
+        const updatedPolygonList = removePolygonFromCollection(camera.polygon, polygonToDelete);
+
+        // api call
+        await saveCameraRoadPolygons(camera.id, updatedPolygonList);
+
+        // and done!
+        showToast(`Successfully deleted a monitored lane attached to camera ${camera.name}`);
+        onSuccess();
+      } else {
+        // if not attached to camera, remove it from subarea
+        const subarea = getSubareaSummaryFromId(selectedSubareaRef.current)
+        if (!subarea) return;
+        const updatedPolygonList = removePolygonFromCollection(subarea.road_polygons, polygonToDelete);
+
+        // api call
+        await saveSubareaRoadPolygons(subarea.id, updatedPolygonList);
+
+        // and done!
+        showToast(`Successfully deleted monitored lane in subarea ${subarea.name}`);
+        onSuccess();
+      }
+
+    } catch (e) {
+      console.error(e);
+      showToast(`Failed to delete monitored lane`, "error")
+    } finally { }
   }
 
   const handleEditCameraTags = async (id: number, newTags: string[]) => {
@@ -1262,31 +1455,72 @@ export default function LandingPage() {
     referenceDistance: number, uploadThumbnail?: string
   ) => {
 
-    // create our FormData for sending to the api
-    const formData = new FormData();
-    formData.append('file', savedFile);
-    formData.append('video_name', videoName);
-    formData.append('camera_id', cameraId.toString());
-    formData.append('calibration_points', JSON.stringify(calibrationPoints));
-    formData.append('reference_points', JSON.stringify(originalReferencePoints));
-    formData.append('reference_distance_meters', referenceDistance.toString());
-    if (uploadThumbnail) formData.append('thumbnail', uploadThumbnail);
+    // ── Chunked upload constants ──────────────────────────────────────────────
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
+    const totalChunks = Math.ceil(savedFile.size / CHUNK_SIZE);
+
+    // generate a unique upload ID for this session so the server can stitch chunks
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
     try {
+      showToast(`Uploading "${videoName}" (0%)…`, "info");
 
-      // upload video :)
-      showToast(`Uploading "${videoName}"...`, "info");
-      const res = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload_and_process/`, { method: 'POST', body: formData });
+      // ── Phase 1: upload each chunk sequentially ───────────────────────────
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end   = Math.min(start + CHUNK_SIZE, savedFile.size);
+        const chunk = savedFile.slice(start, end);
 
-      // if fail, display a note — the user needs to know this
-      if (!res.ok) {
-        showToast("Failed to upload video", "error");
+        const chunkForm = new FormData();
+        chunkForm.append("upload_id",    uploadId);
+        chunkForm.append("chunk_index",  chunkIndex.toString());
+        chunkForm.append("total_chunks", totalChunks.toString());
+        chunkForm.append("file",          chunk, savedFile.name);
+
+        const chunkRes = await authFetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/upload-chunk/`,
+          { method: "POST", body: chunkForm }
+        );
+
+        if (!chunkRes.ok) {
+          const errText = await chunkRes.text().catch(() => "Unknown error");
+          showToast(`Upload failed on chunk ${chunkIndex + 1}/${totalChunks}: ${errText}`, "error");
+          return;
+        }
+
+        // update progress toast
+        const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+        showToast(`Uploading "${videoName}" (${pct}%)…`, "info");
+      }
+
+      // ── Phase 2: finalise / stitch and process ────────────────────────────
+      showToast(`Finalising "${videoName}"…`, "info");
+
+      const completeForm = new FormData();
+      completeForm.append("upload_id",                  uploadId);
+      completeForm.append("total_chunks",               totalChunks.toString());
+      completeForm.append("video_name",                 videoName);
+      completeForm.append("camera_id",                  cameraId.toString());
+      completeForm.append("calibration_points",         JSON.stringify(calibrationPoints));
+      completeForm.append("reference_points",           JSON.stringify(originalReferencePoints));
+      completeForm.append("reference_distance_meters",  referenceDistance.toString());
+      completeForm.append("original_filename",          savedFile.name);
+      if (uploadThumbnail) completeForm.append("thumbnail", uploadThumbnail);
+
+      const completeRes = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/upload-complete/`,
+        { method: "POST", body: completeForm }
+      );
+
+      if (!completeRes.ok) {
+        const errText = await completeRes.text().catch(() => "Unknown error");
+        showToast(`Failed to finalise upload: ${errText}`, "error");
         return;
       }
 
-      // parse and add to current list as pending
-      const data = await res.json();
+      const data = await completeRes.json();
 
+      // ── Phase 3: update local state ───────────────────────────────────────
       // Persist camera calibration in local state after a successful upload.
       patchObjectInList("camera", cameraId, {
         is_calibrated: true,
@@ -1306,13 +1540,14 @@ export default function LandingPage() {
 
       addNewVideoData(pendingVideo);
 
-      // else, note that we've finished processing and pass this onto the processing tracker
-      // afterwards, pass the video data onto addNewVideoData()
+      // note that upload finished and hand off to the processing tracker
       showToast(`"${videoName}" uploaded — processing started`, "info");
-      trackVideoProcessing(videoName, data.video_id)
+      trackVideoProcessing(videoName, data.video_id);
+
     } catch (exception) {
-      console.error(exception)
-    } finally {}
+      console.error(exception);
+      showToast(`An unexpected error occurred while uploading "${videoName}".`, "error");
+    }
   }
 
   
@@ -1346,6 +1581,8 @@ export default function LandingPage() {
             []
           }
 
+          roadPolygonItems={currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera" ? currentRoadPolygonItems : []}
+
           cameraItems = {
             
             //currentSelectionModeRef.current === "subarea" ?
@@ -1359,7 +1596,7 @@ export default function LandingPage() {
             currentSelectionModeRef.current === "subarea" ?
             allSubareasRef.current[selectedSubareaRef.current].camera_ids ?? [] :
             currentSelectionModeRef.current === "camera" ?
-            [ selectedCameraRef.current ] :
+            allSubareasRef.current[selectedSubareaRef.current].camera_ids ?? [] :
             []
           }
 
@@ -1370,7 +1607,9 @@ export default function LandingPage() {
           
           onObjectClick={handleMapSelection}
           onRequestRename={handleStartEditingName}
-          onRequestDelete={handleStartDeletion}     
+          onRequestDelete={handleStartDeletion}  
+          onEditPolygon={handleEditPolygon}
+          onDeletePolygon={handleDeletePolygon}   
           
           isDrawingAOI={isDrawing && (["area", "subarea"].includes(drawTypeRef.current))}  
           onAoiDrawn={handleAoiDrawn}
@@ -1378,8 +1617,9 @@ export default function LandingPage() {
           isPlacingCamera={isDrawing && drawTypeRef.current === "camera"}
           onCameraAdd={handleCameraAdded}
           onPolygonDrawn={handlePolygonDrawn}
+          onRequestAssignPolygon={handleRequestAssignPolygon}
 
-          hideEditControls={currentSelectionModeRef.current !== "camera"}
+          hideEditControls={!(currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera")}
           cleanMap={selectedSubareaId == null}
           showGeocoder
           hoveredAoiId={hoveredAoiId}
@@ -1392,7 +1632,7 @@ export default function LandingPage() {
           activeSubAreaId={highlightedSubareaId}
           onSubAreaHover={(id) => setHoveredSubAreaId(id)}
           cameraParentLocationId={selectedSubareaId}
-          hideCameraPolygons={false}
+          hideCameraPolygons={!(currentSelectionModeRef.current === "subarea" || currentSelectionModeRef.current === "camera")}
         />
       </Box>
 
@@ -1505,6 +1745,58 @@ export default function LandingPage() {
             sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
           >
             {editIsLoading ? <CircularProgress size={16} sx={{ color: "#fff" }} />  : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      { /* Assign polygon dialog */ }
+      <Dialog
+        open={ editAction === "assignPolygon" }
+        onClose={handleEditClose}
+        PaperProps={{ sx: { borderRadius: "14px", minWidth: 320, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+          <Typography fontWeight={700} sx={{ flex: 1, color: "#1d1f3f" }}>Assign Road Polygon</Typography>
+          <IconButton size="small" onClick={handleEditClose}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          <FormControl fullWidth size="small">
+            <InputLabel id="assign-polygon-camera-label">Camera</InputLabel>
+            <Select
+              labelId="assign-polygon-camera-label"
+              label="Camera"
+              value={assignPolygonCameraId ?? ""}
+              onChange={(e) => {
+                if (e.target.value === "deassign") setAssignPolygonCameraId("deassign")
+                else setAssignPolygonCameraId(e.target.value)
+              }}
+            >
+              {getAssignableCameras().map((camera) => (
+                <MenuItem key={`assign-polygon-camera-${camera.id}`} value={camera.id}>
+                  {camera.name}
+                </MenuItem>
+              ))}
+              { pendingPolygonSourceCameraId != null &&
+                <MenuItem key="assign-polygon-camera-deassign" value="deassign">
+                  Deassign this camera
+                </MenuItem>
+              }
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: "flex-end" }}>
+          <Button onClick={handleEditClose} sx={{ textTransform: "none", color: "#555" }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAssignPolygonToCamera}
+            disabled={editIsLoading || assignPolygonCameraId == null}
+            variant="contained"
+            sx={{ bgcolor: "#1d1f3f", borderRadius: "8px", textTransform: "none", "&:hover": { bgcolor: "#11153f" } }}
+          >
+            {editIsLoading ? <CircularProgress size={16} sx={{ color: "#fff" }} /> : "Assign"}
           </Button>
         </DialogActions>
       </Dialog>

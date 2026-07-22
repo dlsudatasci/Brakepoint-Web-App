@@ -5,7 +5,6 @@ Tests for Video management:
   DELETE /api/videos/<pk>/
   GET    /api/videos/<pk>/progress/
 """
-import io
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -19,6 +18,9 @@ def video_url(pk):
 
 def progress_url(pk):
     return f"/api/videos/{pk}/progress/"
+
+
+CALLBACK_URL = "/api/model-results-callback/"
 
 
 def _fake_video(name="clip.mp4", size_bytes=1024):
@@ -93,6 +95,80 @@ def test_upload_requires_auth(anon_client, camera):
     resp = anon_client.post(UPLOAD_URL,
                             {"file": _fake_video(), "camera_id": camera.id},
                             format="multipart")
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_upload_uses_remote_pipeline_when_enabled(auth_client, camera, monkeypatch, mocker):
+    monkeypatch.setenv("MODEL_SERVICE_ENABLED", "true")
+    monkeypatch.setenv("MODEL_SERVICE_SUBMIT_URL", "http://model-service.local/api/v1/jobs")
+    monkeypatch.setenv("MODEL_SERVICE_SHARED_TOKEN", "shared-token")
+    monkeypatch.setenv("MODEL_SERVICE_CALLBACK_TOKEN", "callback-token")
+    monkeypatch.setenv("MODEL_CALLBACK_BASE_URL", "http://django.internal:8000")
+
+    mock_response = mocker.Mock()
+    mock_response.ok = True
+    mock_response.json.return_value = {"message": "accepted"}
+    post_mock = mocker.patch("BrakePoint.views.requests.post", return_value=mock_response)
+
+    resp = auth_client.post(
+        UPLOAD_URL,
+        {"file": _fake_video(), "camera_id": camera.id, "use_sign_detection": "true"},
+        format="multipart",
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["success"] is True
+    assert data["processing_status"] == "processing"
+
+    called = post_mock.call_args
+    assert called is not None
+    assert called.kwargs["headers"]["Authorization"] == "Bearer shared-token"
+    assert called.kwargs["data"]["callback_url"] == "http://django.internal:8000/api/model-results-callback/"
+    assert called.kwargs["data"]["callback_token"] == "callback-token"
+
+
+@pytest.mark.django_db
+def test_model_results_callback_updates_video(anon_client, processing_video, monkeypatch):
+    monkeypatch.setenv("MODEL_SERVICE_CALLBACK_TOKEN", "cb-secret")
+
+    payload = {
+        "video_id": processing_video.id,
+        "status": "completed",
+        "vehicles": 12,
+        "speeding_count": 2,
+        "swerving_count": 1,
+        "abrupt_stopping_count": 3,
+        "vehicle_breakdown": {"Car": 10, "Truck": 2},
+        "meter_per_pixel": 0.52,
+        "yolo_progress": 100,
+    }
+    resp = anon_client.post(
+        CALLBACK_URL,
+        payload,
+        format="json",
+        HTTP_X_MODEL_SERVICE_TOKEN="cb-secret",
+    )
+
+    assert resp.status_code == 200
+    processing_video.refresh_from_db()
+    assert processing_video.processing_status == "completed"
+    assert processing_video.vehicles == 12
+    assert processing_video.speeding_count == 2
+    assert processing_video.vehicle_breakdown["Car"] == 10
+
+
+@pytest.mark.django_db
+def test_model_results_callback_rejects_invalid_token(anon_client, processing_video, monkeypatch):
+    monkeypatch.setenv("MODEL_SERVICE_CALLBACK_TOKEN", "cb-secret")
+
+    resp = anon_client.post(
+        CALLBACK_URL,
+        {"video_id": processing_video.id, "status": "completed"},
+        format="json",
+        HTTP_X_MODEL_SERVICE_TOKEN="wrong-token",
+    )
     assert resp.status_code == 401
 
 
