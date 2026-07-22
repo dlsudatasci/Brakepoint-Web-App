@@ -228,6 +228,7 @@ export function convertObjectToVideoSummary(obj: any, additional?: any) {
 	return {
 		summaryType: "video",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
+		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 		...obj, ...additional,
 		uploaded_at: safeUploadedAt,
 		recorded_at: safeRecordedAt,
@@ -235,7 +236,6 @@ export function convertObjectToVideoSummary(obj: any, additional?: any) {
 		uploaded_time_string: (obj?.uploaded_time_string ?? additional?.uploaded_time_string),
 		processing_status: (obj?.processing_status ?? additional?.processing_status ?? "pending"),
 		duration: formatDurationLabel(obj?.duration_seconds ?? additional?.duration_seconds ?? 0),
-		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 	} as VideoSummary
 }
 
