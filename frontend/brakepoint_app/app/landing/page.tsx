@@ -1475,7 +1475,7 @@ export default function LandingPage() {
         chunkForm.append("upload_id",    uploadId);
         chunkForm.append("chunk_index",  chunkIndex.toString());
         chunkForm.append("total_chunks", totalChunks.toString());
-        chunkForm.append("chunk",        chunk, savedFile.name);
+        chunkForm.append("file",          chunk, savedFile.name);
 
         const chunkRes = await authFetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/upload-chunk/`,
