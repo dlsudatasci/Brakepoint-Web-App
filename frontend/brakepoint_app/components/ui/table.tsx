@@ -71,13 +71,14 @@ function formatHourLabel(hour: number): string {
 // We re-parse via new Date() which handles locale strings reliably in the same browser
 function parseVideoTime(row: any): { dateKey: string; startHour: number } | null {
   try {
-    const d = new Date(row.recorded_time_iso || row.uploaded_time_iso || row.uploaded_time);
+    const d = new Date(row.recorded_at);
     if (isNaN(d.getTime())) return null;
     return {
       dateKey: toDateKey(d),
       startHour: d.getHours() + d.getMinutes() / 60,
     };
-  } catch {
+  } catch(e) {
+    console.error(e)
     return null;
   }
 }

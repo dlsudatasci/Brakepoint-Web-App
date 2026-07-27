@@ -28,6 +28,8 @@ import {
   resolveBrakePointClass,
 } from "@/lib/mapillary";
 import { SummaryType } from "../landing/summaryTypes";
+import { Point, Polygon, PolygonCollection } from "../landing/polygonFunctions";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 /*
     mapMode - how is this map used?
@@ -535,7 +537,9 @@ type MapProps = {
 
   onObjectClick?: (type: SummaryType, id: number) => void;                                    // fires when user clicks a polygon of an AOI or subarea
   onRequestRename?: (type: SummaryType, id: number) => void;                                  // fires when user requests to rename an object
-  onRequestDelete?: (type: SummaryType, id: number) => void;                                  // fires when user requests to delete an object  
+  onRequestDelete?: (type: SummaryType, id: number) => void;                                  // fires when user requests to delete a non-polygon object
+  onEditPolygon?: (oldPolygon: Polygon, newPolygon: Polygon, cameraId?: number) => void;      // fires when user requests to update the points of a polygon  
+  onDeletePolygon?: (polygonToDelete: Polygon, cameraId?: number, onSuccess?: () => void) => void // fires when user requests to delete a polygon
   
   onAoiDrawn?: (ring: [number, number][], clearDrawing: () => void) => void;                // called when user finishes drawing a bounding box for an area or subarea
   onPolygonDrawn?: (id: number | null, polygon: [number, number][], onSuccess?: (cameraId: number | null) => void) => void;  // runs when polygon has finished being drawn
@@ -614,6 +618,8 @@ export default function MapView({
   roadPolygonItems = [],
   currentSelectionMode,
   onRequestDelete,
+  onEditPolygon,
+  onDeletePolygon,
   onRequestRename,
   onPolygonDrawn,
   onRequestAssignPolygon,
@@ -640,7 +646,6 @@ export default function MapView({
   const [selectedPolygonIndex, setSelectedPolygonIndex] = useState<number | null>(null);
   const [editingCompletedPolygonIndex, setEditingCompletedPolygonIndex] = useState<number | null>(null);
   const [isSavingEditedPolygon, setIsSavingEditedPolygon] = useState(false);
-  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const [exploreInitFromCache] = useState<{
     savedAoiId: number;
     savedSubAreaIds: Record<number, number>;
@@ -754,6 +759,9 @@ export default function MapView({
   const isDrawingFocusArea = isDrawingPrimary || isDrawingSub;
   const hasConfirmedPrimary = !!primaryFocusArea;
   const hasSelectedSubArea = selectedSubAreaIndex != null;
+
+  // prepare to bake some nice warm toast (enables the use of toasts)
+  const { trackVideoProcessing, showToast } = useNotifications();
 
   const geocoderApi: MaplibreGeocoderApi = useMemo(() => ({
     forwardGeocode: async (config: { query: string }): Promise<MaplibreGeocoderFeatureResults> => {
@@ -1050,98 +1058,6 @@ export default function MapView({
 
   // EXPLORE MODE
 
-  function getPolygonCentroid(coords: [number, number][]) {
-    const lng = coords.reduce((sum, p) => sum + p[0], 0) / coords.length;
-    const lat = coords.reduce((sum, p) => sum + p[1], 0) / coords.length;
-    return { lng, lat };
-  }
-
-  function getPolygonBounds(coords: [number, number][]) {
-    const lngs = coords.map((p) => p[0]);
-    const lats = coords.map((p) => p[1]);
-
-    return [
-      [Math.min(...lngs), Math.min(...lats)],
-      [Math.max(...lngs), Math.max(...lats)],
-    ];
-  }
-
-  const createSavedArea = useCallback(
-    async ({
-      name,
-      coords,
-      locationType,
-      parentId = null,
-    }: {
-      name: string;
-      coords: [number, number][];
-      locationType: "aoi" | "sub_area";
-      parentId?: number | null;
-    }) => {
-      const centroid = getPolygonCentroid(coords);
-      const bounds = getPolygonBounds(coords);
-
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          lat: centroid.lat,
-          lng: centroid.lng,
-          geometry: coords,
-          bounds,
-          location_type: locationType,
-          parent_id: parentId,
-        }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Create saved area failed:", response.status, text);
-        throw new Error(`Failed to create saved area: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.saved_location;
-    },
-    [],
-  );
-
-  const updateSavedArea = useCallback(
-    async ({ id, name, coords, parentId }: { id: number; name: string; coords: [number, number][]; parentId?: number | null }) => {
-      const centroid = getPolygonCentroid(coords);
-      const bounds = getPolygonBounds(coords);
-
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          lat: centroid.lat,
-          lng: centroid.lng,
-          geometry: coords,
-          bounds,
-          parent_id: parentId,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to update saved area");
-      }
-    },
-    [],
-  );
-
-  const deleteSavedArea = useCallback(async (id: number) => {
-    const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${id}/`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to delete saved area");
-    }
-  }, []);
-
   const clearTerradrawSelection = useCallback(() => {
     try {
       const control = drawControlRef.current;
@@ -1376,314 +1292,6 @@ export default function MapView({
     di?.setMode?.("rectangle");
   }, [clearTerradrawSelection, restoreDefaultExploreCamera]);
 
-  const beginSubFocusDrawing = useCallback(() => {
-    const primary = primaryFocusAreaRef.current;
-    if (!primary) return;
-
-    const map = mapRef.current;
-    if (map) {
-      map.fitBounds(bboxToBoundsLike(primary.bbox), {
-        padding: 40,
-        duration: 500,
-      });
-    }
-
-    clearTerradrawSelection();
-    setFocusError(null);
-    setActiveSubAreaIndex(null);
-    setSelectedSubAreaIndex(null);
-    setExplorePhase("drawing-sub");
-
-    const di = drawControlRef.current?.getTerraDrawInstance?.();
-    di?.setMode?.("rectangle");
-  }, [applyLockedFocusToMap, clearTerradrawSelection, primaryFocusAreaRef]);
-
-  const handleEditAoi = useCallback(() => {
-    const currentPrimaryArea = primaryFocusAreaRef.current;
-    const map = mapRef.current;
-    if (!map) return;
-
-    setFocusError(null);
-    clearTerradrawSelection();
-    setActiveSubAreaIndex(null);
-    setSelectedSubAreaIndex(null);
-    setExplorePhase("drawing-primary");
-    restoreDefaultExploreCamera(map);
-
-    const di = drawControlRef.current?.getTerraDrawInstance?.();
-
-    if (!currentPrimaryArea) {
-      try {
-        di?.setMode?.("rectangle");
-      } catch { }
-      return;
-    }
-
-    const restored = restoreFocusAreaToTerradraw(currentPrimaryArea);
-    if (!restored) {
-      try {
-        di?.setMode?.("rectangle");
-      } catch { }
-    }
-  }, [clearTerradrawSelection, primaryFocusAreaRef, restoreDefaultExploreCamera, restoreFocusAreaToTerradraw]);
-
-  const handleEditSubArea = useCallback(
-    (index: number) => {
-      const parent = primaryFocusAreaRef.current;
-      const sub = subFocusAreasRef.current[index];
-      if (!parent || !sub) return;
-
-      const map = mapRef.current;
-      if (map) applyLockedFocusToMap(parent);
-
-      setFocusError(null);
-      clearTerradrawSelection();
-      setActiveSubAreaIndex(index);
-      setSelectedSubAreaIndex(index);
-      setExplorePhase("drawing-sub");
-
-      const restored = restoreFocusAreaToTerradraw(sub);
-      if (!restored) {
-        const di = drawControlRef.current?.getTerraDrawInstance?.();
-        try {
-          di?.setMode?.("rectangle");
-        } catch { }
-      }
-    },
-    [applyLockedFocusToMap, clearTerradrawSelection, primaryFocusAreaRef, restoreFocusAreaToTerradraw, subFocusAreasRef],
-  );
-
-  const handleConfirmAoi = useCallback(async () => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const di = drawControlRef.current?.getTerraDrawInstance?.();
-    if (!di) {
-      setFocusError("Drawing tool is not ready.");
-      return;
-    }
-
-    const snapshot = (di.getSnapshot?.() ?? []) as TerraDrawFeature[];
-    const polygons = snapshot.filter((f) => f?.geometry?.type === "Polygon");
-
-    if (polygons.length === 0) {
-      setFocusError("Draw a rectangle first.");
-      return;
-    }
-
-    const rect =
-      rectIdRef.current != null
-        ? (polygons.find((f) => String(f.id) === String(rectIdRef.current)) ?? polygons[polygons.length - 1])
-        : polygons[polygons.length - 1];
-
-    const ring = rect.geometry?.coordinates?.[0] as [number, number][] | undefined;
-
-    if (!ring || ring.length < 4) {
-      setFocusError("The selected area is invalid.");
-      return;
-    }
-
-    const bbox = rectToBoundingBox(ring);
-    const parentArea = primaryFocusAreaRef.current;
-    const isSubArea = explorePhaseRef.current === "drawing-sub" && !!parentArea;
-    const editingIndex = activeSubAreaIndexRef.current;
-
-    if (isSubArea && parentArea && !bboxContains(parentArea.bbox, bbox)) {
-      setFocusError("Sub-area must stay inside the primary AOI.");
-      return;
-    }
-
-    const paddedBbox = expandBbox(bbox, isSubArea ? 0.04 : 0.08);
-
-    const fallbackLabel = isSubArea
-      ? editingIndex != null
-        ? (subFocusAreasRef.current[editingIndex]?.label ?? `Sub-area ${editingIndex + 1}`)
-        : `Sub-area ${subFocusAreasRef.current.length + 1}`
-      : (primaryFocusAreaRef.current?.label ?? "Focused Area");
-
-    const label = await reverseGeocodeAreaName(bbox, fallbackLabel);
-
-    const nextArea: FocusArea = {
-      kind: isSubArea ? "sub" : "primary",
-      label,
-      ring,
-      bbox,
-      paddedBbox,
-      minZoom:
-        map.cameraForBounds(
-          [
-            [bbox[0], bbox[1]],
-            [bbox[2], bbox[3]],
-          ],
-          { padding: 40 },
-        )?.zoom ?? 14,
-    };
-
-    setFocusError(null);
-
-    try {
-      if (isSubArea && parentArea) {
-        if (editingIndex != null) {
-          const existingSavedSubAreaId = savedSubAreaIds[editingIndex];
-
-          if (existingSavedSubAreaId) {
-            await updateSavedArea({
-              id: existingSavedSubAreaId,
-              name: label,
-              coords: ring,
-              parentId: savedAoiId,
-            });
-          } else {
-            const savedSubArea = await createSavedArea({
-              name: label,
-              coords: ring,
-              locationType: "sub_area",
-              parentId: savedAoiId,
-            });
-
-            setSavedSubAreaIds((prev) => ({
-              ...prev,
-              [editingIndex]: savedSubArea.id,
-            }));
-          }
-
-          setSubFocusAreas((prev) => prev.map((area, index) => (index === editingIndex ? nextArea : area)));
-          setSelectedSubAreaIndex(editingIndex);
-        } else {
-          const savedSubArea = await createSavedArea({
-            name: label,
-            coords: ring,
-            locationType: "sub_area",
-            parentId: savedAoiId,
-          });
-
-          const nextIndex = subFocusAreasRef.current.length;
-
-          setSubFocusAreas((prev) => [...prev, nextArea]);
-          setSavedSubAreaIds((prev) => ({
-            ...prev,
-            [nextIndex]: savedSubArea.id,
-          }));
-          setSelectedSubAreaIndex(nextIndex);
-        }
-
-        setActiveSubAreaIndex(null);
-        setExplorePhase("locked-primary");
-        applyLockedFocusToMap(parentArea);
-        di.setMode?.("select");
-        return;
-      }
-
-      if (onAoiSavedRef.current) {
-        await createSavedArea({ name: label, coords: ring, locationType: "aoi" });
-        clearTerradrawSelection();
-        setFocusError(null);
-        di.setMode?.("select");
-        onAoiSavedRef.current();
-        return;
-      }
-
-      if (savedAoiId) {
-        await updateSavedArea({
-          id: savedAoiId,
-          name: label,
-          coords: ring,
-        });
-      } else {
-        const savedAoi = await createSavedArea({
-          name: label,
-          coords: ring,
-          locationType: "aoi",
-        });
-
-        setSavedAoiId(savedAoi.id);
-      }
-
-      setPrimaryFocusArea(nextArea);
-      setActiveSubAreaIndex(null);
-      setSelectedSubAreaIndex(null);
-      setSubFocusAreas((prev) => prev.filter((sub) => bboxContains(nextArea.bbox, sub.bbox)));
-      setExplorePhase("locked-primary");
-      applyLockedFocusToMap(nextArea);
-
-      di.setMode?.("select");
-    } catch (error) {
-      console.error("Failed to save AOI/sub-area:", error);
-      setFocusError("Failed to save area. Please try again.");
-    }
-  }, [
-    activeSubAreaIndexRef,
-    applyLockedFocusToMap,
-    explorePhaseRef,
-    primaryFocusAreaRef,
-    reverseGeocodeAreaName,
-    savedAoiId,
-    savedSubAreaIds,
-    subFocusAreasRef,
-    clearTerradrawSelection,
-    createSavedArea,
-    updateSavedArea,
-  ]);
-
-  const fitToFocusArea = useCallback((area: FocusArea) => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    map.fitBounds(
-      [
-        [area.bbox[0], area.bbox[1]],
-        [area.bbox[2], area.bbox[3]],
-      ],
-      { padding: 40, duration: 700 },
-    );
-  }, []);
-
-  const deleteSelectedSubArea = useCallback(async () => {
-    const index = selectedSubAreaIndexRef.current;
-    if (index == null) return;
-
-    const savedSubAreaId = savedSubAreaIds[index];
-
-    try {
-      if (savedSubAreaId) {
-        await deleteSavedArea(savedSubAreaId);
-      }
-
-      setSubFocusAreas((prev) => prev.filter((_, i) => i !== index));
-
-      setSavedSubAreaIds((prev) => {
-        const next: Record<number, number> = {};
-        Object.entries(prev).forEach(([key, value]) => {
-          const numericKey = Number(key);
-          if (numericKey < index) next[numericKey] = value;
-          if (numericKey > index) next[numericKey - 1] = value;
-        });
-        return next;
-      });
-
-      setSelectedSubAreaIndex(null);
-      setActiveSubAreaIndex(null);
-      setFocusError(null);
-
-      const primary = primaryFocusAreaRef.current;
-      if (primary) {
-        setExplorePhase("locked-primary");
-        clearTerradrawSelection();
-        applyLockedFocusToMap(primary);
-
-        const di = drawControlRef.current?.getTerraDrawInstance?.();
-        try {
-          di?.setMode?.("select");
-        } catch {
-
-        }
-      }
-    } catch (error) {
-      console.error("Failed to delete sub-area:", error);
-      setFocusError("Failed to delete sub-area.");
-    }
-  }, [applyLockedFocusToMap, clearTerradrawSelection, deleteSavedArea, primaryFocusAreaRef, selectedSubAreaIndexRef, savedSubAreaIds]);
-
   const restartPrimaryAoiDrawing = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -1721,19 +1329,6 @@ export default function MapView({
       }, 0);
     });
   }, [clearTerradrawSelection, restoreDefaultExploreCamera]);
-
-  const deletePrimaryFocusArea = useCallback(async () => {
-    try {
-      if (savedAoiId) {
-        await deleteSavedArea(savedAoiId);
-      }
-
-      restartPrimaryAoiDrawing();
-    } catch (error) {
-      console.error("Failed to delete AOI:", error);
-      setFocusError("Failed to delete AOI.");
-    }
-  }, [deleteSavedArea, restartPrimaryAoiDrawing, savedAoiId]);
 
   const renderPolygonLayers = useCallback((polygonOverride?: CompletedPolygon[]) => {
     const map = mapRef.current;
@@ -2683,24 +2278,8 @@ export default function MapView({
     const target = currentPolygons[polygonIndex];
     if (!target) return false;
 
-    const nextPolygons = currentPolygons.map((polygon, idx) =>
-      idx === polygonIndex ? { ...polygon, points: nextPoints } : polygon,
-    );
-
-    setCompletedPolygons(nextPolygons);
-
-    if (target.cameraId == null) return true;
-
-    const groupedPolygons = nextPolygons
-      .filter((polygon) => String(polygon.cameraId) === String(target.cameraId))
-      .map((polygon) => polygon.points);
-
-    const ok = await savePolygonCollectionToCamera(target.cameraId, groupedPolygons);
-    if (!ok) {
-      setCompletedPolygons(currentPolygons);
-      return false;
-    }
-
+    console.log(onEditPolygon)
+    onEditPolygon(target.points, nextPoints, Number(target.cameraId));
     return true;
   }, [completedPolygonsRef, savePolygonCollectionToCamera]);
 
@@ -2765,69 +2344,6 @@ export default function MapView({
   const CAMERAS_CACHE_KEY = "bp_cameras_v1";
 
   const loadCamerasFromDatabase = useCallback(async () => {
-    /*
-    try {
-      const raw = sessionStorage.getItem(CAMERAS_CACHE_KEY);
-      if (raw) {
-        const cached: Camera[] = JSON.parse(raw);
-        camerasRef.current.forEach((c) => c.marker?.remove());
-        camerasRef.current = [];
-        setCameras([]);
-        cached.forEach((cam) => addCameraFromData(cam.lat, cam.lng, cam.id));
-        const cachedPolygons: CompletedPolygon[] = cached
-          .filter((cam) => cam.polygon && (cam.polygon as any).length > 0)
-          .map((cam) => ({
-            points: cam.polygon as [number, number][],
-            cameraId: cam.id,
-            occurrences: cam.occurrences ?? 0,
-          }));
-        if (cachedPolygons.length > 0) setCompletedPolygons(cachedPolygons);
-        onCamerasLoaded?.(cached);
-      }
-    } catch { }
-
-    loadAbortRef.current?.abort();
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
-
-    try {
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-      });
-
-      if (controller.signal.aborted) return;
-      if (!response.ok) return;
-
-      const data = await response.json();
-      if (controller.signal.aborted) return;
-      if (!data?.success || !data?.cameras) return;
-
-      try { sessionStorage.setItem(CAMERAS_CACHE_KEY, JSON.stringify(data.cameras)); } catch { }
-
-      camerasRef.current.forEach((c) => c.marker?.remove());
-      camerasRef.current = [];
-      setCameras([]);
-
-      data.cameras.forEach((cam: Camera) => addCameraFromData(cam.lat, cam.lng, cam.id));
-
-      const polygons: CompletedPolygon[] = data.cameras
-        .filter((cam: Camera) => cam.polygon && cam.polygon.length > 0)
-        .map((cam: Camera) => ({
-          points: cam.polygon as [number, number][],
-          cameraId: cam.id,
-          occurrences: cam.occurrences ?? 0,
-        }));
-
-      setCompletedPolygons(polygons);
-      onCamerasLoaded?.(data.cameras);
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
-    }
-
-    */
-
     // clear any existing
     camerasRef.current.forEach((c) => c.marker?.remove());
     camerasRef.current = [];
@@ -2877,63 +2393,6 @@ export default function MapView({
   useEffect(() => {
     setToolMode(isPlacingCamera ? "addCamera" : "none");
   }, [isPlacingCamera]);
-
-  /*
-  const addCamera = useCallback(
-    async (cameraLat: number, cameraLng: number) => {
-      try {
-        const body: Record<string, any> = { lat: cameraLat, lng: cameraLng };
-        if (cameraParentLocationIdRef.current != null) {
-          body.saved_location = cameraParentLocationIdRef.current;
-          // Validate point is within the subarea bounding box
-          const parentSubArea = latestSubAreaItemsRef.current.find(
-            (s) => s.id === cameraParentLocationIdRef.current,
-          );
-          if (parentSubArea && parentSubArea.ring.length >= 3) {
-            const lngs = parentSubArea.ring.map((p) => p[0]);
-            const lats = parentSubArea.ring.map((p) => p[1]);
-            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-            if (cameraLng < minLng || cameraLng > maxLng || cameraLat < minLat || cameraLat > maxLat) {
-              onCameraPlacedOutsideRef.current?.();
-              return;
-            }
-          }
-        }
-        const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) return;
-
-        const data = await response.json();
-        if (!data?.success || !data?.camera) return;
-
-        // ensure the new camera is immediately visible regardless of visibleCameraIds timing
-        if (visibleCameraIdsRef.current != null) {
-           visibleCameraIdsRef.current = [...visibleCameraIdsRef.current, data.camera.id];
-        }
-        addCameraFromData(data.camera.lat, data.camera.lng, data.camera.id);
-        onCameraAdd?.(data.camera.id, data.camera.lat, data.camera.lng, data.camera);
-      } catch { }
-
-      onCameraAdd(cameraLat, cameraLng);
-    },
-    [addCameraFromData, onCameraAdd],
-  );
-  */
-
-  const assignCameraToSavedLocation = useCallback(async (cameraId: number, savedLocationId: number) => {
-    await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${cameraId}/assign-saved-location/`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        saved_location_id: savedLocationId,
-      }),
-    });
-  }, []);
 
   const updateVisibleCamerasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -3451,23 +2910,7 @@ export default function MapView({
                 let newCompletedPolygons = completedPolygonsRef.current;
                 newCompletedPolygons = [...newCompletedPolygons, newPoly];
                 setCompletedPolygons(newCompletedPolygons);
-
-                setShowSuccessNotification(true);
-                window.setTimeout(() => setShowSuccessNotification(false), 1500)
               });
-
-              /*
-              const newPoly: CompletedPolygon = {
-                points: [...polygonPointsRef.current],
-                cameraId: null,
-              };
-
-              setCompletedPolygons((prev) => [...prev, newPoly]);
-              setPolygonPoints([]);
-              clearGuideline();
-              setShowSuccessNotification(true);
-              window.setTimeout(() => setShowSuccessNotification(false), 1500);
-              */
               return;
             }
           }
@@ -3482,13 +2925,22 @@ export default function MapView({
           layers: ["polygon-points", "polygon-points-clickable"],
         });
 
+        // deny attempt and throw toast if failed
+        const minimum = editingCompletedPolygonIndexRef.current != null ? 3 : 0;
+        if (polygonPointsRef.current.length <= minimum) {
+          showToast("Cannot remove point. If you want to create a new polygon with new points, please delete this polygon first.", "info")
+          return;
+        } else if (polygonPointsRef.current.length === 0) {
+          showToast("No points to remove.", "info")
+          return;
+        }
+
         if (hit.length > 0) {
           const props: any = hit[0].properties ?? {};
           const idx = Number(props.index);
           const isCompleted = props.isCompleted === true || props.isCompleted === "true";
 
           if (!isCompleted && !Number.isNaN(idx)) {
-            const minimum = editingCompletedPolygonIndexRef.current != null ? 3 : 1;
             setPolygonPoints((prev) => (prev.length <= minimum ? prev : prev.filter((_, i) => i !== idx)));
             return;
           }
@@ -3630,6 +3082,7 @@ export default function MapView({
     if (toolMode === "removeCamera" || toolMode === "removePoint") {
       canvas.classList.add("map-remove");
     }
+    console.log(toolMode)
 
   }, [isEditMode, toolMode, isDrawingAOI, currentSelectionMode]);
 
@@ -3924,34 +3377,15 @@ export default function MapView({
     const poly = completedPolygonsRef.current[idx];
     if (!poly) return;
 
-    if (poly.cameraId != null) {
-      try {
-        await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/cameras/${poly.cameraId}/polygon/`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ polygon: null }),
-        });
-      } catch { }
-    } else if (cameraParentLocationIdRef.current != null) {
-      try {
-        const remainingRoadPolygons = completedPolygonsRef.current
-          .filter((polygon, polygonIndex) => polygonIndex !== idx && polygon.cameraId == null)
-          .map((polygon) => polygon.points);
+    onDeletePolygon(poly.points, Number(poly.cameraId));
 
-        await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/api/saved-locations/${cameraParentLocationIdRef.current}/`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ road_polygons: remainingRoadPolygons }),
-        });
-      } catch { }
-    }
-
-    setCompletedPolygons((prev) => prev.filter((_, i) => i !== idx));
+    // cleanup
     setShowPolygonModal(false);
     setSelectedPolygonIndex(null);
     setEditingCompletedPolygonIndex(null);
     setPolygonPoints([]);
     setToolMode("none");
+
   }, [completedPolygonsRef, selectedPolygonIndexRef]);
 
   const cancelPolygonModal = useCallback(() => {
@@ -3984,12 +3418,6 @@ export default function MapView({
 
     onRequestAssignPolygon?.(selectedPolygon.points, (assignedCameraId: number | null) => {
       if (assignedCameraId == null) return;
-
-      setCompletedPolygons((prev) =>
-        prev.map((polygon, idx) =>
-          idx === selectedIdx ? { ...polygon, cameraId: assignedCameraId } : polygon,
-        ),
-      );
       setShowPolygonModal(false);
     }, selectedPolygon.cameraId ?? null);
   }, [completedPolygonsRef, onRequestAssignPolygon, selectedPolygonIndexRef]);
@@ -4021,8 +3449,6 @@ export default function MapView({
       setPolygonPoints([]);
       clearGuideline();
       setToolMode("none");
-      setShowSuccessNotification(true);
-      window.setTimeout(() => setShowSuccessNotification(false), 1500);
     } finally {
       setIsSavingEditedPolygon(false);
     }
@@ -4079,12 +3505,6 @@ export default function MapView({
             </div>
           )}
         </>
-      )}
-
-      {showSuccessNotification && (
-        <div className="map-toast map-toast--success">
-          <span className="map-toast__icon">✓</span> Polygon created!
-        </div>
       )}
 
       {showPolygonModal && (
