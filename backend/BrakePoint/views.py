@@ -1094,63 +1094,73 @@ def _process_video_file(request, video_record, camera, temp_path, original_filen
             'speed_limit_kmh': '' if _speed_limit is None else str(_speed_limit),
         }
 
-
         headers = {}
         if model_cfg["shared_token"]:
             headers['Authorization'] = f"Bearer {model_cfg['shared_token']}"
 
-        try:
-            with open(temp_path, 'rb') as src:
-                files = {'file': (original_filename or f"video-{video_record.id}.mp4", src, content_type or 'video/mp4')}
-                remote_resp = requests.post(
-                    model_cfg["submit_url"],
-                    data=form_data,
-                    files=files,
-                    headers=headers,
-                    timeout=600,
-                )
+        # Submit the file to the model service in a background thread so that
+        # this endpoint returns immediately — avoiding Gunicorn worker timeouts
+        # when uploading large video files over the network.
+        import threading
+        def _submit_to_model_service_bg():
+            from django.db import connection as _db_connection
+            try:
+                with open(temp_path, 'rb') as src:
+                    files_payload = {
+                        'file': (
+                            original_filename or f"video-{video_record.id}.mp4",
+                            src,
+                            content_type or 'video/mp4',
+                        )
+                    }
+                    remote_resp = requests.post(
+                        model_cfg["submit_url"],
+                        data=form_data,
+                        files=files_payload,
+                        headers=headers,
+                        timeout=600,
+                    )
 
-            if not remote_resp.ok:
-                remote_error_text = remote_resp.text[:2000]
+                if not remote_resp.ok:
+                    remote_error_text = remote_resp.text[:2000]
+                    print(f"[model-service] Rejected ({remote_resp.status_code}): {remote_error_text}", flush=True)
+                    video_record.processing_status = 'failed'
+                    video_record.error_message = f"Model service rejected request ({remote_resp.status_code}): {remote_error_text}"
+                    video_record.processing_completed_at = timezone.now()
+                    video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+                else:
+                    print(f"[model-service] Accepted video_id={video_record.id}: {remote_resp.text[:200]}", flush=True)
+
+            except requests.RequestException as exc:
+                print(f"[model-service] Network error for video_id={video_record.id}: {exc}", flush=True)
                 video_record.processing_status = 'failed'
-                video_record.error_message = f"Model service rejected request ({remote_resp.status_code}): {remote_error_text}"
+                video_record.error_message = f"Could not reach model service: {exc}"
                 video_record.processing_completed_at = timezone.now()
                 video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
-                return Response(
-                    {'error': 'Remote model service rejected the upload', 'details': remote_error_text},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
+            except Exception as exc:
+                print(f"[model-service] Unexpected error for video_id={video_record.id}: {exc}", flush=True)
+            finally:
+                _db_connection.close()
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
 
-            try:
-                remote_payload = remote_resp.json()
-            except ValueError:
-                remote_payload = {'message': remote_resp.text[:500]}
+        t = threading.Thread(target=_submit_to_model_service_bg, daemon=True)
+        t.start()
 
-            return Response(
-                {
-                    'success': True,
-                    'video_id': video_record.id,
-                    'camera_id': camera.id,
-                    'message': remote_payload.get('message', 'Video uploaded successfully, remote processing started'),
-                    'processing_status': 'processing',
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        except requests.RequestException as exc:
-            video_record.processing_status = 'failed'
-            video_record.error_message = f"Could not reach model service: {exc}"
-            video_record.processing_completed_at = timezone.now()
-            video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
-            return Response(
-                {'error': 'Failed to submit video to model service', 'details': str(exc)},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+        # Return immediately — the background thread handles the actual upload.
+        return Response(
+            {
+                'success': True,
+                'video_id': video_record.id,
+                'camera_id': camera.id,
+                'message': 'Video received — submitting to model service in background',
+                'processing_status': 'processing',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     try:
         import cv2
