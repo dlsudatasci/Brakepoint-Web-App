@@ -74,7 +74,7 @@ def _extract_bearer_token(request):
     if isinstance(auth_header, str) and auth_header.lower().startswith("bearer "):
         return auth_header.split(" ", 1)[1].strip()
 
-    fallback = request.META.get("HTTP_X_MODEL_SERVICE_TOKEN") or request.META.get("HTTP_X_SHARED_TOKEN")
+    fallback = request.META.get("HTTP_X_AI_CALLBACK_TOKEN") or request.META.get("HTTP_X_MODEL_SERVICE_TOKEN") or request.META.get("HTTP_X_SHARED_TOKEN")
     if isinstance(fallback, str):
         return fallback.strip()
     return ""
