@@ -268,14 +268,14 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .map-remove {
   cursor:
-    url('/cursors/cursor-delete.svg') 1 0,
-    cursor !important;
+    url("/cursors/cursor-delete.svg") 1 0,
+    crosshair !important
 }
 
 .map-crosshair {
   cursor:
     url('/cursors/crosshair.svg') 10 10,
-    progress !important;
+    crosshair !important;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1084,6 +1084,7 @@ def _process_video_file(request, video_record, camera, temp_path, original_filen
         form_data = {
             'video_id': str(video_record.id),
             'camera_id': str(camera.id),
+            'video_name': original_filename or video_record.filename or f"video-{video_record.id}.mp4",
             'callback_url': callback_url,
             'callback_token': model_cfg["callback_token"],
             'calibration_points': json.dumps(calibration_points or []),
@@ -1092,6 +1093,7 @@ def _process_video_file(request, video_record, camera, temp_path, original_filen
             'use_sign_detection': 'true' if use_sign_detection else 'false',
             'speed_limit_kmh': '' if _speed_limit is None else str(_speed_limit),
         }
+
 
         headers = {}
         if model_cfg["shared_token"]:
