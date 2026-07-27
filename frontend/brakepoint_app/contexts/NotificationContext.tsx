@@ -4,6 +4,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { authFetch } from "@/lib/authFetch";
 
+/** crypto.randomUUID() is only available in secure contexts (HTTPS). This
+ *  fallback works on plain HTTP so local/staging environments don't break. */
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 interface Notification {
   id: string;
   videoName: string;
@@ -60,7 +69,7 @@ function safeParseNotifications(raw: string | null): Notification[] {
     return parsed
       .filter((n: any) => n && typeof n === "object")
       .map((n: any) => ({
-        id: String(n.id ?? crypto.randomUUID()),
+        id: String(n.id ?? generateId()),
         videoName: String(n.videoName ?? ""),
         success: Boolean(n.success),
         data: n.data,
@@ -141,7 +150,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const addNotification = useCallback((videoName: string, success: boolean, data?: any) => {
     const now = Date.now();
     const newNotification: Notification = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       videoName,
       success,
       data,
@@ -155,7 +164,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const addProcessingNotification = useCallback((videoName: string, videoId?: number) => {
     const now = Date.now();
-    const id = crypto.randomUUID();
+    const id = generateId();
 
     const newNotification: Notification = {
       id,
