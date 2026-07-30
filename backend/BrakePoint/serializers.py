@@ -79,6 +79,25 @@ class VideoSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'uploaded_at']
 
+class VideoSummarySerializer(serializers.ModelSerializer):
+    """Lightweight serializer for list views that excludes thumbnails and large JSON fields."""
+    occurrences = serializers.ReadOnlyField()
+    behaviors = serializers.ReadOnlyField()
+    processing_time_seconds = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = Video
+        fields = [
+            'id', 'camera', 'filename', 'uploaded_at', 'start_time', 'start_time_source',
+            'duration_seconds', 'fps', 'resolution', 'file_size_mb',
+            'vehicles', 'speeding_count', 'swerving_count', 'abrupt_stopping_count', 'jeepney_hotspot',
+            'signs', 
+            'processing_started_at', 'processing_completed_at', 'processing_status', 'processing_stage',
+            'yolo_progress', 'maskrcnn_progress', 'error_message',
+            'occurrences', 'behaviors', 'processing_time_seconds'
+        ]
+        read_only_fields = ['id', 'uploaded_at']
+
 class CameraSerializer(serializers.ModelSerializer):
     latest_upload = serializers.ReadOnlyField()
     latest_video = VideoSerializer(read_only=True)
