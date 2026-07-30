@@ -1,3 +1,8 @@
+import {
+	Point, Polygon, PolygonCollection,
+	toPolygonCollection, removePolygonFromCollection
+} from "@/components/landing/polygonFunctions"
+
 export type SummaryType = "area" | "subarea" | "camera"
 export type SubAreaType = "road_segment" | "intersection" | "junction";
 
@@ -79,7 +84,7 @@ export type LocationSummary = {
 
 // contains camera-specific information
 export type CameraSummary = LocationSummary & {
-	polygon?: [number, number][] | [number, number][][];
+	polygon?: Polygon | PolygonCollection;
 
     is_calibrated: boolean;
     calibration_points?: {x: number, y: number}[];
@@ -102,11 +107,11 @@ export type SubAreaSummary = LocationSummary & {
 	camera_ids?: number[]
     subarea_count: number;
     tags: string[];
-	road_polygons?: [number, number][][];
+	road_polygons?: PolygonCollection;
     // vehicle_breakdown: Record<string, number>;
 	vehicle_breakdown?: VehicleBreakdown;
     sub_area_type: SubAreaType | null;
-	geometry?: [number, number][]
+	geometry?: Polygon
 };
 
 // contains area-specific information
@@ -116,7 +121,7 @@ export type AOISummary = LocationSummary & {
     subarea_count: number;
     subareas?: SubAreaSummary[]; // deprecated — please use subarea_ids
 	subarea_ids?: number[];
-	geometry?: [number, number][]
+	geometry?: Polygon;
 };
 export type AreaSummary = AOISummary;
 
@@ -223,6 +228,7 @@ export function convertObjectToVideoSummary(obj: any, additional?: any) {
 	return {
 		summaryType: "video",
 		vehicle_breakdown: convertBreakdownToUnifiedFormat(obj.vehicle_breakdown ?? additional.vehicle_breakdown),
+		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 		...obj, ...additional,
 		uploaded_at: safeUploadedAt,
 		recorded_at: safeRecordedAt,
@@ -230,7 +236,6 @@ export function convertObjectToVideoSummary(obj: any, additional?: any) {
 		uploaded_time_string: (obj?.uploaded_time_string ?? additional?.uploaded_time_string),
 		processing_status: (obj?.processing_status ?? additional?.processing_status ?? "pending"),
 		duration: formatDurationLabel(obj?.duration_seconds ?? additional?.duration_seconds ?? 0),
-		vehicles: 0, occurrences: 0, speeding_count: 0, swerving_count: 0, abrupt_stopping_count: 0,
 	} as VideoSummary
 }
 

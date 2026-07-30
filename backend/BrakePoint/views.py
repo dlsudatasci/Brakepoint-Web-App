@@ -19,7 +19,10 @@ import requests
 import tempfile
 import os
 import sys
+import time
+import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 from .models import SavedLocation, Camera, Video
 from .serializers import (
@@ -27,6 +30,7 @@ from .serializers import (
     SignupSerializer,
     CameraSerializer,
     VideoSerializer,
+    VideoSummarySerializer,
 )
 
 from .polygon_validators import (
@@ -62,6 +66,10 @@ except ImportError:  # pragma: no cover — ML packages not installed in CI
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_VIDEO_SIZE_MB = 500
 
+_MODEL_UPLOAD_MAX_CONCURRENT = 3
+_model_upload_semaphore = threading.Semaphore(_MODEL_UPLOAD_MAX_CONCURRENT)
+_model_upload_pool = ThreadPoolExecutor(max_workers=_MODEL_UPLOAD_MAX_CONCURRENT + 1)
+
 
 def _as_bool(value, default=False):
     if value is None:
@@ -74,7 +82,7 @@ def _extract_bearer_token(request):
     if isinstance(auth_header, str) and auth_header.lower().startswith("bearer "):
         return auth_header.split(" ", 1)[1].strip()
 
-    fallback = request.META.get("HTTP_X_MODEL_SERVICE_TOKEN") or request.META.get("HTTP_X_SHARED_TOKEN")
+    fallback = request.META.get("HTTP_X_AI_CALLBACK_TOKEN") or request.META.get("HTTP_X_MODEL_SERVICE_TOKEN") or request.META.get("HTTP_X_SHARED_TOKEN")
     if isinstance(fallback, str):
         return fallback.strip()
     return ""
@@ -1084,6 +1092,7 @@ def _process_video_file(request, video_record, camera, temp_path, original_filen
         form_data = {
             'video_id': str(video_record.id),
             'camera_id': str(camera.id),
+            'video_name': original_filename or video_record.filename or f"video-{video_record.id}.mp4",
             'callback_url': callback_url,
             'callback_token': model_cfg["callback_token"],
             'calibration_points': json.dumps(calibration_points or []),
@@ -1097,58 +1106,137 @@ def _process_video_file(request, video_record, camera, temp_path, original_filen
         if model_cfg["shared_token"]:
             headers['Authorization'] = f"Bearer {model_cfg['shared_token']}"
 
-        try:
-            with open(temp_path, 'rb') as src:
-                files = {'file': (original_filename or f"video-{video_record.id}.mp4", src, content_type or 'video/mp4')}
-                remote_resp = requests.post(
-                    model_cfg["submit_url"],
-                    data=form_data,
-                    files=files,
-                    headers=headers,
-                    timeout=600,
-                )
+        # Submit the file to the model service in a background thread so that
+        # this endpoint returns immediately — avoiding Gunicorn worker timeouts
+        # when uploading large video files over the network.
+        #
+        # Reliability features:
+        #   • Concurrency semaphore — at most _MODEL_UPLOAD_MAX_CONCURRENT uploads at once
+        #   • Retry with exponential back-off — transient failures get 3 attempts
+        #   • Managed thread pool — avoids daemon-thread lifecycle issues
+        #   • Catch-all marks video as 'failed' so nothing gets stuck in 'processing'
 
-            if not remote_resp.ok:
-                remote_error_text = remote_resp.text[:2000]
-                video_record.processing_status = 'failed'
-                video_record.error_message = f"Model service rejected request ({remote_resp.status_code}): {remote_error_text}"
-                video_record.processing_completed_at = timezone.now()
-                video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
-                return Response(
-                    {'error': 'Remote model service rejected the upload', 'details': remote_error_text},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
+        def _submit_to_model_service_bg():
+            from django.db import connection as _db_connection
 
-            try:
-                remote_payload = remote_resp.json()
-            except ValueError:
-                remote_payload = {'message': remote_resp.text[:500]}
+            MAX_RETRIES = 3
+            BACKOFF_BASE = 5  # seconds; delays: 5, 15, 45
+            _RETRYABLE_STATUS_CODES = {502, 503, 504, 408, 429}
 
-            return Response(
-                {
-                    'success': True,
-                    'video_id': video_record.id,
-                    'camera_id': camera.id,
-                    'message': remote_payload.get('message', 'Video uploaded successfully, remote processing started'),
-                    'processing_status': 'processing',
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        except requests.RequestException as exc:
-            video_record.processing_status = 'failed'
-            video_record.error_message = f"Could not reach model service: {exc}"
-            video_record.processing_completed_at = timezone.now()
-            video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
-            return Response(
-                {'error': 'Failed to submit video to model service', 'details': str(exc)},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-        finally:
-            if os.path.exists(temp_path):
+            acquired = _model_upload_semaphore.acquire(timeout=300)  # wait up to 5 min for a slot
+            if not acquired:
+                print(f"[model-service] Semaphore timeout for video_id={video_record.id}, marking failed", flush=True)
                 try:
-                    os.remove(temp_path)
+                    video_record.processing_status = 'failed'
+                    video_record.error_message = 'Upload queue is full — too many concurrent uploads. Please try again later.'
+                    video_record.processing_completed_at = timezone.now()
+                    video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
                 except Exception:
                     pass
+                finally:
+                    _db_connection.close()
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
+                return
+
+            try:
+                last_exc = None
+                for attempt in range(1, MAX_RETRIES + 1):
+                    try:
+                        with open(temp_path, 'rb') as src:
+                            files_payload = {
+                                'file': (
+                                    original_filename or f"video-{video_record.id}.mp4",
+                                    src,
+                                    content_type or 'video/mp4',
+                                )
+                            }
+                            remote_resp = requests.post(
+                                model_cfg["submit_url"],
+                                data=form_data,
+                                files=files_payload,
+                                headers=headers,
+                                timeout=600,
+                            )
+
+                        if remote_resp.ok:
+                            print(f"[model-service] Accepted video_id={video_record.id} (attempt {attempt}): {remote_resp.text[:200]}", flush=True)
+                            return  # success — callback will update the video record later
+
+                        # Non-retryable HTTP error (4xx except 408/429)
+                        if remote_resp.status_code not in _RETRYABLE_STATUS_CODES:
+                            remote_error_text = remote_resp.text[:2000]
+                            print(f"[model-service] Rejected ({remote_resp.status_code}): {remote_error_text}", flush=True)
+                            video_record.processing_status = 'failed'
+                            video_record.error_message = f"Model service rejected request ({remote_resp.status_code}): {remote_error_text}"
+                            video_record.processing_completed_at = timezone.now()
+                            video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+                            return
+
+                        # Retryable HTTP error — log and retry
+                        last_exc = Exception(f"HTTP {remote_resp.status_code}: {remote_resp.text[:500]}")
+                        print(f"[model-service] Retryable error on attempt {attempt}/{MAX_RETRIES} for video_id={video_record.id}: HTTP {remote_resp.status_code}", flush=True)
+
+                    except (requests.ConnectionError, requests.Timeout) as exc:
+                        last_exc = exc
+                        print(f"[model-service] Network error on attempt {attempt}/{MAX_RETRIES} for video_id={video_record.id}: {exc}", flush=True)
+
+                    except requests.RequestException as exc:
+                        # Non-retryable request error
+                        print(f"[model-service] Request error for video_id={video_record.id}: {exc}", flush=True)
+                        video_record.processing_status = 'failed'
+                        video_record.error_message = f"Could not reach model service: {exc}"
+                        video_record.processing_completed_at = timezone.now()
+                        video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+                        return
+
+                    # Exponential back-off before next retry
+                    if attempt < MAX_RETRIES:
+                        delay = BACKOFF_BASE * (3 ** (attempt - 1))  # 5s, 15s, 45s
+                        print(f"[model-service] Retrying video_id={video_record.id} in {delay}s…", flush=True)
+                        time.sleep(delay)
+
+                # All retries exhausted
+                print(f"[model-service] All {MAX_RETRIES} attempts failed for video_id={video_record.id}", flush=True)
+                video_record.processing_status = 'failed'
+                video_record.error_message = f"Model service unreachable after {MAX_RETRIES} attempts: {last_exc}"
+                video_record.processing_completed_at = timezone.now()
+                video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+
+            except Exception as exc:
+                print(f"[model-service] Unexpected error for video_id={video_record.id}: {exc}", flush=True)
+                try:
+                    video_record.processing_status = 'failed'
+                    video_record.error_message = f"Unexpected error during submission: {exc}"
+                    video_record.processing_completed_at = timezone.now()
+                    video_record.save(update_fields=['processing_status', 'error_message', 'processing_completed_at'])
+                except Exception:
+                    print(f"[model-service] Could not save failure status for video_id={video_record.id}", flush=True)
+            finally:
+                _model_upload_semaphore.release()
+                _db_connection.close()
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+
+        _model_upload_pool.submit(_submit_to_model_service_bg)
+
+        # Return immediately — the background thread handles the actual upload.
+        return Response(
+            {
+                'success': True,
+                'video_id': video_record.id,
+                'camera_id': camera.id,
+                'message': 'Video received — submitting to model service in background',
+                'processing_status': 'processing',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     try:
         import cv2
@@ -2019,8 +2107,15 @@ def dashboard_summary(request):
 def get_landing_objects(request):
     try:
         locations = list(SavedLocation.objects.filter(user=request.user))
-        cameras = list(Camera.objects.filter(user=request.user))
-        videos = list(Video.objects.filter(camera__user=request.user))
+        cameras = list(Camera.objects.filter(user=request.user).select_related('saved_location'))
+        videos = list(Video.objects.filter(camera__user=request.user).select_related('camera').only(
+            'id', 'camera_id', 'filename', 'uploaded_at', 'start_time', 'start_time_source',
+            'duration_seconds', 'fps', 'resolution', 'file_size_mb',
+            'vehicles', 'speeding_count', 'swerving_count', 'abrupt_stopping_count', 'jeepney_hotspot',
+            'signs', 
+            'processing_started_at', 'processing_completed_at', 'processing_status', 'processing_stage',
+            'yolo_progress', 'maskrcnn_progress', 'error_message'
+        ))
 
         # Build relationship indexes once so the frontend can stay UI-focused.
         subarea_ids_by_aoi = {}
@@ -2232,7 +2327,7 @@ def get_landing_objects(request):
                 "vehicle_breakdown": vehicle_breakdown,
             })
 
-        ser_videos = VideoSerializer(videos, many=True)
+        ser_videos = VideoSummarySerializer(videos, many=True)
 
         return Response({
             "success": True,

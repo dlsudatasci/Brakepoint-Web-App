@@ -179,28 +179,28 @@ else:
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 # SQLite (local development fallback)
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
+#DATABASES = {
+#    "default": {
+#        "ENGINE": "django.db.backends.sqlite3",
+#        "NAME": BASE_DIR / "db.sqlite3",
+#    }
+#}
 
 # TiDB Cloud Serverless (shared database)
 DATABASES = {
-    "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.mysql"),
-        "NAME": os.getenv("DB_NAME", "defaultdb"),
-        "USER": os.getenv("DB_USER", ""),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "4000"),
-        "OPTIONS": {
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-            **_ssl_options,
-        },
-    }
-}
+     "default": {
+         "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.mysql"),
+         "NAME": os.getenv("DB_NAME", "defaultdb"),
+         "USER": os.getenv("DB_USER", ""),
+         "PASSWORD": os.getenv("DB_PASSWORD", ""),
+         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+         "PORT": os.getenv("DB_PORT", "4000"),
+         "OPTIONS": {
+             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+             **_ssl_options,
+         },
+     }
+ }
 
 
 # Password validation
